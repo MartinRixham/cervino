@@ -101,8 +101,9 @@ default it has no password: the login and lock screens take an empty one, and
 
 ### Installing to disk
 
-`setup-alpine` works from inside the running desktop. The ISO puts a wrapper
-in front of it that:
+`setup-alpine` works from inside the running desktop: open **Install Alpine
+Linux** from the app grid, or run `doas setup-alpine` in a terminal. The ISO
+puts a wrapper in front of it that:
 
 - stops runlevel changes from shutting down `gdm` and `dbus` (which would kill
   the session you're running it from),
@@ -121,9 +122,9 @@ An answer file passed with `-f` still overrides these defaults.
 
 Like any Alpine `sys` install, the disk gets a copy of the running system: the
 same packages (so GNOME) and your changes under `/etc`. The live user, its
-home directory, its init script and GDM autologin are dropped from that copy, so create a user in
-`setup-alpine`'s user step and log in as that user. Without one there is no
-account GDM can log in to.
+home directory, its doas and polkit rules, its init script and GDM autologin
+are dropped from that copy, so create a user in `setup-alpine`'s user step and
+log in as that user. Without one there is no account GDM can log in to.
 
 ## How it works
 

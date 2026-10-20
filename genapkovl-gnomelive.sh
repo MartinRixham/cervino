@@ -300,6 +300,20 @@ rm -rf "\$shim"
 exit \$rc
 EOF
 
+# An app grid entry that runs the wrapper above in a terminal. GLib's
+# fallback terminal list has no GNOME Console, so Terminal=true would not
+# work; kgx is run directly. The window stays open so the last messages can
+# be read. /usr/local/share is not in lbu.list, so installs don't get it.
+makefile root:root 0644 "$tmp"/usr/local/share/applications/alpine-install.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Install Alpine Linux
+Comment=Install this system to disk with setup-alpine
+Exec=kgx -T "Install Alpine Linux" -- sh -c "doas /usr/local/sbin/setup-alpine; echo; printf 'Press Enter to close. '; read -r _"
+Icon=system-software-install
+Categories=System;
+EOF
+
 # setup-disk copies the live /etc to the new system with "lbu package -",
 # and so would carry over the live user (with its known or empty password,
 # and its doas and polkit rules), its home directory (setup-alpine adds
