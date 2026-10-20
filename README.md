@@ -22,6 +22,9 @@ from a desktop distribution, and keeps it when installed to disk:
   collector writing to `/var/lib/coredump`
 - PipeWire as the sound server (in place of PulseAudio), `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
+- logging out without the logout dialog waiting on GNOME Shell (Alpine's
+  gnome-shell registers with gnome-session but never answers its
+  end-of-session queries; a session helper answers for it)
 
 [`os-feature-tests.sh`](os-feature-tests.sh) checks all of this on a running
 system.

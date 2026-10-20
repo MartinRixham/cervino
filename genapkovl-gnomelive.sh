@@ -156,6 +156,49 @@ logger -t coredump "Process $pid (${comm:-unknown}) of user $uid dumped core on 
 ls -1t "$dir"/core.* 2>/dev/null | tail -n +$((max_files + 1)) | xargs -r rm -f
 EOF
 
+# Alpine's gnome-shell registers with gnome-session as a client (so that
+# gnome-session, run without systemd, knows the shell is up) but never answers
+# its QueryEndSession and EndSession signals, so every logout waits for the
+# shell, listed as "Not responding". This session helper answers for it.
+makefile root:root 0755 "$tmp"/usr/local/libexec/gnome-shell-end-session <<'EOF'
+#!/usr/bin/gjs
+// Answers gnome-session's end-of-session queries on behalf of GNOME Shell
+const {Gio, GLib} = imports.gi;
+const bus = Gio.DBus.session;
+const SM = 'org.gnome.SessionManager';
+const SHELL_APP_ID = 'org.gnome.Shell.desktop';
+
+function call(path, iface, method, args = null, ret = null) {
+    return bus.call_sync(SM, path, iface, method, args,
+        ret ? new GLib.VariantType(ret) : null, Gio.DBusCallFlags.NONE, 5000, null).deepUnpack();
+}
+
+bus.signal_subscribe(SM, `${SM}.ClientPrivate`, null, null, null, Gio.DBusSignalFlags.NONE,
+    (_c, _sender, path, _iface, signal) => {
+        if (signal !== 'QueryEndSession' && signal !== 'EndSession')
+            return;
+        try {
+            const [appId] = call(path, `${SM}.Client`, 'GetAppId', null, '(s)');
+            if (appId === SHELL_APP_ID) {
+                call(path, `${SM}.ClientPrivate`, 'EndSessionResponse',
+                    new GLib.Variant('(bs)', [true, '']));
+            }
+        } catch (e) {
+            logError(e, `answering ${signal} for ${path}`);
+        }
+    });
+
+new GLib.MainLoop(null, false).run();
+EOF
+makefile root:root 0644 "$tmp"/etc/xdg/autostart/gnome-shell-end-session.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=GNOME Shell end-of-session responder
+Exec=/usr/local/libexec/gnome-shell-end-session
+OnlyShowIn=GNOME;
+NoDisplay=true
+EOF
+
 # The SPICE agent needs uinput.
 makefile root:root 0644 "$tmp"/etc/modules-load.d/uinput.conf <<'EOF'
 uinput

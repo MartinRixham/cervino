@@ -394,7 +394,13 @@ function cleanup() {
     } catch {}
 }
 
-call(SM, '/org/gnome/SessionManager', SM, 'Logout', new GLib.Variant('(u)', [0]));
+try {
+    call(SM, '/org/gnome/SessionManager', SM, 'Logout', new GLib.Variant('(u)', [0]));
+} catch (e) {
+    print(`cannot start a logout: ${e.message}`);
+    cleanup();
+    System.exit(1);
+}
 if (!spin(5000, () => queried)) {
     print('gnome-session did not query clients on logout');
     cleanup();
