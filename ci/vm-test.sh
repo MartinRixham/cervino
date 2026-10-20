@@ -8,7 +8,8 @@
 #      setup-alpine (through the ISO's wrapper, as a user would)
 #   2. test:    boots the installed system into GNOME, logged in as the
 #               user created during the install, and runs
-#               os-feature-tests.sh in that desktop session
+#               os-feature-tests.sh in that desktop session, then logs
+#               out and checks that GDM's login screen comes back
 #
 # Exits non-zero if either stage fails or any test fails. The serial console
 # output of each boot is streamed to stdout and kept in $WORKDIR/<stage>.log.
@@ -150,7 +151,7 @@ vm_stop
 ((rc == 0)) || die "installing with setup-alpine failed"
 
 vm_start test
-vm_run "$unpack_share && /tmp/ci/ci/guest/test.sh" 1200
+vm_run "$unpack_share && /tmp/ci/ci/guest/test.sh" 1500
 vm_stop
-((rc == 0)) || die "os-feature-tests.sh: $rc test(s) failed"
+((rc == 0)) || die "$rc test(s) failed"
 echo ">>> All OS feature tests passed"

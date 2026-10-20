@@ -75,8 +75,9 @@ publishes the ISO as a GitHub release.
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
 virtual disk with `setup-alpine`, checks that nothing of the live session
-was copied to the installed system, and then runs `os-feature-tests.sh` in
-the installed user's GNOME session. The build fails, and no release is
+was copied to the installed system, runs `os-feature-tests.sh` in the
+installed user's GNOME session, and finally logs out and checks that GDM's
+login screen comes back. The build fails, and no release is
 published, unless every test passes. To run the same test locally (it needs
 `qemu-system-x86_64`, `xorriso` and access to `/dev/kvm`):
 
