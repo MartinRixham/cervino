@@ -152,8 +152,9 @@ builder_main() {
 	# tools, man pages, a UTF-8 locale, spell checking, emoji and CJK fonts,
 	# NetworkManager, NTP, the hostname1/timedate1/locale1 D-Bus services,
 	# Bluetooth, printing, mDNS, a firewall, power profiles, AppArmor, zram
-	# swap, PipeWire, xdg-utils, Flatpak and the SPICE guest agent. Their
-	# configuration and services are set up in the apkovl below.
+	# swap, PipeWire, xdg-utils, Flatpak, Alpine's packages in GNOME Software
+	# (apk-polkit-server and the AppStream catalog) and the SPICE guest
+	# agent. Their configuration and services are set up in the apkovl below.
 	# pipewire-pulse provides the pulseaudio that gnome-settings-daemon
 	# depends on, so PulseAudio itself is not installed.
 	local features="bash bash-completion file xz zstd pciutils dmidecode rsync
@@ -164,7 +165,8 @@ builder_main() {
 		nftables power-profiles-daemon apparmor apparmor-utils apparmor-profiles
 		zram-init zram-init-openrc pipewire wireplumber pipewire-pulse
 		pipewire-alsa pipewire-spa-bluez xdg-utils flatpak
-		gnome-software-plugin-flatpak spice-vdagent spice-vdagent-openrc"
+		gnome-software-plugin-flatpak apk-polkit-rs-openrc
+		alpine-appstream-downloader spice-vdagent spice-vdagent-openrc"
 
 	local world
 	world=$(printf '%s\n' alpine-base doas \

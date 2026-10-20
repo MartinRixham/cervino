@@ -22,6 +22,10 @@ from a desktop distribution, and keeps it when installed to disk:
   collector writing to `/var/lib/coredump`
 - PipeWire as the sound server (in place of PulseAudio), `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
+- Alpine's packages in GNOME Software: `apk-polkit-server` runs at boot, and
+  the AppStream catalog of the repositories in `/etc/apk/repositories` is
+  fetched when a network connection comes up and daily (the live system's
+  only repository is the disc, so this takes effect on installed systems)
 - logging out without the logout dialog waiting on GNOME Shell, and back to
   GDM's login screen, and logging in through that screen without the new
   session freezing (Alpine's gnome-shell is newer than its gnome-session

@@ -324,6 +324,25 @@ t_app_store_sandbox() {
     return 1
 }
 
+t_app_store_distro_packages() {
+    # GNOME Software lists the distribution's packages through a packaging
+    # plugin (PackageKit, apk, ...) and the distribution's AppStream catalog.
+    # gnome-software-cmd runs the same plugins as the app, so a search there
+    # finds what a search in the app would.
+    have gnome-software || { echo "GNOME Software not installed"; return 2; }
+    dbus_name_available --session org.gnome.SessionManager || { echo "not in a GNOME session"; return 2; }
+    local cmd out why
+    cmd=$(first_have /usr/libexec/gnome-software-cmd /usr/lib/gnome-software/gnome-software-cmd) ||
+        { echo "no gnome-software-cmd"; return 2; }
+    # --verbose logs to stdout too, which shows why a plugin failed
+    out=$(timeout 120 "$cmd" --verbose --show-results --refine-flags=origin search gimp 2>&1)
+    # apk-polkit reports an up-to-date index as an error: not the cause
+    why=$(grep -Eo "Failed to (refresh|setup) plugin .*" <<<"$out" | grep -v "file is unchanged" | head -n1)
+    grep -Eq '^bundle-kind: +package$' <<<"$out" && return 0
+    echo "GNOME Software finds no distribution package for 'gimp'${why:+ ($why)}"
+    return 1
+}
+
 t_logout_not_blocked_by_shell() {
     # Starts a real logout and cancels it again. gnome-session asks every
     # registered client whether the session may end, and lists a client that
@@ -487,6 +506,7 @@ run_test "PipeWire is the sound server"                t_pipewire_audio
 run_test "Audio output device available"               t_audio_sink
 run_test "xdg-open available"                          t_xdg_open
 run_test "Sandboxed app store (Flatpak or Snap)"       t_app_store_sandbox
+run_test "Distribution packages in GNOME Software"     t_app_store_distro_packages
 run_test "SPICE guest agent (VM clipboard/resize)"     t_spice_agent
 run_test "Logout not blocked by GNOME Shell"           t_logout_not_blocked_by_shell
 

@@ -240,6 +240,22 @@ makefile root:root 0755 "$tmp"/etc/local.d/flatpak-remotes.start <<'EOF'
 flatpak remotes >/dev/null 2>&1 || true
 EOF
 
+# GNOME Software lists Alpine's packages from the AppStream catalog of the
+# repositories in /etc/apk/repositories, which nothing fetches by default.
+# Fetch it daily (setup-alpine enables crond) and whenever a connection
+# comes up; only what changed is downloaded.
+makefile root:root 0755 "$tmp"/etc/periodic/daily/alpine-appstream <<'EOF'
+#!/bin/sh
+# NetworkManager's dispatcher runs this without /usr/sbin in PATH.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+exec flock -n /run/alpine-appstream.lock alpine-appstream-downloader >/dev/null 2>&1
+EOF
+makefile root:root 0755 "$tmp"/etc/NetworkManager/dispatcher.d/50-alpine-appstream <<'EOF'
+#!/bin/sh
+[ "$2" = up ] || exit 0
+setsid /etc/periodic/daily/alpine-appstream </dev/null >/dev/null 2>&1 &
+EOF
+
 # Stands in for setup-user: creates the desktop user before GDM starts.
 # With no LIVE_PASSWORD the user has an empty password: GDM and the lock
 # screen accept it (Alpine's base-auth has nullok), but polkit's PAM stack
@@ -409,6 +425,7 @@ rc_add cupsd default
 rc_add avahi-daemon default
 rc_add nftables default
 rc_add spice-vdagentd default
+rc_add apk-polkit-server default
 rc_add local default
 rc_add live-user default
 rc_add gdm default
