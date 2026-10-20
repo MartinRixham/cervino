@@ -46,6 +46,8 @@ AUTOLOGIN=${AUTOLOGIN:-1}
 BROWSER=${BROWSER:-firefox}
 
 die() { echo "error: $*" >&2; exit 1; }
+# Quote $1 for sh: single quotes, with any ' inside written as '\''.
+shquote() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
 
 # ---------------------------------------------------------------------------
 # Host side: work out the release, then re-run this script in a container.
@@ -76,6 +78,7 @@ host_main() {
 	"$runtime" run --rm \
 		--security-opt label=disable \
 		-v "$(realpath "$0")":/build.sh:ro \
+		-v "$(dirname "$(realpath "$0")")"/genapkovl-gnomelive.sh:/genapkovl-gnomelive.sh:ro \
 		-v "$OUTDIR":/out \
 		-e ALPINE_BRANCH="$ALPINE_BRANCH" \
 		-e MIRROR="$MIRROR" \
@@ -91,7 +94,7 @@ host_main() {
 }
 
 # ---------------------------------------------------------------------------
-# Container side: generate the profile + apkovl and run mkimage.sh.
+# Container side: set up the profile + apkovl generator and run mkimage.sh.
 # ---------------------------------------------------------------------------
 container_main() {
 	printf '%s\n' "$MIRROR/$ALPINE_BRANCH/main" "$MIRROR/$ALPINE_BRANCH/community" \
@@ -168,8 +171,8 @@ builder_main() {
 		eudev udev-init-scripts udev-init-scripts-openrc \
 		$gnome_deps $features | sort -u)
 
-	# Flatpak adds the remotes in /etc/flatpak/remotes.d (see local.d below).
-	wget -qO /work/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo ||
+	# Flatpak adds the remotes in /etc/flatpak/remotes.d (see the generator).
+	wget -qO aports/scripts/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo ||
 		die "could not download the Flathub remote"
 
 	# AppArmor is built into the kernel but needs enabling on the command line,
@@ -192,307 +195,14 @@ builder_main() {
 	EOF
 
 	# --- apkovl generator ----------------------------------------------------
-	# The runlevels are those the initramfs sets up on the standard ISO,
-	# changed as setup-desktop gnome would change them: mdev/hwdrivers swapped
-	# for udev (setup-devd udev), plus cgroups, dbus and gdm in default. The
-	# desktop features add their services on top.
-	local autologin_conf=""
-	if [[ $AUTOLOGIN == 1 ]]; then
-		autologin_conf="AutomaticLoginEnable=True
-AutomaticLogin=$LIVE_USER"
-	fi
-
-	cat > aports/scripts/genapkovl-gnomelive.sh <<-GENEOF
-	#!/bin/sh -e
-	HOSTNAME="\$1"
-	[ -n "\$HOSTNAME" ] || { echo "usage: \$0 hostname"; exit 1; }
-
-	tmp="\$(mktemp -d)"
-	trap 'rm -rf "\$tmp"' EXIT
-
-	makefile() {
-		mkdir -p "\$(dirname "\$3")"
-		cat > "\$3"
-		chown "\$1" "\$3"
-		chmod "\$2" "\$3"
-	}
-	rc_add() {
-		mkdir -p "\$tmp"/etc/runlevels/"\$2"
-		ln -sf /etc/init.d/"\$1" "\$tmp"/etc/runlevels/"\$2"/"\$1"
-	}
-
-	makefile root:root 0644 "\$tmp"/etc/hostname <<EOF
-	localhost
-	EOF
-
-	makefile root:root 0644 "\$tmp"/etc/apk/world <<EOF
-	$world
-	EOF
-
-	makefile root:root 0644 "\$tmp"/etc/gdm/custom.conf <<EOF
-	[daemon]
-	$autologin_conf
-
-	[security]
-
-	[xdmcp]
-
-	[chooser]
-
-	[debug]
-	EOF
-
-	# --- Desktop features ---
-	# Login shells: nano as the default editor, ~/.local/bin first in PATH
-	# (any existing entry removed, so nested login shells don't add it twice).
-	makefile root:root 0644 "\$tmp"/etc/profile.d/50-editor.sh <<'EOF'
-	export EDITOR="\${EDITOR:-nano}"
-	EOF
-	makefile root:root 0644 "\$tmp"/etc/profile.d/99-local-bin.sh <<'EOF'
-	_p=":\$PATH:"
-	while case \$_p in *":\$HOME/.local/bin:"*) true ;; *) false ;; esac; do
-	_p="\${_p%%:"\$HOME"/.local/bin:*}:\${_p#*:"\$HOME"/.local/bin:}"
-	done
-	_p="\${_p#:}"
-	_p="\${_p%:}"
-	PATH="\$HOME/.local/bin\${_p:+:\$_p}"
-	export PATH
-	unset _p
-	EOF
-	# command-not-found only installs a hook for login sh; bash sources /etc/bash/*.sh.
-	mkdir -p "\$tmp"/etc/bash
-	ln -s /etc/profile.d/command-not-found.sh "\$tmp"/etc/bash/command-not-found.sh
-
-	# Session language when the user has not picked one.
-	makefile root:root 0644 "\$tmp"/etc/locale.conf <<EOF
-	LANG=C.UTF-8
-	EOF
-
-	# New users get bash as their login shell: shadow's useradd (used by
-	# GNOME Settings) reads this; setup-user's busybox adduser goes through
-	# the shim in /usr/local/sbin below.
-	makefile root:root 0644 "\$tmp"/etc/default/useradd <<EOF
-	SHELL=/bin/bash
-	EOF
-
-	# NetworkManager manages all interfaces; ifupdown only brings up lo.
-	makefile root:root 0644 "\$tmp"/etc/NetworkManager/conf.d/10-alpine.conf <<EOF
-	[main]
-	dhcp=internal
-	plugins=keyfile
-	EOF
-	makefile root:root 0644 "\$tmp"/etc/network/interfaces <<EOF
-	auto lo
-	iface lo inet loopback
-	iface lo inet6 loopback
-	EOF
-
-	# The default nftables ruleset drops incoming connections; allow SSH and mDNS.
-	makefile root:root 0644 "\$tmp"/etc/nftables.d/50-desktop.nft <<EOF
-	table inet filter {
-	chain input {
-	tcp dport 22 accept comment "SSH"
-	udp dport 5353 accept comment "mDNS"
-	}
-	}
-	EOF
-
-	# zram swap of half the RAM, at most 8 GiB (the init script sources this).
-	makefile root:root 0644 "\$tmp"/etc/conf.d/zram-init <<'EOF'
-	load_on_start=yes
-	unload_on_stop=yes
-	num_devices=1
-	type0=swap
-	size0=\$(awk '/^MemTotal:/ { s = int(\$2 / 2048); print (s > 8192 ? 8192 : s) }' /proc/meminfo)
-	algo0=zstd
-	labl0=zram_swap
-	EOF
-
-	# Core dumps go to /var/lib/coredump. lbu.list makes "lbu package" (and
-	# so setup-disk) take /usr/local/libexec along to installed systems.
-	makefile root:root 0644 "\$tmp"/etc/sysctl.d/50-coredump.conf <<EOF
-	kernel.core_pattern = |/usr/local/libexec/coredump-handler %P %u %s %t
-	EOF
-	makefile root:root 0644 "\$tmp"/etc/apk/protected_paths.d/lbu.list <<EOF
-	+usr/local/libexec
-	EOF
-	makefile root:root 0755 "\$tmp"/usr/local/libexec/coredump-handler <<'EOF'
-	#!/bin/sh
-	# Invoked by the kernel via core_pattern with: %P %u %s %t
-	pid=\$1 uid=\$2 sig=\$3 time=\$4
-	dir=/var/lib/coredump
-	max_files=20
-	max_bytes=2147483648
-
-	umask 077
-	mkdir -p "\$dir"
-	comm=\$(tr -cd 'A-Za-z0-9_.-' < "/proc/\$pid/comm" 2>/dev/null)
-	out="\$dir/core.\${comm:-unknown}.\$uid.\$pid.\$time"
-
-	if command -v zstd >/dev/null 2>&1; then
-	out=\$out.zst
-	head -c "\$max_bytes" | zstd -q -o "\$out"
-	else
-	head -c "\$max_bytes" > "\$out"
-	fi
-	logger -t coredump "Process \$pid (\${comm:-unknown}) of user \$uid dumped core on signal \$sig: \$out"
-
-	ls -1t "\$dir"/core.* 2>/dev/null | tail -n +\$((max_files + 1)) | xargs -r rm -f
-	EOF
-
-	# The SPICE agent needs uinput.
-	makefile root:root 0644 "\$tmp"/etc/modules-load.d/uinput.conf <<EOF
-	uinput
-	EOF
-
-	makefile root:root 0644 "\$tmp"/etc/flatpak/remotes.d/flathub.flatpakrepo \\
-		< /work/flathub.flatpakrepo
-	# Only flatpak run as root adds those to the system installation; until
-	# then users see no remotes.
-	makefile root:root 0755 "\$tmp"/etc/local.d/flatpak-remotes.start <<EOF
-	#!/bin/sh
-	flatpak remotes >/dev/null 2>&1 || true
-	EOF
-
-	# Stands in for setup-user: creates the desktop user before GDM starts.
-	makefile root:root 0755 "\$tmp"/etc/init.d/live-user <<'EOF'
-	#!/sbin/openrc-run
-	description="Create the live desktop user"
-
-	depend() {
-		need localmount
-		before gdm
-	}
-
-	start() {
-		ebegin "Creating live user $LIVE_USER"
-		if ! getent passwd $LIVE_USER >/dev/null; then
-			adduser -D -s /bin/bash -g "Live User" $LIVE_USER &&
-			for g in audio video netdev input plugdev lpadmin wheel; do
-				addgroup $LIVE_USER \$g 2>/dev/null
-			done
-			echo '$LIVE_USER:$LIVE_PASSWORD' | chpasswd
-			mkdir -p /etc/doas.d
-			echo 'permit persist :wheel' > /etc/doas.d/20-wheel.conf
-		fi
-		eend 0
-	}
-	EOF
-
-	# setup-alpine switches OpenRC to the boot runlevel and back, which stops
-	# gdm and dbus and so kills the desktop (and the terminal running it). It
-	# also swaps udev for mdev unless DEVDOPTS says otherwise, leaves the
-	# community repo (where GNOME lives) disabled and configures interfaces
-	# for ifupdown, which would fight NetworkManager. This wrapper, found
-	# first in PATH, makes those runlevel switches start services without
-	# stopping any, skips the interface and DNS steps, keeps udev, which GNOME
-	# needs, and defaults community to enabled. It also defaults the user step
-	# to the plugdev (network settings) and lpadmin (printers) groups and the
-	# installed kernel command line to one with AppArmor enabled. An answer
-	# file passed with -f still overrides these defaults.
-	# The shims in the temporary directory only need to work until
-	# setup-alpine sources /etc/profile, which resets PATH; the lbu and
-	# adduser shims, used after that, live in /usr/local/sbin, which
-	# /etc/profile puts first.
-	makefile root:root 0755 "\$tmp"/usr/local/sbin/setup-alpine <<'EOF'
-	#!/bin/sh
-	shim=\$(mktemp -d) || exit
-	cat > "\$shim"/openrc <<'SHIM'
-	#!/bin/sh
-	case "\$1" in
-	-*) exec /sbin/openrc "\$@" ;;
-	*) exec /sbin/openrc --no-stop "\$@" ;;
-	esac
-	SHIM
-	for cmd in setup-interfaces setup-dns; do
-	printf '#!/bin/sh\necho "%s: skipped, NetworkManager manages the network"\n' \$cmd > "\$shim"/\$cmd
-	done
-	chmod +x "\$shim"/*
-	DEVDOPTS=\${DEVDOPTS:-udev} APKREPOSOPTS=\${APKREPOSOPTS:--c} \\
-		USEROPTS=\${USEROPTS:--a -g audio,input,video,netdev,plugdev,lpadmin} \\
-		KERNELOPTS=\${KERNELOPTS:-quiet $lsm} \\
-		PATH="\$shim:\$PATH" /usr/sbin/setup-alpine "\$@"
-	rc=\$?
-	rm -rf "\$shim"
-	exit \$rc
-	EOF
-
-	# setup-disk copies the live /etc to the new system with "lbu package -",
-	# and so would carry over the live user (with its known password), its
-	# home directory (setup-alpine adds every /home/* to lbu), its init script
-	# and GDM autologin. This shim drops those from the copy; the user created
-	# in setup-alpine's user step is the one to log in as.
-	makefile root:root 0755 "\$tmp"/usr/local/sbin/lbu <<'EOF'
-	#!/bin/sh
-	[ "\$*" = "package -" ] || exec /usr/sbin/lbu "\$@"
-	d=\$(mktemp -d) || exit
-	trap 'rm -rf "\$d"' EXIT
-	/usr/sbin/lbu package - > "\$d"/ovl.tar.gz || exit
-	mkdir "\$d"/root
-	tar -C "\$d"/root -xzf "\$d"/ovl.tar.gz || exit
-	tar -tzf "\$d"/ovl.tar.gz | grep -v -e '^etc/init\.d/live-user\$' -e '^etc/runlevels/[^/]*/live-user\$' \\
-	-e '^home/$LIVE_USER/' -e '^home/$LIVE_USER\$' > "\$d"/list
-	cd "\$d"/root || exit
-	strip() { awk "\$@" "\$f" > "\$f".new && cat "\$f".new > "\$f" && rm "\$f".new; }
-	for f in etc/passwd etc/passwd- etc/shadow etc/shadow-; do
-	[ -f "\$f" ] && strip -F: -v u='$LIVE_USER' '\$1 != u'
-	done
-	for f in etc/group etc/group-; do
-	[ -f "\$f" ] && strip -F: -v OFS=: -v u='$LIVE_USER' '\$1 == u { next } { n = split(\$4, m, ","); \$4 = ""; for (i = 1; i <= n; i++) if (m[i] != u) \$4 = \$4 (\$4 == "" ? "" : ",") m[i]; print }'
-	done
-	[ -f etc/gdm/custom.conf ] && sed -i '/^AutomaticLogin/d' etc/gdm/custom.conf
-	[ -f etc/apk/protected_paths.d/lbu.list ] && sed -i '\\:^+home/$LIVE_USER\$:d' etc/apk/protected_paths.d/lbu.list
-	tar -c --no-recursion -T "\$d"/list -z
-	EOF
-
-	# busybox adduser gives new users /bin/sh; give desktop users bash instead
-	# (system users, created with -S, and an explicit -s are left alone).
-	makefile root:root 0755 "\$tmp"/usr/local/sbin/adduser <<'EOF'
-	#!/bin/sh
-	for a; do
-	case \$a in -s|-[!-]*S*) exec /usr/sbin/adduser "\$@" ;; esac
-	done
-	exec /usr/sbin/adduser -s /bin/bash "\$@"
-	EOF
-
-	rc_add devfs sysinit
-	rc_add dmesg sysinit
-	rc_add modloop sysinit
-	rc_add udev sysinit
-	rc_add udev-trigger sysinit
-	rc_add udev-settle sysinit
-
-	rc_add modules boot
-	rc_add sysctl boot
-	rc_add hostname boot
-	rc_add bootmisc boot
-	rc_add syslog boot
-	rc_add apparmor boot
-	rc_add zram-init boot
-
-	rc_add firstboot default
-	rc_add udev-postmount default
-	rc_add cgroups default
-	rc_add dbus default
-	rc_add networkmanager default
-	rc_add chronyd default
-	rc_add openrc-settingsd default
-	rc_add bluetooth default
-	rc_add cupsd default
-	rc_add avahi-daemon default
-	rc_add nftables default
-	rc_add spice-vdagentd default
-	rc_add local default
-	rc_add live-user default
-	rc_add gdm default
-
-	rc_add mount-ro shutdown
-	rc_add killprocs shutdown
-	rc_add savecache shutdown
-
-	tar -c -C "\$tmp" etc usr | gzip -9n > "\$HOSTNAME".apkovl.tar.gz
-	GENEOF
-	chmod +x aports/scripts/genapkovl-gnomelive.sh
+	# genapkovl-gnomelive.sh reads the build settings from the .conf and the
+	# Flathub remote from the file next to it.
+	printf '%s=%s\n' LIVE_USER "$(shquote "$LIVE_USER")" \
+		LIVE_PASSWORD "$(shquote "$LIVE_PASSWORD")" \
+		AUTOLOGIN "$(shquote "$AUTOLOGIN")" \
+		LSM "$(shquote "$lsm")" \
+		WORLD "$(shquote "$world")" > aports/scripts/genapkovl-gnomelive.conf
+	install -m 0755 /genapkovl-gnomelive.sh aports/scripts/genapkovl-gnomelive.sh
 
 	# --- build ---------------------------------------------------------------
 	sh aports/scripts/mkimage.sh \
