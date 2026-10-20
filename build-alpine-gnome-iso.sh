@@ -118,8 +118,17 @@ builder_main() {
 	local aports_branch="${ALPINE_BRANCH#v}-stable"
 
 	cd /work
-	git clone --quiet --depth 1 --filter=blob:none --sparse \
-		--branch "$aports_branch" https://gitlab.alpinelinux.org/alpine/aports.git
+	# gitlab.alpinelinux.org rejects many datacenter IPs (HTTP 418, e.g. on
+	# GitHub Actions runners), so fall back to the official GitHub mirror.
+	local url
+	for url in https://gitlab.alpinelinux.org/alpine/aports.git \
+		https://github.com/alpinelinux/aports.git; do
+		rm -rf aports
+		git clone --quiet --depth 1 --filter=blob:none --sparse \
+			--branch "$aports_branch" "$url" aports && break
+		echo ">>> clone from $url failed" >&2
+	done
+	[[ -d aports/.git ]] || die "could not clone aports"
 	git -C aports sparse-checkout set scripts
 
 	# --- What setup-desktop gnome installs -----------------------------------
