@@ -1,0 +1,69 @@
+name: Build ISO
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - build-alpine-gnome-iso.sh
+      - .github/workflows/build-iso.yml
+  pull_request:
+    paths:
+      - build-alpine-gnome-iso.sh
+      - .github/workflows/build-iso.yml
+  workflow_dispatch:
+    inputs:
+      alpine_branch:
+        description: Alpine release branch, e.g. v3.24 (blank for latest stable)
+        required: false
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # The mkimage work directory plus the ISO need several GB; the stock
+      # runner image leaves too little free on / without this.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h /
+
+      - name: Build ISO
+        env:
+          CONTAINER: docker
+          ALPINE_BRANCH: ${{ inputs.alpine_branch }}
+          OUTDIR: ${{ github.workspace }}/out
+        run: ./build-alpine-gnome-iso.sh
+
+      - name: Checksum
+        working-directory: out
+        run: sha256sum *.iso | tee SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpine-gnome-iso
+          path: |
+            out/*.iso
+            out/SHA256SUMS
+          compression-level: 0
+          retention-days: 14
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/*.iso out/SHA256SUMS \
+            --title "$GITHUB_REF_NAME" --generate-notes
