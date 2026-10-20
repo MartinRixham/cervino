@@ -75,8 +75,8 @@ failed=0
 session_run "$user" "$pid" bash "$(realpath "$dir")/os-feature-tests.sh" < /dev/null || failed=$?
 
 # Logging out has to end the user's session and bring back GDM's login
-# screen: its own gnome-shell, running as gdm, holding the display (DRM
-# master) and answering on its D-Bus. This runs last, as it ends the session.
+# screen: its own gnome-shell, running as gdm, in seat0's active session and
+# answering on its D-Bus. This runs last, as it ends the session.
 logout_fail() {
 	echo "logout: $*" >&2
 	echo "--- processes of $user and gdm:"
@@ -125,16 +125,11 @@ t_logout_to_greeter() {
 		--method org.freedesktop.DBus.Peer.Ping > /dev/null < /dev/null ||
 		{ logout_fail "the login screen's gnome-shell does not answer on D-Bus"; return 1; }
 
-	# The greeter has to own the display, or the screen stays frozen on the
-	# old session. debugfs lists each DRM client and whether it is master.
-	mountpoint -q /sys/kernel/debug 2>/dev/null || mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null || :
-	clients=$(cat /sys/kernel/debug/dri/*/clients 2>/dev/null) || clients=
-	if [ -n "$clients" ]; then
-		echo "$clients" | awk -v p="$greeter" '$2 == p && $4 == "y" { found = 1 } END { exit !found }' ||
-			{ echo "--- DRM clients:"; echo "$clients"; logout_fail "the login screen is not DRM master"; return 1; }
-	else
-		echo "logout: no DRM client list in debugfs; not checking DRM master"
-	fi
+	# The login screen has to be seat0's active session, which elogind gives
+	# the display to, or the screen stays frozen on the old session.
+	active=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null) || active=
+	[ -n "$active" ] && [ "$(loginctl show-session "$active" -p Name --value 2>/dev/null)" = gdm ] ||
+		{ loginctl list-sessions --no-legend 2>&1; logout_fail "the login screen is not the active session on seat0 (active: ${active:-none})"; return 1; }
 	echo "[PASS] Logging out returns to the GDM login screen"
 }
 

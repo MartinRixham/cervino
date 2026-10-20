@@ -22,9 +22,11 @@ from a desktop distribution, and keeps it when installed to disk:
   collector writing to `/var/lib/coredump`
 - PipeWire as the sound server (in place of PulseAudio), `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
-- logging out without the logout dialog waiting on GNOME Shell (Alpine's
-  gnome-shell registers with gnome-session but never answers its
-  end-of-session queries; a session helper answers for it)
+- logging out without the logout dialog waiting on GNOME Shell, and back to
+  GDM's login screen (Alpine's gnome-shell is newer than its gnome-session
+  and GDM: it never answers gnome-session's end-of-session queries, and its
+  call registering the session with GDM fails, so GDM takes every logout for
+  a crashed session; a session helper does both for it)
 
 [`os-feature-tests.sh`](os-feature-tests.sh) checks all of this on a running
 system.
