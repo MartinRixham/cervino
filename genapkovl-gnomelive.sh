@@ -131,6 +131,7 @@ kernel.core_pattern = |/usr/local/libexec/coredump-handler %P %u %s %t
 EOF
 makefile root:root 0644 "$tmp"/etc/apk/protected_paths.d/lbu.list <<'EOF'
 +usr/local/libexec
++usr/share/gdm/greeter/autostart/gnome-shell-compat.desktop
 EOF
 makefile root:root 0755 "$tmp"/usr/local/libexec/coredump-handler <<'EOF'
 #!/bin/sh
@@ -165,7 +166,13 @@ EOF
 # - it calls GDM's RegisterSession without the a{sv} argument GDM 48 expects,
 #   so the call fails. GDM then takes the end of every session for a failure
 #   ("Session never registered, failing"): it logs the autologin user straight
-#   back in, and after a few such failures shows no login screen at all.
+#   back in, and after a few such failures shows no login screen at all. The
+#   login screen's own session is no different: when a user logs in through
+#   it, GDM restarts the "failed" login screen, which takes the seat from the
+#   new session and dies, until GDM gives up and the screen stays frozen.
+# The login screen's gnome-session only autostarts what is in GDM's greeter
+# directory, so the helper is listed there too; lbu.list takes that along to
+# installed systems.
 makefile root:root 0755 "$tmp"/usr/local/libexec/gnome-shell-compat <<'EOF'
 #!/usr/bin/gjs
 // Registers the session with GDM and answers gnome-session's end-of-session
@@ -208,7 +215,8 @@ bus.signal_subscribe(SM, `${SM}.ClientPrivate`, null, null, null, Gio.DBusSignal
 
 new GLib.MainLoop(null, false).run();
 EOF
-makefile root:root 0644 "$tmp"/etc/xdg/autostart/gnome-shell-compat.desktop <<'EOF'
+for dir in etc/xdg/autostart usr/share/gdm/greeter/autostart; do
+	makefile root:root 0644 "$tmp"/$dir/gnome-shell-compat.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=GNOME Shell compatibility helper
@@ -216,6 +224,7 @@ Exec=/usr/local/libexec/gnome-shell-compat
 OnlyShowIn=GNOME;
 NoDisplay=true
 EOF
+done
 
 # The SPICE agent needs uinput.
 makefile root:root 0644 "$tmp"/etc/modules-load.d/uinput.conf <<'EOF'

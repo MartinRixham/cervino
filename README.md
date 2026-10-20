@@ -23,10 +23,12 @@ from a desktop distribution, and keeps it when installed to disk:
 - PipeWire as the sound server (in place of PulseAudio), `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
 - logging out without the logout dialog waiting on GNOME Shell, and back to
-  GDM's login screen (Alpine's gnome-shell is newer than its gnome-session
+  GDM's login screen, and logging in through that screen without the new
+  session freezing (Alpine's gnome-shell is newer than its gnome-session
   and GDM: it never answers gnome-session's end-of-session queries, and its
-  call registering the session with GDM fails, so GDM takes every logout for
-  a crashed session; a session helper does both for it)
+  call registering the session with GDM fails, so GDM takes the end of every
+  session, the login screen's included, for a crash; a session helper, run
+  in user sessions and in the login screen, does both for it)
 
 [`os-feature-tests.sh`](os-feature-tests.sh) checks all of this on a running
 system.

@@ -125,6 +125,13 @@ t_logout_to_greeter() {
 		--method org.freedesktop.DBus.Peer.Ping > /dev/null < /dev/null ||
 		{ logout_fail "the login screen's gnome-shell does not answer on D-Bus"; return 1; }
 
+	# The login screen's session has to register with GDM too (through the
+	# gnome-shell-compat helper), or logging in through it fails: GDM takes
+	# the end of the login screen for a failure and keeps restarting it,
+	# taking the seat from the new session, whose screen then freezes.
+	proc_of gnome-shell-com "$gdm_uid" > /dev/null ||
+		{ logout_fail "the login screen runs no gnome-shell-compat helper to register it with GDM"; return 1; }
+
 	# The login screen has to be seat0's active session, which elogind gives
 	# the display to, or the screen stays frozen on the old session.
 	active=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null) || active=
