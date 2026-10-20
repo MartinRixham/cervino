@@ -12,7 +12,8 @@ user=tester
 uid=$(id -u "$user")
 
 leftover=$(awk -F: '$5 == "Live User" { print "user " $1 }' /etc/passwd)
-for f in /etc/init.d/live-user /etc/runlevels/*/live-user /home/*; do
+for f in /etc/init.d/live-user /etc/runlevels/*/live-user /etc/doas.d/90-live-user.conf \
+	/etc/polkit-1/rules.d/49-live-user.rules /home/*; do
 	[ -e "$f" ] || [ -L "$f" ] || continue
 	[ "$f" = /home/$user ] || leftover="$leftover $f"
 done

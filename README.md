@@ -58,7 +58,7 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 | `ALPINE_BRANCH` | latest stable                              | Alpine release branch, e.g. `v3.24`                                 |
 | `OUTDIR`        | `./out`                                    | Where the ISO is written                                            |
 | `LIVE_USER`     | `alpine`                                   | Desktop user created at boot                                        |
-| `LIVE_PASSWORD` | `alpine`                                   | That user's password                                                |
+| `LIVE_PASSWORD` | none                                       | That user's password; with none, doas and admin prompts don't ask   |
 | `AUTOLOGIN`     | `1`                                        | Set to `0` to stop at the GDM login screen instead of logging in    |
 | `BROWSER`       | `firefox`                                  | Browser package to install, as in `setup-desktop`                   |
 | `CONTAINER`     | `podman`, else `docker`                    | Container runtime to use                                            |
@@ -94,7 +94,10 @@ example:
 qemu-system-x86_64 -enable-kvm -m 8G -cdrom out/*.iso
 ```
 
-The live user is in the `wheel` group and can use `doas` to get root.
+The live user is in the `wheel` group and can use `doas` to get root. By
+default it has no password: the login and lock screens take an empty one, and
+`doas` and GNOME's administrator prompts let it through without asking. Set
+`LIVE_PASSWORD` to give it one, in which case they ask for that.
 
 ### Installing to disk
 

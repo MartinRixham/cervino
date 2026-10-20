@@ -27,7 +27,8 @@
 #   ALPINE_BRANCH   Alpine release branch, e.g. v3.24 (default: latest-stable)
 #   OUTDIR          where the ISO is written (default: ./out)
 #   LIVE_USER       desktop user created on boot (default: alpine)
-#   LIVE_PASSWORD   that user's password (default: alpine)
+#   LIVE_PASSWORD   that user's password (default: none; the user logs in,
+#                   unlocks the screen and uses doas and polkit without one)
 #   AUTOLOGIN       0 to stop at the GDM login screen instead of logging
 #                   LIVE_USER straight in to GNOME (default: 1)
 #   BROWSER         browser package, as setup-desktop (default: firefox)
@@ -41,7 +42,7 @@ set -euo pipefail
 ARCH=x86_64
 MIRROR=${MIRROR:-https://dl-cdn.alpinelinux.org/alpine}
 LIVE_USER=${LIVE_USER:-alpine}
-LIVE_PASSWORD=${LIVE_PASSWORD:-alpine}
+LIVE_PASSWORD=${LIVE_PASSWORD-}
 AUTOLOGIN=${AUTOLOGIN:-1}
 BROWSER=${BROWSER:-firefox}
 

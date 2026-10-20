@@ -214,8 +214,29 @@ flatpak remotes >/dev/null 2>&1 || true
 EOF
 
 # Stands in for setup-user: creates the desktop user before GDM starts.
-# Unquoted heredoc: $LIVE_USER and $LIVE_PASSWORD are filled in here, \$ is
-# left for the init script.
+# With no LIVE_PASSWORD the user has an empty password: GDM and the lock
+# screen accept it (Alpine's base-auth has nullok), but polkit's PAM stack
+# does not and doas would still ask, so the user gets a polkit rule and a
+# doas nopass rule instead (doas uses the last matching rule, hence 90-).
+# The rules are written here rather than shipped in the apkovl so that
+# rules.d keeps the ownership the polkit package gives it.
+if [ -n "$LIVE_PASSWORD" ]; then
+	password="echo '$LIVE_PASSWORD' | chpasswd"
+else
+	password=$(cat <<EOF
+passwd -d $LIVE_USER >/dev/null
+		echo 'permit nopass $LIVE_USER' > /etc/doas.d/90-live-user.conf
+		cat > /etc/polkit-1/rules.d/49-live-user.rules <<'RULE'
+polkit.addRule(function (action, subject) {
+	if (subject.user == "$LIVE_USER")
+		return polkit.Result.YES;
+});
+RULE
+EOF
+)
+fi
+# Unquoted heredoc: $LIVE_USER and the password commands are filled in
+# here, \$ is left for the init script.
 makefile root:root 0755 "$tmp"/etc/init.d/live-user <<EOF
 #!/sbin/openrc-run
 description="Create the live desktop user"
@@ -232,9 +253,9 @@ start() {
 		for g in audio video netdev input plugdev lpadmin wheel; do
 			addgroup $LIVE_USER \$g 2>/dev/null
 		done
-		echo '$LIVE_USER:$LIVE_PASSWORD' | chpasswd
 		mkdir -p /etc/doas.d
 		echo 'permit persist :wheel' > /etc/doas.d/20-wheel.conf
+		$password
 	fi
 	eend 0
 }
@@ -280,10 +301,11 @@ exit \$rc
 EOF
 
 # setup-disk copies the live /etc to the new system with "lbu package -",
-# and so would carry over the live user (with its known password), its
-# home directory (setup-alpine adds every /home/* to lbu), its init script
-# and GDM autologin. This shim drops those from the copy; the user created
-# in setup-alpine's user step is the one to log in as.
+# and so would carry over the live user (with its known or empty password,
+# and its doas and polkit rules), its home directory (setup-alpine adds
+# every /home/* to lbu), its init script and GDM autologin. This shim
+# drops those from the copy; the user created in setup-alpine's user step
+# is the one to log in as.
 # Unquoted heredoc: $LIVE_USER is filled in here.
 makefile root:root 0755 "$tmp"/usr/local/sbin/lbu <<EOF
 #!/bin/sh
@@ -294,6 +316,7 @@ trap 'rm -rf "\$d"' EXIT
 mkdir "\$d"/root
 tar -C "\$d"/root -xzf "\$d"/ovl.tar.gz || exit
 tar -tzf "\$d"/ovl.tar.gz | grep -v -e '^etc/init\.d/live-user\$' -e '^etc/runlevels/[^/]*/live-user\$' \\
+	-e '^etc/doas\.d/90-live-user\.conf\$' -e '^etc/polkit-1/rules\.d/49-live-user\.rules\$' \\
 	-e '^home/$LIVE_USER/' -e '^home/$LIVE_USER\$' > "\$d"/list
 cd "\$d"/root || exit
 strip() { awk "\$@" "\$f" > "\$f".new && cat "\$f".new > "\$f" && rm "\$f".new; }
