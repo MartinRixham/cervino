@@ -324,6 +324,118 @@ t_app_store_sandbox() {
     return 1
 }
 
+t_logout_not_blocked_by_shell() {
+    # Starts a real logout and cancels it again. gnome-session asks every
+    # registered client whether the session may end, and lists a client that
+    # does not answer within a second as a "Not responding" inhibitor, so the
+    # logout dialog waits out its 60 s countdown. This registers its own client
+    # that refuses the logout (so the session never actually ends), reads the
+    # inhibitors while the dialog is up, then presses Escape on the dialog
+    # through Mutter's RemoteDesktop API, which cancels the logout.
+    have gjs || { echo "gjs missing"; return 2; }
+    dbus_name_available --session org.gnome.SessionManager || { echo "not in a GNOME session"; return 2; }
+    dbus_name_available --session org.gnome.Mutter.RemoteDesktop || { echo "no Mutter RemoteDesktop API to cancel the logout"; return 2; }
+    local code
+    code=$(cat <<'EOF'
+const {Gio, GLib} = imports.gi;
+const System = imports.system;
+const bus = Gio.DBus.session;
+const SM = 'org.gnome.SessionManager';
+const RD = 'org.gnome.Mutter.RemoteDesktop';
+const KEY_Escape = 0xff1b;
+
+function call(dest, path, iface, method, args = null, ret = null) {
+    const reply = bus.call_sync(dest, path, iface, method, args,
+        ret ? new GLib.VariantType(ret) : null, Gio.DBusCallFlags.NONE, 10000, null);
+    return reply.deepUnpack();
+}
+
+function spin(ms, until = () => false) {
+    const ctx = GLib.MainContext.default();
+    const end = GLib.get_monotonic_time() + ms * 1000;
+    while (!until() && GLib.get_monotonic_time() < end) {
+        if (!ctx.iteration(false))
+            GLib.usleep(10000);
+    }
+    return until();
+}
+
+let rdSession;
+try {
+    [rdSession] = call(RD, '/org/gnome/Mutter/RemoteDesktop', RD, 'CreateSession', null, '(o)');
+    call(RD, rdSession, `${RD}.Session`, 'Start');
+} catch (e) {
+    print(`cannot start a RemoteDesktop session to cancel the logout: ${e.message}`);
+    System.exit(2);
+}
+
+const [client] = call(SM, '/org/gnome/SessionManager', SM, 'RegisterClient',
+    new GLib.Variant('(ss)', ['os-feature-tests', '']), '(o)');
+let queried = false, canceled = false, ended = false;
+bus.signal_subscribe(null, `${SM}.ClientPrivate`, null, client, null, Gio.DBusSignalFlags.NONE,
+    (_c, _sender, _path, _iface, signal) => {
+        if (signal === 'QueryEndSession') {
+            queried = true;
+            call(SM, client, `${SM}.ClientPrivate`, 'EndSessionResponse',
+                new GLib.Variant('(bs)', [false, 'os-feature-tests: logout probe']));
+        } else if (signal === 'CancelEndSession') {
+            canceled = true;
+        } else if (signal === 'EndSession') {
+            ended = true;
+        }
+    });
+
+function cleanup() {
+    try {
+        call(SM, '/org/gnome/SessionManager', SM, 'UnregisterClient', new GLib.Variant('(o)', [client]));
+    } catch {}
+    try {
+        call(RD, rdSession, `${RD}.Session`, 'Stop');
+    } catch {}
+}
+
+call(SM, '/org/gnome/SessionManager', SM, 'Logout', new GLib.Variant('(u)', [0]));
+if (!spin(5000, () => queried)) {
+    print('gnome-session did not query clients on logout');
+    cleanup();
+    System.exit(1);
+}
+// Unanswered queries turn into inhibitors after 1 s; then the dialog opens
+spin(3000);
+
+const blockers = [];
+const [inhibitors] = call(SM, '/org/gnome/SessionManager', SM, 'GetInhibitors', null, '(ao)');
+for (const path of inhibitors) {
+    const iface = `${SM}.Inhibitor`;
+    try {
+        const [appId] = call(SM, path, iface, 'GetAppId', null, '(s)');
+        const [reason] = call(SM, path, iface, 'GetReason', null, '(s)');
+        const [flags] = call(SM, path, iface, 'GetFlags', null, '(u)');
+        if (flags & 1 && /gnome-shell|org\.gnome\.Shell/i.test(appId))
+            blockers.push(`${appId} (${reason})`);
+    } catch {}
+}
+
+for (let i = 0; i < 5 && !canceled && !ended; i++) {
+    for (const state of [true, false])
+        call(RD, rdSession, `${RD}.Session`, 'NotifyKeyboardKeysym', new GLib.Variant('(ub)', [KEY_Escape, state]));
+    spin(2000, () => canceled || ended);
+}
+cleanup();
+
+if (!canceled) {
+    print('could not cancel the logout dialog: the session may log out');
+    System.exit(1);
+}
+if (blockers.length > 0) {
+    print(`logout blocked by GNOME Shell: ${blockers.join(', ')}`);
+    System.exit(1);
+}
+EOF
+)
+    timeout 60 gjs -c "$code"
+}
+
 t_spice_agent() {
     [[ -e /dev/virtio-ports/com.redhat.spice.0 ]] || { echo "not a SPICE VM"; return 2; }
     proc_running spice-vdagent spice-vdagentd ||
@@ -370,6 +482,7 @@ run_test "Audio output device available"               t_audio_sink
 run_test "xdg-open available"                          t_xdg_open
 run_test "Sandboxed app store (Flatpak or Snap)"       t_app_store_sandbox
 run_test "SPICE guest agent (VM clipboard/resize)"     t_spice_agent
+run_test "Logout not blocked by GNOME Shell"           t_logout_not_blocked_by_shell
 
 echo
 printf 'Passed: %d  Failed: %d  Skipped: %d\n' "$PASS" "$FAIL" "$SKIP"
