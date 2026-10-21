@@ -94,6 +94,38 @@ t_privilege_escalation() {
         { echo "$tool present but user is not in an admin group"; return 1; }
 }
 
+# Admin users get root through sudo/doas, so root itself should not be able
+# to log in with a password. /etc/shadow is only readable by root, so a user
+# asks AccountsService (which reads it as root) instead; it only counts a
+# hash starting with "!" as locked, not "*".
+t_root_locked() {
+    local hash obj
+    if [[ -r /etc/shadow ]]; then
+        hash=$(awk -F: '$1 == "root" { print $2 }' /etc/shadow)
+        case $hash in
+            '!'* | '*'*) return 0 ;;
+            '') echo "root has an empty password" ;;
+            *) echo "root has a password" ;;
+        esac
+        return 1
+    fi
+    have gdbus || { echo "cannot read /etc/shadow and no gdbus to ask AccountsService"; return 1; }
+    obj=$(gdbus call --system --dest org.freedesktop.Accounts \
+        --object-path /org/freedesktop/Accounts \
+        --method org.freedesktop.Accounts.FindUserByName root 2>/dev/null) ||
+        { echo "cannot read /etc/shadow and AccountsService does not answer"; return 1; }
+    obj=${obj#*\'} obj=${obj%%\'*}
+    gdbus call --system --dest org.freedesktop.Accounts --object-path "$obj" \
+        --method org.freedesktop.DBus.Properties.Get org.freedesktop.Accounts.User Locked 2>/dev/null |
+        grep -q true && return 0
+    case $(gdbus call --system --dest org.freedesktop.Accounts --object-path "$obj" \
+        --method org.freedesktop.DBus.Properties.Get org.freedesktop.Accounts.User PasswordMode 2>/dev/null) in
+        *' 2>'*) echo "root has an empty password" ;;
+        *) echo "root's password is not locked" ;;
+    esac
+    return 1
+}
+
 t_cli_tools() {
     local missing=()
     have file                          || missing+=("file")
@@ -397,6 +429,7 @@ t_spice_agent() {
 echo "== Shell and command line =="
 run_test "Full-featured interactive login shell"       t_interactive_shell
 run_test "Privilege escalation for admin users"        t_privilege_escalation
+run_test "Root password login locked"                  t_root_locked
 run_test "Standard CLI tools installed"                t_cli_tools
 run_test "Manual pages installed"                      t_man_pages
 run_test "Command-not-found handler in shell"          t_command_not_found

@@ -105,16 +105,16 @@ wait_for() {
 	die "[$vm] timed out after $2s waiting for /$re/"
 }
 
-# vm_run COMMAND SECONDS: logs in as root on the serial console, runs the
-# command there and sets $rc to its exit status.
+# vm_run USER COMMAND SECONDS: logs in as USER (with an empty password) on
+# the serial console, runs the command there and sets $rc to its exit status.
 vm_run() {
 	wait_for 'login: ' 1200
-	send root
-	wait_for '~# ' 120
+	send "$1"
+	wait_for '~[#$] ' 120
 	# The marker is printed with printf so that the echoed command line
 	# cannot match it.
-	send "$1; printf '@@RC=%s@@\\n' \$?"
-	wait_for '@@RC=[0-9]+@@' "$2"
+	send "$2; printf '@@RC=%s@@\\n' \$?"
+	wait_for '@@RC=[0-9]+@@' "$3"
 	rc=${match//[!0-9]/}
 	echo
 	echo ">>> [$vm] exit status $rc"
@@ -146,12 +146,14 @@ cmdline=$(awk '$1 == "APPEND" { $1 = ""; print; exit }' "$WORKDIR"/syslinux.cfg)
 vm_start install -cdrom "$ISO" \
 	-kernel "$WORKDIR"/vmlinuz-lts -initrd "$WORKDIR"/initramfs-lts \
 	-append "$cmdline console=ttyS0,115200"
-vm_run "$unpack_share && /tmp/ci/ci/guest/install.sh" 3600
+vm_run root "$unpack_share && /tmp/ci/ci/guest/install.sh" 3600
 vm_stop
 ((rc == 0)) || die "installing with setup-alpine failed"
 
 vm_start test
-vm_run "$unpack_share && /tmp/ci/ci/guest/test.sh" 1500
+# The installed system's root is locked, so log in as the user created
+# during the install, whom install.sh lets use doas without a password.
+vm_run tester "doas sh -c '$unpack_share && /tmp/ci/ci/guest/test.sh'" 1500
 vm_stop
 ((rc == 0)) || die "$rc test(s) failed"
 echo ">>> All OS feature tests passed"

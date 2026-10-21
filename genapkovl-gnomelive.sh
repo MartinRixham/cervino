@@ -313,8 +313,10 @@ EOF
 # stopping any, skips the interface and DNS steps, keeps udev, which GNOME
 # needs, and defaults community to enabled. It also defaults the user step
 # to the plugdev (network settings) and lpadmin (printers) groups and the
-# installed kernel command line to one with AppArmor enabled. An answer
-# file passed with -f still overrides these defaults.
+# installed kernel command line to one with AppArmor enabled, and skips
+# the root password (-e): the lbu shim below locks root on the installed
+# system, whose admin user gets root through doas. An answer file passed
+# with -f still overrides these defaults.
 # The shims in the temporary directory only need to work until
 # setup-alpine sources /etc/profile, which resets PATH; the lbu and
 # adduser shims, used after that, live in /usr/local/sbin, which
@@ -337,7 +339,7 @@ chmod +x "\$shim"/*
 DEVDOPTS=\${DEVDOPTS:-udev} APKREPOSOPTS=\${APKREPOSOPTS:--c} \\
 	USEROPTS=\${USEROPTS:--a -g audio,input,video,netdev,plugdev,lpadmin} \\
 	KERNELOPTS=\${KERNELOPTS:-quiet $LSM} \\
-	PATH="\$shim:\$PATH" /usr/sbin/setup-alpine "\$@"
+	PATH="\$shim:\$PATH" /usr/sbin/setup-alpine -e "\$@"
 rc=\$?
 rm -rf "\$shim"
 exit \$rc
@@ -362,7 +364,10 @@ EOF
 # and its doas and polkit rules), its home directory (setup-alpine adds
 # every /home/* to lbu), its init script and GDM autologin. This shim
 # drops those from the copy; the user created in setup-alpine's user step
-# is the one to log in as.
+# is the one to log in as. If that user is an admin (in wheel, so doas lets
+# them in), root's password is locked in the copy, as setup-alpine was told
+# not to set one; without an admin, root is left as it is so the system can
+# still be logged in to.
 # Unquoted heredoc: $LIVE_USER is filled in here.
 makefile root:root 0755 "$tmp"/usr/local/sbin/lbu <<EOF
 #!/bin/sh
@@ -383,6 +388,11 @@ done
 for f in etc/group etc/group-; do
 	[ -f "\$f" ] && strip -F: -v OFS=: -v u='$LIVE_USER' '\$1 == u { next } { n = split(\$4, m, ","); \$4 = ""; for (i = 1; i <= n; i++) if (m[i] != u) \$4 = \$4 (\$4 == "" ? "" : ",") m[i]; print }'
 done
+if [ -f etc/group ] && awk -F: '\$1 == "wheel" && \$4 != "" { found = 1 } END { exit !found }' etc/group; then
+	for f in etc/shadow etc/shadow-; do
+		[ -f "\$f" ] && strip -F: -v OFS=: '\$1 == "root" { \$2 = "!" } { print }'
+	done
+fi
 [ -f etc/gdm/custom.conf ] && sed -i '/^AutomaticLogin/d' etc/gdm/custom.conf
 [ -f etc/apk/protected_paths.d/lbu.list ] && sed -i '\\:^+home/$LIVE_USER\$:d' etc/apk/protected_paths.d/lbu.list
 tar -c --no-recursion -T "\$d"/list -z

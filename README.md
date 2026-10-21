@@ -125,6 +125,9 @@ puts a wrapper in front of it that:
   change network settings and manage printers, and gives them bash as the
   login shell,
 - enables AppArmor on the installed system's kernel command line,
+- skips the root password question and locks root's password on the
+  installed system when you create an admin user (the default), who gets
+  root with `doas` instead,
 - leaves the live session out of the installed system.
 
 An answer file passed with `-f` still overrides these defaults.
