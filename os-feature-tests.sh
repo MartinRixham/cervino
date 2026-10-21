@@ -461,6 +461,35 @@ EOF
     timeout 60 gjs -c "$code"
 }
 
+t_video_acceleration() {
+    # VA-API is available when libva and at least one VA driver are
+    # installed. Only a GPU whose kernel driver has VA support (Intel, AMD,
+    # NVIDIA via nouveau) must also answer vainfo: a VM without GPU access has
+    # no render node, or one (virtio-gpu, ...) that VA-API cannot use.
+    local lib drv node kdrv drivers=() bad=()
+    for lib in /usr/lib/libva.so.2 /usr/lib64/libva.so.2 /usr/lib/*-linux-gnu/libva.so.2; do
+        [[ -e $lib ]] && break
+        lib=
+    done
+    [[ -n $lib ]] || { echo "libva not installed"; return 1; }
+    for drv in /usr/lib/dri/*_drv_video.so /usr/lib64/dri/*_drv_video.so \
+               /usr/lib/*-linux-gnu/dri/*_drv_video.so; do
+        [[ -e $drv ]] && drivers+=("$(basename "$drv" _drv_video.so)")
+    done
+    ((${#drivers[@]} > 0)) || { echo "no VA-API drivers installed"; return 1; }
+    for node in /dev/dri/renderD*; do
+        [[ -e $node ]] || continue
+        kdrv=$(basename "$(readlink -f "/sys/class/drm/${node##*/}/device/driver")")
+        case $kdrv in
+            i915 | xe | amdgpu | radeon | nouveau) ;;
+            *) continue ;;
+        esac
+        have vainfo || { echo "vainfo missing"; return 1; }
+        timeout 20 vainfo --display drm --device "$node" >/dev/null 2>&1 || bad+=("$node ($kdrv)")
+    done
+    ((${#bad[@]} == 0)) || { echo "VA-API does not work on ${bad[*]}"; return 1; }
+}
+
 t_spice_agent() {
     [[ -e /dev/virtio-ports/com.redhat.spice.0 ]] || { echo "not a SPICE VM"; return 2; }
     proc_running spice-vdagent spice-vdagentd ||
@@ -507,6 +536,7 @@ run_test "Audio output device available"               t_audio_sink
 run_test "xdg-open available"                          t_xdg_open
 run_test "Sandboxed app store (Flatpak or Snap)"       t_app_store_sandbox
 run_test "Distribution packages in GNOME Software"     t_app_store_distro_packages
+run_test "VA-API video acceleration available"         t_video_acceleration
 run_test "SPICE guest agent (VM clipboard/resize)"     t_spice_agent
 run_test "Logout not blocked by GNOME Shell"           t_logout_not_blocked_by_shell
 
