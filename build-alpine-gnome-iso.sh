@@ -5,7 +5,7 @@
 # Builds an x86_64 ISO that is Alpine's "standard" ISO plus everything that
 # `setup-desktop gnome` would install and enable, so the live system boots
 # straight to the GNOME desktop without running setup-alpine first. On top
-# of that it adds and configures what os-feature-tests.sh expects of a
+# of that it adds and configures what test/features.sh expects of a
 # desktop (bash, NetworkManager, PipeWire, CUPS, AppArmor, Flatpak, ...),
 # both on the live system and on systems installed from it.
 #
@@ -148,7 +148,7 @@ builder_main() {
 	[[ -n $gnome_deps ]] || die "could not resolve gnome dependencies"
 
 	# --- Desktop features on top of that ------------------------------------
-	# What os-feature-tests.sh checks for: a full shell and the usual CLI
+	# What test/features.sh checks for: a full shell and the usual CLI
 	# tools, man pages, a UTF-8 locale, spell checking, emoji and CJK fonts,
 	# NetworkManager, NTP, the hostname1/timedate1/locale1 D-Bus services,
 	# Bluetooth, printing, mDNS, a firewall, power profiles, AppArmor, zram

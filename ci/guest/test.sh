@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs as root on the installed system: checks that the live session was
 # left behind, logs the user created during the install in to GNOME, then
-# runs os-feature-tests.sh as that user with the session's environment
+# runs test/features.sh as that user with the session's environment
 # (taken from gnome-shell), as if from a terminal in the desktop. Last, it
 # logs the user out and checks that GDM's login screen comes back. Exits with
 # the number of failed tests.
@@ -71,7 +71,7 @@ until user_proc pipewire-pulse >/dev/null || [ "$i" -ge 60 ]; do
 done
 sleep 15
 
-# Results are printed as os-feature-tests.sh prints its own: [PASS] or
+# Results are printed as test/features.sh prints its own: [PASS] or
 # [FAIL] and the reason for a failure indented below it, in colour on a
 # terminal, then the counts of all the tests together.
 if [ -t 1 ]; then
@@ -96,10 +96,10 @@ out=$(mktemp)
 {
 	rc=0
 	# Its output goes through tee, so it is told to colour it.
-	session_run "$user" "$pid" env $color bash "$(realpath "$dir")/os-feature-tests.sh" < /dev/null || rc=$?
+	session_run "$user" "$pid" env $color bash "$(realpath "$dir")/test/features.sh" < /dev/null || rc=$?
 	echo "$rc" > "$out".rc
 } | tee "$out"
-# os-feature-tests.sh ends with "Passed: n  Failed: n  Skipped: n" and exits
+# test/features.sh ends with "Passed: n  Failed: n  Skipped: n" and exits
 # with the number of failures.
 counts=$(sed -n 's/^Passed: \([0-9]*\)  Failed: \([0-9]*\)  Skipped: \([0-9]*\)$/\1 \2 \3/p' "$out" | tail -n 1)
 rc=$(cat "$out".rc)

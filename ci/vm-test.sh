@@ -8,13 +8,13 @@
 #      setup-alpine (through the ISO's wrapper, as a user would)
 #   2. test:    boots the installed system into GNOME, logged in as the
 #               user created during the install, and runs
-#               os-feature-tests.sh in that desktop session, then logs
+#               test/features.sh in that desktop session, then logs
 #               out and checks that GDM's login screen comes back
 #
 # Exits non-zero if either stage fails or any test fails. The serial console
 # output of each boot is streamed to stdout and kept in $WORKDIR/<stage>.log.
 #
-# The guest gets os-feature-tests.sh and ci/guest/ as a tar archive on a
+# The guest gets test/ and ci/guest/ as a tar archive on a
 # second virtual disk, /dev/vdb.
 #
 # Environment overrides:
@@ -130,7 +130,7 @@ mkdir -p "$WORKDIR"
 rm -f "$WORKDIR"/*.log "$WORKDIR"/disk.qcow2
 qemu-img create -q -f qcow2 "$WORKDIR"/disk.qcow2 32G
 tar -C "$REPO" -cf "$WORKDIR"/share.tar --owner=0 --group=0 \
-	os-feature-tests.sh ci/guest
+	test ci/guest
 
 # The ISO's boot loaders have no serial console, so boot its kernel and
 # initramfs directly, with its own command line plus a serial console; the

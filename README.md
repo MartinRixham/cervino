@@ -34,7 +34,7 @@ from a desktop distribution, and keeps it when installed to disk:
   session, the login screen's included, for a crash; a session helper, run
   in user sessions and in the login screen, does both for it)
 
-[`os-feature-tests.sh`](os-feature-tests.sh) checks all of this on a running
+[`test/features.sh`](test/features.sh) checks all of this on a running
 system.
 
 ## Requirements
@@ -83,7 +83,7 @@ publishes the ISO as a GitHub release.
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
 virtual disk with `setup-alpine`, checks that nothing of the live session
-was copied to the installed system, runs `os-feature-tests.sh` in the
+was copied to the installed system, runs `test/features.sh` in the
 installed user's GNOME session, and finally logs out and checks that GDM's
 login screen comes back. The build fails, and no release is
 published, unless every test passes. To run the same test locally (it needs
