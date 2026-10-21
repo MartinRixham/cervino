@@ -2,7 +2,8 @@
 # Runs as root on the installed system: checks that the live session was
 # left behind, logs the user created during the install in to GNOME, then
 # runs os-feature-tests.sh as that user with the session's environment
-# (taken from gnome-shell), as if from a terminal in the desktop. Last, it
+# (taken from gnome-shell), as if from a terminal in the desktop, and checks
+# that the session uses the keyboard layout chosen in setup-alpine. Last, it
 # logs the user out and checks that GDM's login screen comes back. Exits with
 # the number of failed tests.
 
@@ -73,6 +74,22 @@ sleep 15
 
 failed=0
 session_run "$user" "$pid" bash "$(realpath "$dir")/os-feature-tests.sh" < /dev/null || failed=$?
+
+# The keyboard layout chosen in setup-alpine (KEYMAPOPTS in install.sh) has
+# to be the user's only input source in GNOME.
+keymap=gb
+t_keyboard_layout() {
+	sources=$(session_run "$user" "$pid" gsettings get org.gnome.desktop.input-sources sources < /dev/null) ||
+		sources=
+	if [ "$sources" != "[('xkb', '$keymap')]" ]; then
+		echo "GNOME's input sources are ${sources:-unreadable}, not the layout chosen in setup-alpine ($keymap) alone" >&2
+		echo "[FAIL] GNOME uses the keyboard layout chosen in setup-alpine"
+		return 1
+	fi
+	echo "[PASS] GNOME uses the keyboard layout chosen in setup-alpine"
+}
+
+t_keyboard_layout || failed=$((failed + 1))
 
 # Logging out has to end the user's session and bring back GDM's login
 # screen: its own gnome-shell, running as gdm, in seat0's active session and
