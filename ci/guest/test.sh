@@ -72,36 +72,70 @@ until user_proc pipewire-pulse >/dev/null || [ "$i" -ge 60 ]; do
 done
 sleep 15
 
-failed=0
-session_run "$user" "$pid" bash "$(realpath "$dir")/os-feature-tests.sh" < /dev/null || failed=$?
+# Results are printed as os-feature-tests.sh prints its own: [PASS] or
+# [FAIL] and the reason for a failure indented below it, in colour on a
+# terminal, then the counts of all the tests together.
+if [ -t 1 ]; then
+	C_PASS=$(printf '\033[32m') C_FAIL=$(printf '\033[31m') C_OFF=$(printf '\033[0m')
+	color=FORCE_COLOR=1
+else
+	C_PASS= C_FAIL= C_OFF= color=
+fi
+passed=0 failed=0
+pass() {
+	passed=$((passed + 1))
+	printf '%s[PASS]%s %s\n' "$C_PASS" "$C_OFF" "$1"
+}
+# fail DESCRIPTION REASON
+fail() {
+	failed=$((failed + 1))
+	printf '%s[FAIL]%s %s\n' "$C_FAIL" "$C_OFF" "$1"
+	printf '       %s\n' "$2"
+}
+
+out=$(mktemp)
+{
+	rc=0
+	# Its output goes through tee, so it is told to colour it.
+	session_run "$user" "$pid" env $color bash "$(realpath "$dir")/os-feature-tests.sh" < /dev/null || rc=$?
+	echo "$rc" > "$out".rc
+} | tee "$out"
+# os-feature-tests.sh ends with "Passed: n  Failed: n  Skipped: n" and exits
+# with the number of failures.
+counts=$(sed -n 's/^Passed: \([0-9]*\)  Failed: \([0-9]*\)  Skipped: \([0-9]*\)$/\1 \2 \3/p' "$out" | tail -n 1)
+rc=$(cat "$out".rc)
+rm -f "$out" "$out".rc
+# shellcheck disable=SC2086
+set -- ${counts:-0 0 0}
+passed=$1 failed=$2 skipped=$3
+[ "$rc" -le "$failed" ] || failed=$rc
+
+echo
+echo "== Installed system =="
 
 # The keyboard layout chosen in setup-alpine (KEYMAPOPTS in install.sh) has
 # to be the user's only input source in GNOME.
 keymap=gb
 t_keyboard_layout() {
+	desc="GNOME uses the keyboard layout chosen in setup-alpine"
 	sources=$(session_run "$user" "$pid" gsettings get org.gnome.desktop.input-sources sources < /dev/null) ||
 		sources=
-	if [ "$sources" != "[('xkb', '$keymap')]" ]; then
-		echo "GNOME's input sources are ${sources:-unreadable}, not the layout chosen in setup-alpine ($keymap) alone" >&2
-		echo "[FAIL] GNOME uses the keyboard layout chosen in setup-alpine"
-		return 1
-	fi
-	echo "[PASS] GNOME uses the keyboard layout chosen in setup-alpine"
+	[ "$sources" = "[('xkb', '$keymap')]" ] ||
+		{ fail "$desc" "input sources are ${sources:-unreadable}, not $keymap alone"; return; }
+	pass "$desc"
 }
 
-t_keyboard_layout || failed=$((failed + 1))
+t_keyboard_layout
 
 # Logging out has to end the user's session and bring back GDM's login
 # screen: its own gnome-shell, running as gdm, in seat0's active session and
 # answering on its D-Bus. This runs last, as it ends the session.
 logout_fail() {
-	echo "logout: $*" >&2
+	fail "Logging out returns to the GDM login screen" "$*"
 	echo "--- processes of $user and gdm:"
 	ps -o pid,user,args 2>/dev/null | awk -v u="$user" '$2 == u || $2 == "gdm"'
 	echo "--- /var/log/messages since the logout:"
 	tail -n +"$((log_lines + 1))" /var/log/messages 2>/dev/null | tail -n 100
-	echo "[FAIL] Logging out returns to the GDM login screen"
-	return 1
 }
 
 t_logout_to_greeter() {
@@ -153,9 +187,12 @@ t_logout_to_greeter() {
 	# the display to, or the screen stays frozen on the old session.
 	active=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null) || active=
 	[ -n "$active" ] && [ "$(loginctl show-session "$active" -p Name --value 2>/dev/null)" = gdm ] ||
-		{ loginctl list-sessions --no-legend 2>&1; logout_fail "the login screen is not the active session on seat0 (active: ${active:-none})"; return 1; }
-	echo "[PASS] Logging out returns to the GDM login screen"
+		{ logout_fail "the login screen is not the active session on seat0 (active: ${active:-none})"; loginctl list-sessions --no-legend 2>&1; return 1; }
+	pass "Logging out returns to the GDM login screen"
 }
 
-t_logout_to_greeter || failed=$((failed + 1))
+t_logout_to_greeter || true
+
+echo
+printf 'All tests: Passed: %d  Failed: %d  Skipped: %d\n' "$passed" "$failed" "$skipped"
 exit "$failed"

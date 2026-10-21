@@ -84,7 +84,8 @@ After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
 virtual disk with `setup-alpine`, checks that nothing of the live session
 was copied to the installed system, runs `os-feature-tests.sh` in the
-installed user's GNOME session, and finally logs out and checks that GDM's
+installed user's GNOME session, checks that GNOME uses the keyboard layout
+chosen in `setup-alpine`, and finally logs out and checks that GDM's
 login screen comes back. The build fails, and no release is
 published, unless every test passes. To run the same test locally (it needs
 `qemu-system-x86_64`, `xorriso` and access to `/dev/kvm`):
@@ -125,6 +126,8 @@ puts a wrapper in front of it that:
   change network settings and manage printers, and gives them bash as the
   login shell,
 - enables AppArmor on the installed system's kernel command line,
+- gives GNOME and the login screen the keyboard layout you pick in the keymap
+  step (setup-alpine on its own only sets the console's),
 - leaves the live session out of the installed system.
 
 An answer file passed with `-f` still overrides these defaults.
@@ -153,8 +156,8 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      it contains `/etc/apk/world`, the GDM config, the desktop features'
      configuration, OpenRC runlevels (udev in place of mdev, plus `cgroups`,
      `dbus`, `gdm` and the desktop features' services), a `live-user` init
-     script, and the `setup-alpine` wrapper with its `lbu` and `adduser`
-     shims.
+     script, and the `setup-alpine` wrapper with its `setup-keymap`, `lbu`
+     and `adduser` shims.
 4. At boot the initramfs unpacks the apkovl, installs everything in its
    `/etc/apk/world` from the disc into the RAM root, and OpenRC starts udev,
    dbus, gdm and so on just as `setup-desktop` would have configured them.

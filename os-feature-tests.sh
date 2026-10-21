@@ -6,7 +6,8 @@ PASS=0
 FAIL=0
 SKIP=0
 
-if [[ -t 1 ]]; then
+# FORCE_COLOR: colour even when not writing to a terminal
+if [[ -t 1 || -n ${FORCE_COLOR:-} ]]; then
     C_PASS=$'\e[32m' C_FAIL=$'\e[31m' C_SKIP=$'\e[33m' C_OFF=$'\e[0m'
 else
     C_PASS='' C_FAIL='' C_SKIP='' C_OFF=''
@@ -316,26 +317,25 @@ t_xdg_open() {
 }
 
 t_app_store_sandbox() {
-    if have flatpak && [[ -n $(flatpak remotes --columns=name 2>/dev/null) ]]; then
-        return 0
-    fi
-    have snap && proc_running snapd && return 0
-    echo "no Flatpak remote configured and no snapd"
-    return 1
+    have flatpak || { echo "Flatpak not installed"; return 1; }
+    [[ -n $(flatpak remotes --columns=name 2>/dev/null) ]] || { echo "no Flatpak remote configured"; return 1; }
 }
 
 t_app_store_distro_packages() {
     # GNOME Software lists the distribution's packages through a packaging
     # plugin (PackageKit, apk, ...) and the distribution's AppStream catalog.
     # gnome-software-cmd runs the same plugins as the app, so a search there
-    # finds what a search in the app would.
+    # finds what a search in the app would. Before searching it refreshes
+    # every plugin's metadata, which the app does in the background; fwupd's
+    # (firmware from LVFS, not packages) can take minutes to fail when LVFS
+    # is slow, so that plugin is left out.
     have gnome-software || { echo "GNOME Software not installed"; return 2; }
     dbus_name_available --session org.gnome.SessionManager || { echo "not in a GNOME session"; return 2; }
     local cmd out why
     cmd=$(first_have /usr/libexec/gnome-software-cmd /usr/lib/gnome-software/gnome-software-cmd) ||
         { echo "no gnome-software-cmd"; return 2; }
     # --verbose logs to stdout too, which shows why a plugin failed
-    out=$(timeout 120 "$cmd" --verbose --show-results --refine-flags=origin search gimp 2>&1)
+    out=$(timeout 120 "$cmd" --verbose --plugin-blocklist=fwupd --show-results --refine-flags=origin search gimp 2>&1)
     # apk-polkit reports an up-to-date index as an error: not the cause
     why=$(grep -Eo "Failed to (refresh|setup) plugin .*" <<<"$out" | grep -v "file is unchanged" | head -n1)
     grep -Eq '^bundle-kind: +package$' <<<"$out" && return 0
@@ -534,7 +534,7 @@ echo "== Desktop integration =="
 run_test "PipeWire is the sound server"                t_pipewire_audio
 run_test "Audio output device available"               t_audio_sink
 run_test "xdg-open available"                          t_xdg_open
-run_test "Sandboxed app store (Flatpak or Snap)"       t_app_store_sandbox
+run_test "Sandboxed app store (Flatpak)"               t_app_store_sandbox
 run_test "Distribution packages in GNOME Software"     t_app_store_distro_packages
 run_test "VA-API video acceleration available"         t_video_acceleration
 run_test "SPICE guest agent (VM clipboard/resize)"     t_spice_agent
