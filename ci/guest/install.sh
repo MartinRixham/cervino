@@ -11,8 +11,16 @@ set -eu
 [ "$(command -v setup-alpine)" = /usr/local/sbin/setup-alpine ] ||
 	{ echo "setup-alpine is not the ISO's wrapper" >&2; exit 1; }
 
-# The install fetches packages from the network.
+# The install fetches packages from the network. NetworkManager can report
+# it up before names resolve, and setup-alpine's mirror step gives up on the
+# first failed lookup, so also wait for DNS.
 nm-online -q -t 120
+i=0
+until nslookup mirrors.alpinelinux.org >/dev/null 2>&1; do
+	i=$((i + 1))
+	[ "$i" -le 60 ] || { echo "cannot resolve mirrors.alpinelinux.org" >&2; exit 1; }
+	sleep 2
+done
 
 cat > /tmp/answers <<'EOF'
 KEYMAPOPTS=none
