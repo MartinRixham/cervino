@@ -568,6 +568,26 @@ t_app_store_distro_packages() {
     return 1
 }
 
+t_app_store_firmware_updates() {
+    # GNOME Software offers OEM firmware updates (UEFI, SSDs, docks, ...)
+    # through its fwupd plugin, which asks the fwupd daemon over D-Bus; fwupd
+    # downloads them from the LVFS. A VM has no device fwupd can update, so
+    # this checks the pieces are in place, not that an update is offered.
+    have gnome-software || { echo "GNOME Software not installed"; return 2; }
+    compgen -G "/usr/lib*/gnome-software/plugins-*/libgs_plugin_fwupd.so" >/dev/null ||
+        compgen -G "/usr/lib/*-linux-gnu/gnome-software/plugins-*/libgs_plugin_fwupd.so" >/dev/null ||
+        { echo "GNOME Software has no fwupd plugin"; return 1; }
+    # Reading a property starts the daemon if D-Bus activates it on demand
+    have gdbus || { echo "gdbus missing"; return 1; }
+    timeout 30 gdbus call --system --dest org.freedesktop.fwupd --object-path / \
+        --method org.freedesktop.DBus.Properties.Get org.freedesktop.fwupd DaemonVersion >/dev/null 2>&1 ||
+        { echo "fwupd daemon does not answer on the system bus"; return 1; }
+    have fwupdmgr || { echo "fwupdmgr missing"; return 1; }
+    timeout 30 fwupdmgr get-remotes --json 2>/dev/null |
+        awk -F'"' '$2 == "Id" { id = $4 } $2 == "Enabled" && id == "lvfs" && /true/ { found = 1 } END { exit !found }' ||
+        { echo "LVFS remote not enabled in fwupd"; return 1; }
+}
+
 t_logout_not_blocked_by_shell() {
     # Starts a real logout and cancels it again. gnome-session asks every
     # registered client whether the session may end, and lists a client that
@@ -664,6 +684,7 @@ run_test "Audio output device available"               t_audio_sink
 run_test "xdg-open available"                          t_xdg_open
 run_test "Sandboxed app store (Flatpak)"               t_app_store_sandbox
 run_test "Distribution packages in GNOME Software"     t_app_store_distro_packages
+run_test "Firmware updates in GNOME Software"          t_app_store_firmware_updates
 run_test "VA-API video acceleration available"         t_video_acceleration
 run_test "SPICE guest agent (VM clipboard/resize)"     t_spice_agent
 run_test "Logout not blocked by GNOME Shell"           t_logout_not_blocked_by_shell
