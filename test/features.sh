@@ -73,6 +73,56 @@ dbus_name_available() {
 
 login_shell() { getent passwd "$(id -un)" | cut -d: -f7; }
 
+# Runs a command as root without asking for a password: directly when root,
+# else through doas or sudo if they let the user in without one.
+as_root() {
+    ((EUID == 0)) && { "$@"; return; }
+    local tool
+    tool=$(first_have doas sudo) || return 1
+    "$tool" -n "$@"
+}
+
+# The periodic jobs cron runs (root's own crontab is only readable by root)
+scheduled_job_files() {
+    local f
+    for f in /etc/periodic/*/* /etc/cron.hourly/* /etc/cron.daily/* /etc/cron.weekly/* \
+             /etc/cron.monthly/* /etc/cron.d/* /etc/crontab; do
+        [[ -f $f && -r $f ]] && printf '%s\n' "$f"
+    done
+}
+
+# Prints sshd's settings as "keyword value", keywords in lower case, in the
+# order sshd reads them, following Include where it appears. sshd uses the
+# first value it reads for a keyword. Settings in Match blocks are left out
+# (output stops at the first Match). sshd -T would say the same, but it
+# needs the host keys, which only root can read.
+sshd_config_lines() {
+    local f=$1 line kw rest g
+    [[ -r $f ]] || return 0
+    while read -r line; do
+        kw=${line%%[[:space:]=]*}
+        rest=${line#"$kw"}
+        rest=${rest#"${rest%%[![:space:]=]*}"}
+        case ${kw,,} in
+            '' | '#'*) ;;
+            match) return 1 ;;
+            include)
+                for g in $rest; do
+                    [[ $g == /* ]] || g=/etc/ssh/$g
+                    for g in $g; do
+                        sshd_config_lines "$g" || return 1
+                    done
+                done
+                ;;
+            *) printf '%s %s\n' "${kw,,}" "$rest" ;;
+        esac
+    done <"$f"
+}
+
+sshd_setting() {
+    sshd_config_lines /etc/ssh/sshd_config | awk -v k="$1" '$1 == k { print tolower($2); exit }'
+}
+
 # --------------------------------------------------------------------------
 # Shell and command-line environment
 # --------------------------------------------------------------------------
@@ -137,6 +187,22 @@ t_cli_tools() {
     have rsync                         || missing+=("rsync")
     first_have less most >/dev/null    || missing+=("pager (less/most)")
     ((${#missing[@]} == 0)) || { echo "missing: ${missing[*]}"; return 1; }
+}
+
+# Most programs distributed outside the distribution are built for glibc
+# and need its dynamic loader; on musl systems gcompat provides one.
+t_glibc_programs() {
+    local loader d
+    case $(uname -m) in
+        x86_64) loader=ld-linux-x86-64.so.2 ;;
+        aarch64) loader=ld-linux-aarch64.so.1 ;;
+        *) echo "unknown glibc loader name for $(uname -m)"; return 2 ;;
+    esac
+    for d in /lib64 /lib /usr/lib64 /usr/lib; do
+        [[ -e $d/$loader ]] && return 0
+    done
+    echo "no $loader (glibc, or gcompat on musl)"
+    return 1
 }
 
 t_man_pages() {
@@ -267,6 +333,133 @@ t_firewall() {
     done
     [[ -s /proc/net/ip_tables_names ]] && return 0
     echo "no firewall service active (firewalld/ufw/nftables/iptables)"
+    return 1
+}
+
+# Containers (Docker, Podman) and VMs (libvirt) on a NAT bridge reach the
+# network through the host's forward hook, and a packet has to get past
+# every base chain on it: a chain that drops forwarded traffic cuts them off,
+# whatever rules the runtimes add in their own tables. Such a chain has to
+# accept traffic coming in from their bridges and the replies going back.
+# A chain that jumps to others (Docker's own FORWARD chain does) is taken to
+# accept them there. Reading the ruleset needs root, so the test is skipped
+# when the user cannot get it without a password.
+t_firewall_forwarding() {
+    local ruleset blocked
+    proc_running firewalld && return 0
+    ruleset=$(as_root nft list ruleset 2>/dev/null) ||
+        { echo "cannot read the nftables ruleset without root"; return 2; }
+    blocked=$(awk -v bridges='(virbr|docker|podman|cni-|br-|lxcbr|lxdbr|incusbr)' '
+        /^[ \t]*table / { table = $2 " " $3 }
+        /^[ \t]*chain / { inchain = 1; name = $2; drop = out = back = 0; next }
+        !inchain { next }
+        /hook forward/ && /policy drop/ { drop = 1; next }
+        /^[ \t]*}/ {
+            if (drop && !(out && back)) print table " " name
+            inchain = 0
+            next
+        }
+        /(^|[ \t])(jump|goto)[ \t]/ { out = back = 1 }
+        /(^|[ \t])accept([ \t]|$)/ {
+            if ($0 ~ /^[ \t]*accept[ \t]*$/) out = back = 1
+            if ($0 ~ /iifname/ && $0 ~ bridges) out = 1
+            if ($0 ~ /established/ || ($0 ~ /oifname/ && $0 ~ bridges)) back = 1
+        }' <<<"$ruleset")
+    [[ -z $blocked ]] && return 0
+    echo "forwarded traffic of container/VM bridges dropped by: $(echo $blocked)"
+    return 1
+}
+
+# A password login over SSH can be guessed by anyone on the same network.
+# With PAM, keyboard-interactive authentication asks for the password too.
+t_ssh_no_password_auth() {
+    local pw kbd
+    first_have sshd /usr/sbin/sshd >/dev/null || return 0
+    pw=$(sshd_setting passwordauthentication)
+    [[ ${pw:-yes} == no ]] || { echo "sshd accepts passwords (PasswordAuthentication ${pw:-yes})"; return 1; }
+    [[ $(sshd_setting usepam) == yes ]] || return 0
+    kbd=$(sshd_setting kbdinteractiveauthentication)
+    [[ -n $kbd ]] || kbd=$(sshd_setting challengeresponseauthentication)
+    [[ ${kbd:-yes} == no ]] ||
+        { echo "sshd accepts passwords through PAM (KbdInteractiveAuthentication ${kbd:-yes})"; return 1; }
+}
+
+# The system log should go back days, not minutes, so that it still covers
+# a problem when you look into it, and the file system it is on needs the
+# room. journald (by default up to 10% of the file system) and syslog
+# daemons, whose files logrotate rotates, keep that much; busybox syslogd
+# rotates by itself, by default at 200 KiB (-s) with one old file (-b).
+t_log_retention() {
+    local min_kib=32768 f comm pid= args size=200 old=1 avail
+    for f in /proc/[0-9]*/comm; do
+        read -r comm <"$f" 2>/dev/null || continue
+        [[ $comm == syslogd ]] && pid=${f%/comm}
+    done
+    if [[ -n $pid && $(readlink -f "$(tr '\0' '\n' <"$pid/cmdline" | head -n1)") == */busybox ]]; then
+        mapfile -d '' args <"$pid/cmdline"
+        set -- "${args[@]:1}"
+        while (($#)); do
+            case $1 in
+                -s) size=$2; shift ;;
+                -s*) size=${1#-s} ;;
+                -b) old=$2; shift ;;
+                -b*) old=${1#-b} ;;
+                -C*) echo "busybox syslogd keeps the log in memory only (-C)"; return 1 ;;
+            esac
+            shift
+        done
+        ((size == 0 || size * (old + 1) >= min_kib)) ||
+            { echo "busybox syslogd keeps at most $((size * (old + 1))) KiB of log (-s $size -b $old)"; return 1; }
+    elif ! proc_running systemd-journald rsyslogd syslog-ng metalog socklog syslogd; then
+        echo "no system logger running"
+        return 1
+    fi
+    avail=$(df -Pk /var/log 2>/dev/null | awk 'NR == 2 { print $4 }')
+    ((${avail:-0} >= min_kib)) || { echo "only ${avail:-0} KiB free for /var/log"; return 1; }
+}
+
+# Core dumps are as big as the crashed process's memory, and hold what it
+# had in it, so they should not be kept forever. systemd-coredump, apport
+# and ABRT remove old ones themselves; another collector needs the handler
+# or a periodic job to delete dumps by age (find ... -mtime/-mmin).
+t_coredump_cleanup() {
+    local pat handler f
+    pat=$(cat /proc/sys/kernel/core_pattern)
+    [[ $pat == '|'* ]] || { echo "no crash collector"; return 2; }
+    handler=${pat#|}
+    handler=${handler%% *}
+    case ${handler##*/} in
+        systemd-coredump | apport | abrt-hook-ccpp) return 0 ;;
+    esac
+    while read -r f; do
+        grep -Eq 'find .*core.*-m(time|min)|find .*-m(time|min).*core' "$f" 2>/dev/null && return 0
+    done < <(printf '%s\n' "$handler"; scheduled_job_files)
+    echo "nothing deletes old core dumps of $handler by age"
+    return 1
+}
+
+# SSDs slow down unless the file system tells them which blocks are free,
+# either as it frees them (the discard mount option) or now and then
+# (fstrim run by a timer or cron job).
+t_ssd_trim() {
+    local src mnt fs opts sys need=() trims=0
+    while read -r src mnt fs opts _; do
+        [[ $src == /dev/* ]] || continue
+        case $fs in ext2 | ext3 | ext4 | xfs | btrfs | f2fs | jfs | vfat | exfat) ;; *) continue ;; esac
+        sys=$(readlink -f "/sys/class/block/$(basename "$(readlink -f "$src")")") || continue
+        [[ -e $sys/partition ]] && sys=${sys%/*}
+        (($(cat "$sys/queue/discard_max_bytes" 2>/dev/null || echo 0) > 0)) || continue
+        trims=1
+        [[ ,$opts, == *,discard[,=]* ]] || need+=("$mnt")
+    done </proc/mounts
+    ((trims)) || { echo "no file system on a device that supports TRIM"; return 2; }
+    ((${#need[@]} == 0)) && return 0
+    if have systemctl && [[ -d /run/systemd/system ]]; then
+        systemctl is-enabled fstrim.timer >/dev/null 2>&1 && return 0
+    fi
+    service_enabled fstrim && return 0
+    scheduled_job_files | xargs -r grep -lw fstrim >/dev/null 2>&1 && return 0
+    echo "no discard mount option or periodic fstrim for: ${need[*]}"
     return 1
 }
 
@@ -431,6 +624,7 @@ run_test "Full-featured interactive login shell"       t_interactive_shell
 run_test "Privilege escalation for admin users"        t_privilege_escalation
 run_test "Root password login locked"                  t_root_locked
 run_test "Standard CLI tools installed"                t_cli_tools
+run_test "glibc programs can run (gcompat on musl)"    t_glibc_programs
 run_test "Manual pages installed"                      t_man_pages
 run_test "Command-not-found handler in shell"          t_command_not_found
 run_test "Default editor set"                          t_default_editor
@@ -452,10 +646,15 @@ run_test "Bluetooth service enabled"                   t_bluetooth
 run_test "Printing available"                          t_printing
 run_test "mDNS hostname published"                      t_mdns
 run_test "Firewall active"                             t_firewall
+run_test "Firewall forwards container and VM traffic"  t_firewall_forwarding
+run_test "SSH server refuses password logins"          t_ssh_no_password_auth
 run_test "Power management service"                    t_power_profiles
+run_test "System log keeps enough history"             t_log_retention
 run_test "Crash dump collector configured"             t_coredump_handler
+run_test "Old core dumps removed"                      t_coredump_cleanup
 run_test "Mandatory access control active"             t_mandatory_access_control
 run_test "Compressed swap (zram or zswap)"             t_memory_compression
+run_test "SSD TRIM enabled or scheduled"               t_ssd_trim
 run_test "Device firmware installed"                   t_firmware
 
 echo
