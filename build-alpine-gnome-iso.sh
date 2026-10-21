@@ -154,7 +154,8 @@ builder_main() {
 	# Bluetooth, printing, mDNS, a firewall, power profiles, AppArmor, zram
 	# swap, PipeWire, xdg-utils, Flatpak, Alpine's packages in GNOME Software
 	# (apk-polkit-server and the AppStream catalog), VA-API (libva with the
-	# Mesa, Intel and vainfo packages) and the SPICE guest agent. Their
+	# Mesa, Intel and vainfo packages), the SPICE guest agent, gcompat (the
+	# glibc loader, for programs built for glibc) and fstrim. Their
 	# configuration and services are set up in the apkovl below.
 	# pipewire-pulse provides the pulseaudio that gnome-settings-daemon
 	# depends on, so PulseAudio itself is not installed.
@@ -168,7 +169,8 @@ builder_main() {
 		pipewire-alsa pipewire-spa-bluez xdg-utils flatpak
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium
-		intel-media-driver libva-intel-driver spice-vdagent spice-vdagent-openrc"
+		intel-media-driver libva-intel-driver spice-vdagent spice-vdagent-openrc
+		gcompat fstrim"
 
 	local world
 	world=$(printf '%s\n' alpine-base doas \

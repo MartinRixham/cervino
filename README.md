@@ -12,14 +12,19 @@ from a desktop distribution, and keeps it when installed to disk:
 
 - bash as the login shell, with completion and a command-not-found handler,
   `nano` as `EDITOR`, `~/.local/bin` first in `PATH`, man pages and the usual
-  CLI tools (`file`, `xz`, `zstd`, `lspci`, `dmidecode`, `rsync`)
+  CLI tools (`file`, `xz`, `zstd`, `lspci`, `dmidecode`, `rsync`), and
+  `gcompat` so programs built for glibc run
 - a UTF-8 locale (`C.UTF-8`), English spell checking, emoji and CJK fonts
 - NetworkManager, chrony for time sync, and `openrc-settingsd` for GNOME
   Settings' hostname, date/time and language panels
 - Bluetooth, CUPS printing, Avahi mDNS, an nftables firewall (allowing SSH
-  and mDNS in), and power profiles
-- AppArmor, zram swap (half the RAM, at most 8 GB) and a crash dump
-  collector writing to `/var/lib/coredump`
+  and mDNS in, and forwarding for container and VM bridges), and power
+  profiles
+- sshd, if installed, set to accept keys only (no password logins)
+- AppArmor, zram swap (half the RAM, at most 8 GB), a crash dump collector
+  writing to `/var/lib/coredump` (dumps are deleted after a week), a system
+  log kept to 40 MB instead of busybox syslogd's 400 KB, and a weekly
+  `fstrim` for SSDs
 - PipeWire as the sound server (in place of PulseAudio), `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
 - Alpine's packages in GNOME Software: `apk-polkit-server` runs at boot, and

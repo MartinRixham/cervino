@@ -103,14 +103,50 @@ iface lo inet loopback
 iface lo inet6 loopback
 EOF
 
-# The default nftables ruleset drops incoming connections; allow SSH and mDNS.
+# The default nftables ruleset drops incoming connections; allow SSH and
+# mDNS. It also drops all forwarded traffic, which would cut containers
+# (Docker, Podman, LXC/Incus) and VMs (libvirt) on their NAT bridges off
+# the network whatever rules they add in their own tables: let traffic from
+# their bridges out and the replies back in.
 makefile root:root 0644 "$tmp"/etc/nftables.d/50-desktop.nft <<'EOF'
 table inet filter {
 	chain input {
 		tcp dport 22 accept comment "SSH"
 		udp dport 5353 accept comment "mDNS"
 	}
+	chain forward {
+		ct state { established, related } accept comment "Replies"
+		ct state invalid drop comment "Drop invalid connections"
+		iifname "virbr*" accept comment "libvirt"
+		iifname "docker*" accept comment "Docker"
+		iifname "br-*" accept comment "Docker networks"
+		iifname "podman*" accept comment "Podman"
+		iifname "cni-*" accept comment "CNI"
+		iifname "lxcbr*" accept comment "LXC"
+		iifname "lxdbr*" accept comment "LXD"
+		iifname "incusbr*" accept comment "Incus"
+	}
 }
+EOF
+
+# sshd (if it is installed) takes keys only: a password can be guessed by
+# anyone on the network. With UsePAM, keyboard-interactive asks for it too.
+makefile root:root 0644 "$tmp"/etc/ssh/sshd_config.d/50-desktop.conf <<'EOF'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+EOF
+
+# busybox syslogd rotates /var/log/messages itself, by default at 200 KiB
+# with one old file, which a busy desktop fills in minutes: keep 5 x 8 MiB.
+makefile root:root 0644 "$tmp"/etc/conf.d/syslog <<'EOF'
+SYSLOGD_OPTS="-t -s 8192 -b 4"
+EOF
+
+# SSDs need to be told which blocks are free; trim mounted file systems
+# weekly (crond, which setup-alpine enables, runs /etc/periodic).
+makefile root:root 0755 "$tmp"/etc/periodic/weekly/fstrim <<'EOF'
+#!/bin/sh
+exec fstrim -a -q
 EOF
 
 # zram swap of half the RAM, at most 8 GiB (the init script sources this).
@@ -124,8 +160,9 @@ algo0=zstd
 labl0=zram_swap
 EOF
 
-# Core dumps go to /var/lib/coredump. lbu.list makes "lbu package" (and
-# so setup-disk) take /usr/local/libexec along to installed systems.
+# Core dumps go to /var/lib/coredump and are deleted after a week. lbu.list
+# makes "lbu package" (and so setup-disk) take /usr/local/libexec along to
+# installed systems.
 makefile root:root 0644 "$tmp"/etc/sysctl.d/50-coredump.conf <<'EOF'
 kernel.core_pattern = |/usr/local/libexec/coredump-handler %P %u %s %t
 EOF
@@ -155,6 +192,13 @@ fi
 logger -t coredump "Process $pid (${comm:-unknown}) of user $uid dumped core on signal $sig: $out"
 
 ls -1t "$dir"/core.* 2>/dev/null | tail -n +$((max_files + 1)) | xargs -r rm -f
+find "$dir" -name 'core.*' -mtime +7 -delete
+EOF
+# Dumps also expire when no new crash comes along to prune them.
+makefile root:root 0755 "$tmp"/etc/periodic/daily/coredump-cleanup <<'EOF'
+#!/bin/sh
+[ -d /var/lib/coredump ] || exit 0
+exec find /var/lib/coredump -name 'core.*' -mtime +7 -delete
 EOF
 
 # Alpine's gnome-shell (50) is newer than its gnome-session and GDM (48), and
