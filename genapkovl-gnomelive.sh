@@ -304,55 +304,6 @@ start() {
 }
 EOF
 
-# setup-keymap only sets the console keymap. GNOME takes its keyboard layout
-# from localed's X11 layout (openrc-settingsd reads it from
-# 00-keyboard.conf): gnome-settings-daemon copies it into a new user's input
-# sources, and GDM's login screen uses it. So the setup-alpine wrapper below
-# puts this in PATH in front of setup-keymap: it runs setup-keymap, then
-# writes the XKB layout matching the chosen keymap (named <layout> or
-# <layout>-<variant>, mostly as in XKB) to 00-keyboard.conf, which
-# setup-disk copies to the installed system. A variant that XKB does not
-# know is dropped, and a layout it does not know (or no keymap) leaves
-# GNOME's default.
-# /usr/local/lib is not in lbu.list, so installs don't get this.
-makefile root:root 0755 "$tmp"/usr/local/lib/setup-alpine/setup-keymap <<'EOF'
-#!/bin/sh
-/usr/sbin/setup-keymap "$@" || exit
-conf=/etc/X11/xorg.conf.d/00-keyboard.conf
-lst=/usr/share/X11/xkb/rules/evdev.lst
-KEYMAP=
-[ -r /etc/conf.d/loadkmap ] && . /etc/conf.d/loadkmap
-name=${KEYMAP##*/}
-name=${name%%.*}
-layout=${name%%-*}
-variant=${name#"$layout"}
-variant=${variant#-}
-# evdev.lst lists layouts as "  gb  English (UK)" under "! layout" and
-# variants as "  extd  gb: English (UK, extended, Windows)" under "! variant".
-known() {
-	awk -v s="$1" -v n="$2" -v l="$3" '/^!/ { sec = $2; next }
-		sec == s && $1 == n && (l == "" || $2 == l ":") { f = 1 } END { exit !f }' "$lst"
-}
-if [ -z "$name" ] || ! known layout "$layout"; then
-	rm -f "$conf"
-	exit 0
-fi
-# de-latin1-nodeadkeys: XKB has a "nodeadkeys" variant of de, not "latin1-..."
-if [ -n "$variant" ] && ! known variant "$variant" "$layout"; then
-	variant=${variant##*-}
-	known variant "$variant" "$layout" || variant=
-fi
-mkdir -p "${conf%/*}"
-{
-	echo 'Section "InputClass"'
-	echo '	Identifier "system-keyboard"'
-	echo '	MatchIsKeyboard "on"'
-	echo "	Option \"XkbLayout\" \"$layout\""
-	[ -n "$variant" ] && echo "	Option \"XkbVariant\" \"$variant\""
-	echo 'EndSection'
-} > "$conf"
-EOF
-
 # setup-alpine switches OpenRC to the boot runlevel and back, which stops
 # gdm and dbus and so kills the desktop (and the terminal running it). It
 # also swaps udev for mdev unless DEVDOPTS says otherwise, leaves the
@@ -362,8 +313,7 @@ EOF
 # stopping any, skips the interface and DNS steps, keeps udev, which GNOME
 # needs, and defaults community to enabled. It also defaults the user step
 # to the plugdev (network settings) and lpadmin (printers) groups and the
-# installed kernel command line to one with AppArmor enabled, and gives
-# GNOME the keyboard layout chosen in the keymap step. An answer
+# installed kernel command line to one with AppArmor enabled. An answer
 # file passed with -f still overrides these defaults.
 # The shims in the temporary directory only need to work until
 # setup-alpine sources /etc/profile, which resets PATH; the lbu and
@@ -387,7 +337,7 @@ chmod +x "\$shim"/*
 DEVDOPTS=\${DEVDOPTS:-udev} APKREPOSOPTS=\${APKREPOSOPTS:--c} \\
 	USEROPTS=\${USEROPTS:--a -g audio,input,video,netdev,plugdev,lpadmin} \\
 	KERNELOPTS=\${KERNELOPTS:-quiet $LSM} \\
-	PATH="\$shim:/usr/local/lib/setup-alpine:\$PATH" /usr/sbin/setup-alpine "\$@"
+	PATH="\$shim:\$PATH" /usr/sbin/setup-alpine "\$@"
 rc=\$?
 rm -rf "\$shim"
 exit \$rc

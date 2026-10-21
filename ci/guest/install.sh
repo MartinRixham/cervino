@@ -3,8 +3,7 @@
 # the ISO's wrapper in /usr/local/sbin as a user in the live desktop would.
 # The answer file leaves out what the wrapper sets defaults for (DEVDOPTS,
 # KERNELOPTS) or skips (interfaces and DNS: NetworkManager handles the
-# network), so those defaults are what gets tested. It picks a keyboard layout
-# other than GNOME's default (us), which test.sh expects in the desktop.
+# network), so those defaults are what gets tested.
 
 set -eu
 
@@ -15,7 +14,7 @@ set -eu
 nm-online -q -t 120
 
 cat > /tmp/answers <<'EOF'
-KEYMAPOPTS="gb gb"
+KEYMAPOPTS=none
 HOSTNAMEOPTS=cervino
 TIMEZONEOPTS=UTC
 PROXYOPTS=none
