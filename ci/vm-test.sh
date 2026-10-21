@@ -34,6 +34,7 @@ VM_CPUS=${VM_CPUS:-$(nproc)}
 die() { echo "error: $*" >&2; exit 1; }
 
 qemu_pid=
+vm_user=root
 tee_pid=
 cleanup() {
 	[[ -n $qemu_pid ]] && kill "$qemu_pid" 2>/dev/null
@@ -74,7 +75,8 @@ vm_start() {
 # vm_stop: powers the VM off and waits for QEMU to exit.
 vm_stop() {
 	echo ">>> [$vm] powering off"
-	send poweroff
+	# The test boot is logged in as tester, who needs doas.
+	if [[ $vm_user == root ]]; then send poweroff; else send "doas poweroff"; fi
 	local end=$((SECONDS + 300))
 	while kill -0 "$qemu_pid" 2>/dev/null; do
 		((SECONDS < end)) || { echo ">>> [$vm] did not power off; killing QEMU"; kill "$qemu_pid"; }
@@ -109,6 +111,7 @@ wait_for() {
 # the serial console, runs the command there and sets $rc to its exit status.
 vm_run() {
 	wait_for 'login: ' 1200
+	vm_user=$1
 	send "$1"
 	wait_for '~[#$] ' 120
 	# The marker is printed with printf so that the echoed command line
