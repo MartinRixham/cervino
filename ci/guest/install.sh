@@ -28,10 +28,20 @@ LBUOPTS=none
 APKCACHEOPTS=none
 EOF
 
-# The installed system's root is locked, so the test boot logs in on the
-# serial console as tester and needs root without a password prompt. The
-# rule is copied to the disk with the rest of the live /etc.
-mkdir -p /etc/doas.d
-echo 'permit nopass tester' > /etc/doas.d/90-ci.conf
-
 ERASE_DISKS=/dev/vda setup-alpine -f /tmp/answers
+
+# The installed system's root is locked, so the test boot logs in on the
+# serial console as tester and needs root without a password prompt. tester
+# is left locked by the install (setup-user -u runs shadow's passwd -u, which
+# refuses to leave an empty password), so give it an empty one, and a doas
+# rule that does not ask.
+mnt=$(mktemp -d)
+for part in /dev/vda[0-9]*; do
+	mount "$part" "$mnt" 2>/dev/null || continue
+	[ -e "$mnt"/etc/alpine-release ] && break
+	umount "$mnt"
+done
+[ -e "$mnt"/etc/alpine-release ] || { echo "no installed root on /dev/vda" >&2; exit 1; }
+chroot "$mnt" passwd -d tester
+echo 'permit nopass tester' > "$mnt"/etc/doas.d/90-ci.conf
+umount "$mnt"

@@ -152,7 +152,8 @@ vm_stop
 
 vm_start test
 # The installed system's root is locked, so log in as the user created
-# during the install, whom install.sh lets use doas without a password.
+# during the install, whom install.sh lets log in and use doas without a
+# password.
 vm_run tester "doas sh -c '$unpack_share && /tmp/ci/ci/guest/test.sh'" 1500
 vm_stop
 ((rc == 0)) || die "$rc test(s) failed"
