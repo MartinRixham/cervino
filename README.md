@@ -18,7 +18,8 @@ from a desktop distribution, and keeps it when installed to disk:
 - NetworkManager, chrony for time sync, and `openrc-settingsd` for GNOME
   Settings' hostname, date/time and language panels
 - Bluetooth, CUPS printing, Avahi mDNS, an nftables firewall (allowing SSH
-  and mDNS in, and forwarding for container and VM bridges), and power
+  and mDNS in, forwarding for container and VM bridges, and an IPv6
+  reverse path filter dropping spoofed source addresses), and power
   profiles
 - no SSH server: the installer defaults to none, and sshd, if installed
   later, is not enabled until you turn it on

@@ -108,9 +108,17 @@ EOF
 # mDNS. It also drops all forwarded traffic, which would cut containers
 # (Docker, Podman, LXC/Incus) and VMs (libvirt) on their NAT bridges off
 # the network whatever rules they add in their own tables: let traffic from
-# their bridges out and the replies back in.
+# their bridges out and the replies back in. Drop IPv6 packets from source
+# addresses the host has no route back to, as spoofed, before any input or
+# forward rule sees them; Neighbor Discovery is exempt (DAD's solicits come
+# from ::). IPv4 has the kernel's rp_filter.
 makefile root:root 0644 "$tmp"/etc/nftables.d/50-desktop.nft <<'EOF'
 table inet filter {
+	chain rpfilter {
+		type filter hook prerouting priority filter + 10; policy accept;
+		icmpv6 type { nd-router-advert, nd-neighbor-solicit } accept
+		meta nfproto ipv6 fib saddr . mark oif missing drop comment "IPv6 reverse path filter"
+	}
 	chain input {
 		tcp dport 22 accept comment "SSH"
 		udp dport 5353 accept comment "mDNS"

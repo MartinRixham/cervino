@@ -385,8 +385,7 @@ EOF
     echo $v
 }
 
-# Like Fedora (IPv6_rpfilter=loose in Workstation's firewalld.conf), drop
-# IPv6 packets from source addresses the host has no route back to, which
+# Drop IPv6 packets from source addresses the host has no route back to, which
 # are spoofed. IPv4 has the kernel's rp_filter. Needs root, so the test is
 # skipped when the user cannot get it without a password.
 t_ipv6_rpfilter() {
