@@ -32,6 +32,8 @@ profile fwupd /usr/libexec/fwupd/fwupd flags=(attach_disconnected) {
   /usr/lib/fwupd-*/{,**} mr,
   /usr/share/fwupd/{,**} r,
   /usr/share/mime/{,**} r,
+  # PCI and USB device names
+  /usr/share/hwdata/{,**} r,
   /etc/fwupd/{,**} r,
   /etc/pki/{,**} r,
   /etc/machine-id r,

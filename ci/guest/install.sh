@@ -37,6 +37,14 @@ EOF
 
 ERASE_DISKS=/dev/vda setup-alpine -f /tmp/answers
 
+# Nothing in the live session, the install included, may be denied by
+# AppArmor.
+if ! denials=$("$(dirname "$0")"/apparmor-denials.sh); then
+	echo "AppArmor denied the live system:" >&2
+	printf '%s\n' "$denials" >&2
+	exit 1
+fi
+
 # The installed system's root is locked, so the test boot logs in on the
 # serial console as tester and needs root without a password prompt. tester
 # is left locked by the install (setup-user -u runs shadow's passwd -u, which

@@ -57,6 +57,8 @@ profile elogind /usr/libexec/elogind/elogind flags=(attach_disconnected) {
   /dev/hidraw* rw,
   /dev/tty* rw,
   /dev/console rw,
+  # Its log, when there is no syslog to send it to
+  /dev/kmsg w,
 
   @{sys}/** r,
   @{sys}/fs/cgroup/** rw,

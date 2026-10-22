@@ -68,6 +68,8 @@ profile NetworkManager /usr/sbin/NetworkManager flags=(attach_disconnected) {
   @{PROC}/sys/net/** rw,
   @{PROC}/@{pid}/{stat,status,cmdline,environ} r,
   @{PROC}/@{pid}/net/** r,
+  # GLib's spawn closes inherited file descriptors by listing them
+  @{PROC}/@{pid}/fd/ r,
 
   # Loading kernel modules (bonds, PPP, ...)
   /bin/kmod ix,

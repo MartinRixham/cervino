@@ -3,8 +3,9 @@
 # left behind, logs the user created during the install in to GNOME, then
 # runs test/features.sh as that user with the session's environment
 # (taken from gnome-shell), as if from a terminal in the desktop, and
-# test/apparmor.sh as root. Last, it logs the user out and checks that
-# GDM's login screen comes back. Exits with the number of failed tests.
+# test/apparmor.sh as root. Then it logs the user out and checks that
+# GDM's login screen comes back, and last that the kernel log has no
+# AppArmor denials. Exits with the number of failed tests.
 
 set -eu
 
@@ -184,6 +185,13 @@ t_logout_to_greeter() {
 }
 
 t_logout_to_greeter || true
+
+# Checked last, so that it covers everything the tests did.
+if denials=$("$dir"/ci/guest/apparmor-denials.sh); then
+	pass "No AppArmor denials"
+else
+	fail "No AppArmor denials" "$(printf '%s\n' "$denials" | sed '2,$s/^/       /')"
+fi
 
 echo
 printf 'All tests: Passed: %d  Failed: %d  Skipped: %d\n' "$passed" "$failed" "$skipped"
