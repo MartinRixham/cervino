@@ -468,6 +468,17 @@ EOF
 # SSH server, and skips the root password (-e): the lbu shim below locks root on the installed
 # system, whose admin user gets root through doas. An answer file passed
 # with -f still overrides these defaults.
+# Its hostname step restarts the hostname service and stops and starts
+# networking, which stops what depends on them (avahi, chronyd, crond,
+# syslog) and has OpenRC start them again in the background; there they
+# race the next step, setup-devd -C mdev, which stops udev, until the
+# OpenRC service locks deadlock ("Call to flock failed") and chronyd fails
+# to start. So the rc-service shim skips the networking stop and start
+# (NetworkManager owns the network) and sets the hostname directly, and
+# the setup-devd shim skips the mdev bootstrap: udev is already running.
+# Service changes run in a session of their own (setsid -w, from
+# util-linux-misc, which zram-init pulls in), so Ctrl-C stops setup-alpine
+# but cannot kill an openrc-run halfway, leaving its lock and state behind.
 # The shims in the temporary directory only need to work until
 # setup-alpine sources /etc/profile, which resets PATH; the lbu and
 # adduser shims, used after that, live in /usr/local/sbin, which
@@ -476,12 +487,31 @@ EOF
 makefile root:root 0755 "$tmp"/usr/local/sbin/setup-alpine <<EOF
 #!/bin/sh
 shim=\$(mktemp -d) || exit
+trap 'rm -rf "\$shim"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 cat > "\$shim"/openrc <<'SHIM'
 #!/bin/sh
 case "\$1" in
--*) exec /sbin/openrc "\$@" ;;
-*) exec /sbin/openrc --no-stop "\$@" ;;
+-*) exec setsid -w /sbin/openrc "\$@" ;;
+*) exec setsid -w /sbin/openrc --no-stop "\$@" ;;
 esac
+SHIM
+cat > "\$shim"/rc-service <<'SHIM'
+#!/bin/sh
+case " \$* " in
+*" networking stop "*|*" networking start "*) exit 0 ;;
+*" hostname restart "*) read -r h _ < /etc/hostname && exec hostname "\$h"; exit ;;
+esac
+exec setsid -w /sbin/rc-service "\$@"
+SHIM
+cat > "\$shim"/setup-devd <<'SHIM'
+#!/bin/sh
+case " \$* " in
+*" mdev "*) exit 0 ;;
+esac
+exec /usr/sbin/setup-devd "\$@"
 SHIM
 for cmd in setup-interfaces setup-dns; do
 	printf '#!/bin/sh\necho "%s: skipped, NetworkManager manages the network"\n' \$cmd > "\$shim"/\$cmd
@@ -491,9 +521,6 @@ DEVDOPTS=\${DEVDOPTS:-udev} APKREPOSOPTS=\${APKREPOSOPTS:--c} \\
 	USEROPTS=\${USEROPTS:--a -g audio,input,video,netdev,plugdev,lpadmin} \\
 	KERNELOPTS=\${KERNELOPTS:-quiet $LSM} SSHDOPTS=\${SSHDOPTS:-none} \\
 	PATH="\$shim:\$PATH" /usr/sbin/setup-alpine -e "\$@"
-rc=\$?
-rm -rf "\$shim"
-exit \$rc
 EOF
 
 # An app grid entry that runs the wrapper above in a terminal. GLib's
