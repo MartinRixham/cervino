@@ -1,0 +1,41 @@
+# AppArmor profile for power-profiles-daemon.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile power-profiles-daemon /usr/libexec/power-profiles-daemon flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability dac_override,
+  capability sys_admin,
+  capability sys_rawio,
+
+  network netlink raw,
+
+  /usr/libexec/power-profiles-daemon mr,
+  /etc/udev/udev.conf r,
+  /etc/zoneinfo/** r,
+  /var/lib/power-profiles-daemon/{,**} rw,
+  @{run}/udev/{,**} r,
+
+  @{sys}/** r,
+  # CPU, platform and GPU power settings
+  @{sys}/devices/system/cpu/**/{energy_performance_preference,energy_perf_bias,scaling_governor,boost,no_turbo,status} rw,
+  @{sys}/devices/system/cpu/intel_pstate/** rw,
+  @{sys}/devices/system/cpu/amd_pstate/** rw,
+  @{sys}/firmware/acpi/platform_profile rw,
+  @{sys}/devices/**/platform-profile/** rw,
+  @{sys}/devices/**/drm/**/amdgpu/panel_power_savings rw,
+  @{sys}/devices/**/power_dpm_force_performance_level rw,
+  /dev/cpu/*/msr rw,
+
+  @{PROC}/cpuinfo r,
+
+  include if exists <local/power-profiles-daemon>
+}

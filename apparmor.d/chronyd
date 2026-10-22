@@ -1,0 +1,47 @@
+# AppArmor profile for chronyd.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile chronyd /usr/sbin/chronyd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/ssl_certs>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability net_bind_service,
+  capability setgid,
+  capability setuid,
+  capability sys_nice,
+  capability sys_resource,
+  capability sys_time,
+
+  # NTP, and NTS-KE over TLS
+  network inet,
+  network inet6,
+  network netlink raw,
+
+  /usr/sbin/chronyd mr,
+  /etc/chrony/{,**} r,
+  /etc/adjtime r,
+  /etc/zoneinfo/** r,
+  /var/lib/chrony/{,**} rw,
+  /var/log/chrony/{,**} rw,
+  @{run}/chrony/{,**} rw,
+  @{run}/chrony-dhcp/{,**} r,
+  /dev/rtc* rw,
+  /dev/ptp* rw,
+  /dev/pps* rw,
+  @{sys}/class/rtc/** r,
+  @{sys}/devices/** r,
+
+  include if exists <local/chronyd>
+}

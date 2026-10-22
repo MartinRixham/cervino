@@ -1,0 +1,81 @@
+# AppArmor profile for the CUPS scheduler.
+# The backends, filters and CGI programs it runs stay under this
+# profile.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile cupsd /usr/sbin/cupsd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/ssl_certs>
+  include <abstractions/fonts>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability audit_write,
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability net_bind_service,
+  capability setgid,
+  capability setuid,
+  capability sys_resource,
+
+  network inet,
+  network inet6,
+  network netlink raw,
+  network packet,
+
+  signal (send) peer=cupsd,
+
+  /usr/sbin/cupsd mr,
+  /etc/cups/{,**} rw,
+  /etc/printcap rw,
+  /etc/paperspecs r,
+  /etc/papersize r,
+  /etc/machine-id r,
+  /etc/zoneinfo/** r,
+  /usr/share/cups/{,**} r,
+  /usr/share/ppd/{,**} r,
+  /usr/share/foomatic/{,**} r,
+  /usr/share/ghostscript/{,**} r,
+  /usr/share/poppler/{,**} r,
+  /usr/share/mupdf/{,**} r,
+  /usr/share/color/{,**} r,
+  /usr/share/mime/{,**} r,
+  /usr/share/** r,
+  /var/spool/cups/{,**} rwlk,
+  /var/cache/cups/{,**} rwlk,
+  /var/log/cups/{,**} rw,
+  @{run}/cups/{,**} rwk,
+  /tmp/** rw,
+  /var/tmp/** rw,
+
+  # Printers on USB, parallel and serial ports
+  /dev/bus/usb/** rw,
+  /dev/usb/lp* rw,
+  /dev/lp* rw,
+  /dev/tty* rw,
+  @{sys}/** r,
+  @{run}/udev/{,**} r,
+
+  @{PROC}/@{pid}/{cgroup,cmdline,stat,status} r,
+  @{PROC}/@{pid}/fd/ r,
+
+  # Backends, filters, CGI programs and notifiers, and what they run
+  /usr/lib/cups/** ix,
+  /usr/libexec/cups/** ix,
+  /{usr/,}{s,}bin/* ix,
+  /usr/lib/ghostscript/** mr,
+  # Filters running as lp cannot update the font cache anyway.
+  deny /var/cache/fontconfig/{,**} w,
+
+  include if exists <local/cupsd>
+}

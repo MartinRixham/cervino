@@ -22,10 +22,12 @@ from a desktop distribution, and keeps it when installed to disk:
   profiles
 - no SSH server: the installer defaults to none, and sshd, if installed
   later, is not enabled until you turn it on
-- AppArmor, zram swap (half the RAM, at most 8 GB), a crash dump collector
-  writing to `/var/lib/coredump` (dumps are deleted after a week), a system
-  log kept to 40 MB instead of busybox syslogd's 400 KB, and a weekly
-  `fstrim` for SSDs
+- AppArmor, with profiles in enforce mode for udev, D-Bus, syslog, cron, elogind,
+  polkit, NetworkManager, chrony, GDM, UDisks, CUPS, fwupd, ...; (see
+  [`apparmor.d/`](apparmor.d)), zram swap (half the RAM, at most 8 GB), a
+  crash dump collector writing to `/var/lib/coredump` (dumps are deleted
+  after a week), a system log kept to 40 MB instead of busybox syslogd's
+  400 KB, and a weekly `fstrim` for SSDs
 - PipeWire as the sound server (in place of PulseAudio), `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
 - Alpine's packages in GNOME Software: `apk-polkit-server` runs at boot, and
@@ -42,8 +44,7 @@ from a desktop distribution, and keeps it when installed to disk:
 
 [`test/features.sh`](test/features.sh) checks all of this on a running
 system. [`test/apparmor.sh`](test/apparmor.sh) checks that AppArmor confines
-the system daemons that Fedora's SELinux policy confines; most of these
-tests fail until the ISO has profiles for those daemons.
+the system daemons.
 
 ## Requirements
 
@@ -196,10 +197,11 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      `rpiimg` profile instead, and adds `usercfg.txt`);
    - an apkovl generator. The apkovl is the same overlay mechanism `lbu` uses;
      it contains `/etc/apk/world`, the GDM config, the desktop features'
-     configuration, OpenRC runlevels (udev in place of mdev, plus `cgroups`,
-     `dbus`, `gdm` and the desktop features' services), a `live-user` init
-     script, and the `setup-alpine` wrapper with its `lbu` and `adduser`
-     shims.
+     configuration, the AppArmor profiles from [`apparmor.d/`](apparmor.d),
+     OpenRC runlevels (udev in place of mdev, plus `cgroups`, `dbus`, `gdm`
+     and the desktop features' services, and AppArmor in `sysinit`, before
+     udev), a `live-user` init script, and the `setup-alpine` wrapper with
+     its `lbu` and `adduser` shims.
 4. At boot the initramfs unpacks the apkovl, installs everything in its
    `/etc/apk/world` from the disc into the RAM root, and OpenRC starts udev,
    dbus, gdm and so on just as `setup-desktop` would have configured them.

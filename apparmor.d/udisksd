@@ -1,0 +1,91 @@
+# AppArmor profile for UDisks.
+# The tools it runs (mkfs, fsck, mount helpers, ...) stay under this
+# profile.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile udisksd /usr/libexec/udisks2/udisksd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability ipc_lock,
+  capability kill,
+  capability mknod,
+  capability setgid,
+  capability setuid,
+  capability sys_admin,
+  capability sys_nice,
+  capability sys_ptrace,
+  capability sys_rawio,
+  capability sys_resource,
+
+  network netlink raw,
+
+  ptrace (read),
+  signal (send),
+
+  # Mounting where udisks mounts, and unmounting what users may unmount
+  mount -> /run/media/**,
+  mount -> /media/**,
+  mount -> /mnt/**,
+  remount /run/media/**,
+  remount /media/**,
+  remount /mnt/**,
+  umount,
+
+  /usr/libexec/udisks2/{,**} mr,
+  /usr/lib/udisks2/{,**} mr,
+  /etc/udisks2/{,**} rw,
+  /etc/libblockdev/{,**} r,
+  /etc/fstab r,
+  /etc/crypttab r,
+  /etc/mtab r,
+  /etc/filesystems r,
+  /etc/mke2fs.conf r,
+  /etc/udev/udev.conf r,
+  /etc/zoneinfo/** r,
+  /var/lib/udisks2/{,**} rwk,
+  @{run}/udisks2/{,**} rwk,
+  @{run}/mount/{,**} rwk,
+  @{run}/cryptsetup/{,**} rwk,
+  @{run}/udev/{,**} r,
+  @{run}/systemd/{,**} r,
+  @{run}/media/{,**} rw,
+  /media/{,**} rw,
+  /mnt/ r,
+
+  /dev/ r,
+  /dev/** rwk,
+  @{sys}/** r,
+  @{sys}/devices/**/uevent w,
+  @{sys}/devices/**/block/**/ w,
+  @{sys}/devices/virtual/block/*/loop/** rw,
+  @{sys}/devices/**/scsi_disk/**/* rw,
+  @{sys}/devices/**/power/** rw,
+  @{sys}/firmware/dmi/** r,
+
+  @{PROC}/cmdline r,
+  @{PROC}/swaps r,
+  @{PROC}/partitions r,
+  @{PROC}/filesystems r,
+  @{PROC}/devices r,
+  @{PROC}/sys/** r,
+  @{PROC}/@{pid}/{mountinfo,mounts,cgroup,cmdline,stat,status,environ} r,
+  @{PROC}/@{pid}/fd/ r,
+
+  /{usr/,}{s,}bin/* ix,
+  /usr/libexec/udisks2/* ix,
+
+  include if exists <local/udisksd>
+}

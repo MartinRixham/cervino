@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# Checks that AppArmor confines the system daemons that Fedora's SELinux
-# targeted policy confines: each daemon here has a domain of its own there
-# (named after the test), from the file contexts of
-# github.com/fedora-selinux/selinux-policy and the modules its targeted
-# policy builds (dist/targeted/modules.conf). Like Fedora, which runs
-# logged-in users as unconfined_t, it leaves the users' own processes alone:
-# only processes of system users (UID below 1000) count. A daemon passes
-# when every such process of it runs under an AppArmor profile in enforce
-# mode. One that D-Bus starts on demand is started first; one that is not
-# installed, or that only runs on some machines, is skipped when it is not
-# running. Prints its results as test/features.sh does.
 
 set -u
 
@@ -149,8 +138,8 @@ t_daemon() {
     confined $pids
 }
 
-# Fedora confines every daemon that serves the network. Seeing which
-# process owns a socket needs root, so the test is skipped when the user
+# Seeing which process owns a socket needs root,
+# so the test is skipped when the user
 # cannot get it without a password.
 t_network_listeners() {
     local out pids=() pid u
@@ -175,7 +164,7 @@ t_network_listeners() {
 
 # --------------------------------------------------------------------------
 
-echo "== Core system (Fedora's SELinux domain in brackets) =="
+echo "== Core system  =="
 run_test "udev device manager (udev_t)"                       t_daemon udevd
 run_test "D-Bus system bus (system_dbusd_t)"                  t_daemon dbus-daemon --user messagebus
 run_test "System logger (syslogd_t)"                          t_daemon syslogd

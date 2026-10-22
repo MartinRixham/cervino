@@ -1,0 +1,48 @@
+# AppArmor profile for colord.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile colord /usr/libexec/colord flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  network netlink raw,
+
+  /usr/libexec/colord mr,
+  /usr/lib/colord-plugins/{,**} mr,
+  /usr/lib/colord-sensors/{,**} mr,
+  /etc/colord.conf r,
+  /etc/udev/hwdb.bin r,
+  /etc/udev/udev.conf r,
+  /etc/machine-id r,
+  /etc/zoneinfo/** r,
+  /usr/share/color/{,**} r,
+  /usr/share/mime/{,**} r,
+  /var/lib/color/{,**} r,
+  /var/lib/colord/{,**} rwk,
+  @{run}/udev/{,**} r,
+  @{run}/systemd/{,**} r,
+  @{sys}/** r,
+  # Colorimeters
+  /dev/bus/usb/** rw,
+  /dev/hidraw* rw,
+
+  # Profiles the users' sessions (and the login screen's) hand it
+  @{HOMEDIRS}/*/.local/share/icc/{,**} r,
+  /var/lib/gdm/.local/share/icc/{,**} r,
+
+  @{PROC}/@{pid}/{cgroup,cmdline,stat} r,
+  @{PROC}/@{pid}/fd/ r,
+
+  # Scanners, as color devices
+  /usr/libexec/colord-sane ix,
+  /etc/sane.d/{,**} r,
+
+  include if exists <local/colord>
+}

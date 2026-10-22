@@ -1,0 +1,44 @@
+# AppArmor profile for wpa_supplicant, which NetworkManager starts through
+# D-Bus for Wi-Fi and 802.1X.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile wpa_supplicant /sbin/wpa_supplicant flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/ssl_certs>
+  include <abstractions/openssl>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability net_admin,
+  capability net_raw,
+  capability dac_override,
+  capability dac_read_search,
+
+  network inet dgram,
+  network inet6 dgram,
+  network netlink raw,
+  network packet,
+
+  /sbin/wpa_supplicant mr,
+  /etc/wpa_supplicant/{,**} r,
+  /etc/ssl/{,**} r,
+  @{run}/wpa_supplicant/{,**} rw,
+  /dev/rfkill rw,
+  @{sys}/** r,
+  @{PROC}/sys/net/** rw,
+  @{PROC}/@{pid}/net/** r,
+
+  # 802.1X certificates and keys, wherever the connection's settings point
+  /etc/NetworkManager/{,**} r,
+  /var/lib/NetworkManager/{,**} r,
+  @{HOMEDIRS}/** r,
+  /root/** r,
+
+  include if exists <local/wpa_supplicant>
+}

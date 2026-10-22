@@ -1,0 +1,47 @@
+# AppArmor profile for UPower.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile upowerd /usr/libexec/upowerd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability dac_read_search,
+  capability sys_admin,
+  capability sys_rawio,
+
+  network netlink raw,
+
+  /usr/libexec/upowerd mr,
+  /etc/UPower/{,**} r,
+  /etc/udev/udev.conf r,
+  /etc/zoneinfo/** r,
+  /var/lib/upower/{,**} rw,
+  @{run}/udev/{,**} r,
+  @{run}/systemd/{,**} r,
+  # Inhibitor locks taken with elogind
+  @{run}/systemd/inhibit/*.ref w,
+
+  @{sys}/** r,
+  # Battery charge limits
+  @{sys}/devices/**/power_supply/*/charge_* rw,
+  @{sys}/devices/**/power_supply/*/charge_control_* rw,
+  # Lid switch, keyboard backlight, UPSes and other USB HID devices
+  /dev/input/ r,
+  /dev/input/event* r,
+  /dev/hidraw* rw,
+  /dev/usb/hiddev* rw,
+  /dev/bus/usb/** rw,
+  @{sys}/devices/**/leds/*/brightness rw,
+
+  @{PROC}/cmdline r,
+  @{PROC}/sys/kernel/** r,
+
+  include if exists <local/upowerd>
+}

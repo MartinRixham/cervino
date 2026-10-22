@@ -3,14 +3,14 @@
 # genapkovl-gnomelive.sh: the apkovl generator of the gnomelive mkimage
 # profile. build-alpine-gnome-iso.sh copies it into aports/scripts/, with
 # genapkovl-gnomelive.conf (the build settings: LIVE_USER, LIVE_PASSWORD,
-# AUTOLOGIN, LSM, WORLD), flathub.flatpakrepo and, for the Raspberry Pi,
-# usercfg.txt next to it, and mkimage runs it with the hostname as its
-# argument.
+# AUTOLOGIN, LSM, WORLD), flathub.flatpakrepo, the repo's AppArmor
+# profiles (apparmor.d/) and, for the Raspberry Pi, usercfg.txt next to it,
+# and mkimage runs it with the hostname as its argument.
 #
 # The runlevels are those the initramfs sets up on the standard ISO, changed
 # as setup-desktop gnome would change them: mdev/hwdrivers swapped for udev
 # (setup-devd udev), plus cgroups, dbus and gdm in default. The desktop
-# features add their services on top.
+# features add their services on top, and AppArmor to sysinit.
 
 HOSTNAME="$1"
 [ -n "$HOSTNAME" ] || { echo "usage: $0 hostname"; exit 1; }
@@ -132,8 +132,22 @@ EOF
 
 # busybox syslogd rotates /var/log/messages itself, by default at 200 KiB
 # with one old file, which a busy desktop fills in minutes: keep 5 x 8 MiB.
+# It runs under its AppArmor profile (see AppArmor below).
 makefile root:root 0644 "$tmp"/etc/conf.d/syslog <<'EOF'
 SYSLOGD_OPTS="-t -s 8192 -b 4"
+apparmor_profile=busybox-syslogd
+. /usr/local/libexec/apparmor-start.sh
+EOF
+
+# The kernel sets the system clock from the hardware clock as it finds it,
+# and chrony keeps it right from then on, so hwclock need not set it again
+# (hwclock --systz, which the init script always runs, still corrects for a
+# hardware clock that keeps local time). Setting it waits for the clock's
+# update interrupt, which some VMs never raise: 10 s, then an error. The
+# file stays plain assignments: openrc-settingsd rewrites clock= in it.
+makefile root:root 0644 "$tmp"/etc/conf.d/hwclock <<'EOF'
+clock="UTC"
+clock_hctosys="NO"
 EOF
 
 # SSDs need to be told which blocks are free; trim mounted file systems
@@ -193,6 +207,88 @@ makefile root:root 0755 "$tmp"/etc/periodic/daily/coredump-cleanup <<'EOF'
 #!/bin/sh
 [ -d /var/lib/coredump ] || exit 0
 exec find /var/lib/coredump -name 'core.*' -mtime +7 -delete
+EOF
+
+# AppArmor: profiles (from the repo's apparmor.d) for system daemons;
+# Alpine's apparmor-profiles has Avahi's.
+# AppArmor loads them in sysinit, before udev starts, so that
+# udevd runs under its profile too.
+for f in "$here"/apparmor.d/*; do
+	makefile root:root 0644 "$tmp"/etc/apparmor.d/"${f##*/}" < "$f"
+done
+makefile root:root 0644 "$tmp"/etc/conf.d/apparmor <<'EOF'
+rc_need="sysfs"
+rc_before="udev"
+EOF
+# A profile attaches to a program by its path, which does not tell busybox
+# applets (syslogd, crond, acpid, getty) from one another, or the system
+# bus's dbus-daemon from the session buses'. Those are started under their
+# profile by name, through this wrapper: from their conf.d files, which
+# replace OpenRC's start with apparmor-start.sh's, and from /etc/inittab.
+makefile root:root 0755 "$tmp"/usr/local/libexec/apparmor-exec <<'EOF'
+#!/bin/sh
+# apparmor-exec PROFILE COMMAND [ARG...]: runs COMMAND under the AppArmor
+# profile PROFILE, or unconfined when that profile is not loaded (AppArmor
+# turned off, or the profile removed).
+profile=$1
+shift
+if grep -qs "^$profile (" /sys/kernel/security/apparmor/profiles; then
+	exec aa-exec -p "$profile" -- "$@"
+fi
+exec "$@"
+EOF
+makefile root:root 0644 "$tmp"/usr/local/libexec/apparmor-start.sh <<'EOF'
+# Sourced by a service's conf.d file, which sets apparmor_profile: OpenRC's
+# start, which the init script does not override, runs the daemon through
+# apparmor-exec.
+start() {
+	local daemon="$command"
+	command_args="$apparmor_profile $command $command_args"
+	command=/usr/local/libexec/apparmor-exec
+	default_start || return
+	# stop looks for the daemon, not for the wrapper.
+	service_set_value command "$daemon"
+}
+EOF
+makefile root:root 0644 "$tmp"/etc/conf.d/crond <<'EOF'
+CRON_OPTS="-c /etc/crontabs"
+apparmor_profile=busybox-crond
+. /usr/local/libexec/apparmor-start.sh
+EOF
+makefile root:root 0644 "$tmp"/etc/conf.d/acpid <<'EOF'
+apparmor_profile=busybox-acpid
+. /usr/local/libexec/apparmor-start.sh
+EOF
+makefile root:root 0644 "$tmp"/etc/conf.d/dbus <<'EOF'
+apparmor_profile=dbus-system
+. /usr/local/libexec/apparmor-start.sh
+EOF
+# alpine-baselayout's inittab, with the gettys started through the wrapper.
+# The initramfs adds a plain getty for a serial console it finds; the lbu
+# shim below wraps that one on installed systems.
+makefile root:root 0644 "$tmp"/etc/inittab <<'EOF'
+# /etc/inittab
+
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+
+# Set up a couple of getty's
+tty1::respawn:/usr/local/libexec/apparmor-exec busybox-getty /sbin/getty 38400 tty1
+tty2::respawn:/usr/local/libexec/apparmor-exec busybox-getty /sbin/getty 38400 tty2
+tty3::respawn:/usr/local/libexec/apparmor-exec busybox-getty /sbin/getty 38400 tty3
+tty4::respawn:/usr/local/libexec/apparmor-exec busybox-getty /sbin/getty 38400 tty4
+tty5::respawn:/usr/local/libexec/apparmor-exec busybox-getty /sbin/getty 38400 tty5
+tty6::respawn:/usr/local/libexec/apparmor-exec busybox-getty /sbin/getty 38400 tty6
+
+# Put a getty on the serial port
+#ttyS0::respawn:/usr/local/libexec/apparmor-exec busybox-getty /sbin/getty -L 115200 ttyS0 vt100
+
+# Stuff to do for the 3-finger salute
+::ctrlaltdel:/sbin/reboot
+
+# Stuff to do before rebooting
+::shutdown:/sbin/openrc shutdown
 EOF
 
 # Alpine's gnome-shell (50) is newer than its gnome-session and GDM (48), and
@@ -267,6 +363,15 @@ done
 # The SPICE agent needs uinput.
 makefile root:root 0644 "$tmp"/etc/modules-load.d/uinput.conf <<'EOF'
 uinput
+EOF
+# spice-vdagentd blocks writing to its virtio port while nothing on the host
+# reads it (no SPICE client), and then ignores SIGTERM: kill it after 5 s,
+# and remove the socket it then leaves behind, or it cannot start again.
+makefile root:root 0644 "$tmp"/etc/conf.d/spice-vdagentd <<'EOF'
+retry="TERM/5/KILL/5"
+stop_post() {
+	rm -f /run/spice-vdagentd/spice-vdagent-sock
+}
 EOF
 
 makefile root:root 0644 "$tmp"/etc/flatpak/remotes.d/flathub.flatpakrepo \
@@ -405,10 +510,12 @@ EOF
 # is the one to log in as. If that user is an admin (in wheel, so doas lets
 # them in), root's password is locked in the copy, as setup-alpine was told
 # not to set one; without an admin, root is left as it is so the system can
-# still be logged in to. On the Pi it also adds boot/usercfg.txt (GNOME
-# needs the GPU's KMS driver): setup-disk unpacks the archive into the new
-# system with its boot partition mounted, and the bootloader package's
-# config.txt includes that file.
+# still be logged in to. The serial console's getty that the initramfs
+# added to inittab is started under its AppArmor profile, as the others
+# are. On the Pi it also adds boot/usercfg.txt (GNOME needs the GPU's KMS
+# driver): setup-disk unpacks the archive into the new system with its boot
+# partition mounted, and the bootloader package's config.txt includes that
+# file.
 # Unquoted heredoc: $LIVE_USER is filled in here.
 makefile root:root 0755 "$tmp"/usr/local/sbin/lbu <<EOF
 #!/bin/sh
@@ -435,6 +542,7 @@ if [ -f etc/group ] && awk -F: '\$1 == "wheel" && \$4 != "" { found = 1 } END { 
 	done
 fi
 [ -f etc/gdm/custom.conf ] && sed -i '/^AutomaticLogin/d' etc/gdm/custom.conf
+[ -f etc/inittab ] && sed -i 's|:/sbin/getty |:/usr/local/libexec/apparmor-exec busybox-getty /sbin/getty |' etc/inittab
 [ -f etc/apk/protected_paths.d/lbu.list ] && sed -i '\\:^+home/$LIVE_USER\$:d' etc/apk/protected_paths.d/lbu.list
 if [ -f /usr/local/share/gnomelive/usercfg.txt ]; then
 	mkdir -p boot
@@ -464,6 +572,7 @@ EOF
 rc_add devfs sysinit
 rc_add dmesg sysinit
 rc_add modloop sysinit
+rc_add apparmor sysinit
 rc_add udev sysinit
 rc_add udev-trigger sysinit
 rc_add udev-settle sysinit
@@ -473,7 +582,6 @@ rc_add sysctl boot
 rc_add hostname boot
 rc_add bootmisc boot
 rc_add syslog boot
-rc_add apparmor boot
 rc_add zram-init boot
 
 rc_add firstboot default

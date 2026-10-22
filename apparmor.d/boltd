@@ -1,0 +1,34 @@
+# AppArmor profile for boltd, the Thunderbolt device manager.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile boltd /usr/libexec/boltd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability dac_override,
+  capability dac_read_search,
+  capability net_admin,
+  capability sys_admin,
+
+  network netlink raw,
+
+  /usr/libexec/boltd mr,
+  /etc/udev/udev.conf r,
+  /etc/zoneinfo/** r,
+  /var/lib/boltd/{,**} rw,
+  @{run}/boltd/{,**} rw,
+  @{run}/udev/{,**} r,
+  @{sys}/** r,
+  # Authorizing devices and setting their keys and boot ACLs
+  @{sys}/devices/**/domain*/** rw,
+  @{sys}/bus/thunderbolt/** rw,
+
+  include if exists <local/boltd>
+}

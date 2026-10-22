@@ -1,0 +1,38 @@
+# AppArmor profile for busybox getty.
+# getty is a busybox applet, which no profile can attach to by path:
+# /etc/inittab starts it under this one by name. login, and so the user's
+# session, is not confined by it.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile busybox-getty flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/consoles>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability chown,
+  capability dac_override,
+  capability fowner,
+  capability fsetid,
+  capability sys_admin,
+  capability sys_tty_config,
+
+  /bin/busybox mr,
+  /etc/issue r,
+  /etc/hostname r,
+  /dev/console rw,
+  /dev/tty* rw,
+  @{run}/utmp rwk,
+  /var/log/wtmp rwk,
+
+  # login
+  /bin/busybox Ux,
+
+  include if exists <local/busybox-getty>
+}

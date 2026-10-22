@@ -1,0 +1,85 @@
+# AppArmor profile for elogind.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile elogind /usr/libexec/elogind/elogind flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability net_admin,
+  capability sys_admin,
+  capability sys_boot,
+  capability sys_ptrace,
+  capability sys_resource,
+  capability sys_tty_config,
+  capability syslog,
+
+  network netlink raw,
+
+  # The users' runtime directories
+  mount fstype=tmpfs -> @{run}/user/@{uid}/,
+  umount @{run}/user/@{uid}/,
+
+  # Session processes: logind reads their state and ends them.
+  ptrace (read),
+  signal (send),
+
+  /usr/libexec/elogind/elogind mr,
+  /etc/elogind/{,**} r,
+  /etc/machine-id r,
+  /etc/zoneinfo/** r,
+  /usr/lib/elogind/{,**} r,
+
+  @{run}/elogind.pid rwk,
+  @{run}/systemd/{,**} rwlk,
+  @{run}/user/{,**} rwlk,
+  @{run}/udev/{,**} r,
+  @{run}/utmp rk,
+
+  # Seat devices handed to compositors, VTs, and the disks it checks for
+  # hibernation
+  /dev/ r,
+  /dev/** r,
+  /dev/dri/* rw,
+  /dev/input/* rw,
+  /dev/hidraw* rw,
+  /dev/tty* rw,
+  /dev/console rw,
+
+  @{sys}/** r,
+  @{sys}/fs/cgroup/** rw,
+  @{sys}/power/** rw,
+  @{sys}/class/backlight/*/brightness rw,
+  @{sys}/class/leds/*/brightness rw,
+  @{sys}/devices/**/brightness rw,
+  @{sys}/firmware/efi/efivars/** rw,
+
+  @{PROC}/cmdline r,
+  @{PROC}/modules r,
+  @{PROC}/swaps r,
+  @{PROC}/sys/kernel/** r,
+  @{PROC}/@{pid}/{cgroup,cmdline,comm,environ,loginuid,sessionid,stat} r,
+  @{PROC}/@{pid}/fdinfo/* r,
+
+  # Powering off, rebooting and suspending: busybox poweroff etc., and the
+  # system-sleep and system-shutdown hooks, unconfined.
+  /bin/busybox Ux,
+  /usr/sbin/kexec Ux,
+  /usr/libexec/elogind/system-sleep/* Ux,
+  /usr/libexec/elogind/system-shutdown/* Ux,
+  /etc/elogind/system-sleep/* Ux,
+
+  include if exists <local/elogind>
+}

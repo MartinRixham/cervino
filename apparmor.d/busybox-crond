@@ -1,0 +1,35 @@
+# AppArmor profile for busybox crond.
+# crond is a busybox applet, which no profile can attach to by path:
+# /etc/conf.d/crond starts it under this one by name. The jobs it runs are
+# not confined by it.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile busybox-crond flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability setgid,
+  capability setuid,
+
+  /bin/busybox mr,
+  /etc/crontabs/{,*} r,
+  /var/spool/cron/{,**} rw,
+  /etc/zoneinfo/** r,
+  @{run}/crond.pid rwk,
+  @{run}/crond.reboot rw,
+  /var/log/cron* rw,
+
+  # Jobs run through /bin/sh, and mail their output with sendmail.
+  /bin/busybox Ux,
+  /bin/bash Ux,
+  /usr/sbin/sendmail Ux,
+
+  include if exists <local/busybox-crond>
+}

@@ -1,0 +1,61 @@
+# AppArmor profile for GDM's daemon.
+# The login screen and the users' sessions run unconfined,
+# started by the session worker (see gdm-session-worker).
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile gdm /usr/sbin/gdm flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability setgid,
+  capability setuid,
+  capability sys_admin,
+  capability sys_tty_config,
+
+  network netlink raw,
+
+  ptrace (read),
+  signal (send),
+
+  /usr/sbin/gdm mr,
+  /etc/gdm/{,**} r,
+  /usr/share/gdm/{,**} r,
+  /usr/share/wayland-sessions/{,**} r,
+  /usr/share/xsessions/{,**} r,
+  /etc/locale.conf r,
+  /etc/machine-id r,
+  /etc/udev/udev.conf r,
+  /etc/zoneinfo/** r,
+
+  @{run}/gdm/{,**} rwk,
+  /var/lib/gdm/{,**} rw,
+  /var/log/gdm/{,**} rw,
+  @{run}/udev/{,**} r,
+  @{run}/systemd/{,**} r,
+  @{run}/utmp rwk,
+  /var/log/wtmp rwk,
+  /dev/tty* rw,
+  /dev/console rw,
+  @{sys}/** r,
+
+  @{PROC}/cmdline r,
+  @{PROC}/@{pid}/{cgroup,cmdline,stat,status,environ,loginuid,sessionid} r,
+  @{PROC}/@{pid}/fd/ r,
+
+  /usr/libexec/gdm-session-worker Px,
+
+  include if exists <local/gdm>
+}

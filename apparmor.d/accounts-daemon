@@ -1,0 +1,99 @@
+# AppArmor profile for AccountsService.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile accounts-daemon /usr/libexec/accounts-daemon flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability dac_override,
+  capability dac_read_search,
+  capability chown,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability setgid,
+  capability setuid,
+  capability sys_ptrace,
+
+  ptrace (read),
+
+  /usr/libexec/accounts-daemon mr,
+  /etc/shadow r,
+  /etc/gshadow r,
+  /etc/shells r,
+  /etc/login.defs r,
+  /etc/default/useradd r,
+  /etc/machine-id r,
+  /etc/zoneinfo/** r,
+  /usr/share/accountsservice/{,**} r,
+  /usr/share/dbus-1/interfaces/{,**} r,
+  /var/lib/AccountsService/{,**} rw,
+  # Automatic login, which it sets in GDM's configuration
+  /etc/gdm/custom.conf rw,
+  /etc/gdm/.goutputstream-* rw,
+  /var/log/wtmp r,
+  @{run}/systemd/{,**} r,
+  # Users' pictures, and their language settings
+  @{HOMEDIRS}/ r,
+  @{HOMEDIRS}/*/ r,
+  @{HOMEDIRS}/*/.face r,
+  @{HOMEDIRS}/*/.pam_environment r,
+  @{HOMEDIRS}/*/.config/user-dirs.locale r,
+  /usr/share/pixmaps/faces/{,**} r,
+
+  @{PROC}/@{pid}/{cgroup,cmdline,stat,status,environ,loginuid,sessionid} r,
+  @{PROC}/@{pid}/fd/ r,
+
+  /usr/sbin/{useradd,userdel,usermod,groupadd,groupdel,groupmod,chpasswd,chage,gpasswd} Cx -> shadow,
+  /usr/bin/{passwd,chage,gpasswd} Cx -> shadow,
+
+  profile shadow flags=(attach_disconnected) {
+    include <abstractions/base>
+    include <abstractions/nameservice>
+
+    capability audit_write,
+    capability chown,
+    capability dac_override,
+    capability dac_read_search,
+    capability fowner,
+    capability fsetid,
+    capability kill,
+    capability sys_ptrace,
+
+    network netlink raw,
+
+    # userdel looks for the user's processes
+    ptrace (read),
+
+    /usr/sbin/* mr,
+    /usr/bin/* mr,
+    /etc/login.defs r,
+    /etc/default/useradd r,
+    /etc/skel/{,**} r,
+    /etc/{passwd,shadow,group,gshadow,subuid,subgid}{,-,+} rw,
+    /etc/{passwd,shadow,group,gshadow,subuid,subgid}.lock rwl -> /etc/*,
+    /etc/{passwd,shadow,group,gshadow,subuid,subgid}.[0-9]* rw,
+    /etc/nshadow rw,
+    /etc/npasswd rw,
+    @{HOMEDIRS}/ r,
+    @{HOMEDIRS}/** rwl,
+    /var/mail/{,*} rw,
+    /var/spool/mail/{,*} rw,
+    /var/log/{lastlog,faillog} rw,
+
+    @{PROC}/ r,
+    @{PROC}/@{pid}/{status,stat,cmdline} r,
+    @{PROC}/@{pid}/task/ r,
+
+    include if exists <local/accounts-daemon_shadow>
+  }
+
+  include if exists <local/accounts-daemon>
+}

@@ -9,7 +9,8 @@
 # Alpine's "rpiimg" image instead of the standard ISO. On top
 # of that it adds and configures what test/features.sh expects of a
 # desktop (bash, NetworkManager, PipeWire, CUPS, AppArmor, Flatpak, ...),
-# both on the live system and on systems installed from it.
+# both on the live system and on systems installed from it, and confines
+# the system daemons with the AppArmor profiles in apparmor.d/.
 #
 # Uses Alpine's own image tooling (aports/scripts/mkimage.sh) with a custom
 # profile that extends profile_standard, run inside an Alpine container, so
@@ -91,6 +92,7 @@ host_main() {
 		--security-opt label=disable \
 		-v "$(realpath "$0")":/build.sh:ro \
 		-v "$(dirname "$(realpath "$0")")"/genapkovl-gnomelive.sh:/genapkovl-gnomelive.sh:ro \
+		-v "$(dirname "$(realpath "$0")")"/apparmor.d:/apparmor.d:ro \
 		-v "$OUTDIR":/out \
 		-e TARGET="$TARGET" \
 		-e ALPINE_BRANCH="$ALPINE_BRANCH" \
@@ -278,14 +280,16 @@ builder_main() {
 	fi
 
 	# --- apkovl generator ----------------------------------------------------
-	# genapkovl-gnomelive.sh reads the build settings from the .conf and the
-	# Flathub remote (and on the Pi, usercfg.txt) from the files next to it.
+	# genapkovl-gnomelive.sh reads the build settings from the .conf, and the
+	# Flathub remote, the AppArmor profiles (and on the Pi, usercfg.txt) from
+	# the files next to it.
 	printf '%s=%s\n' LIVE_USER "$(shquote "$LIVE_USER")" \
 		LIVE_PASSWORD "$(shquote "$LIVE_PASSWORD")" \
 		AUTOLOGIN "$(shquote "$AUTOLOGIN")" \
 		LSM "$(shquote "$lsm")" \
 		WORLD "$(shquote "$world")" > aports/scripts/genapkovl-gnomelive.conf
 	install -m 0755 /genapkovl-gnomelive.sh aports/scripts/genapkovl-gnomelive.sh
+	cp -R /apparmor.d aports/scripts/apparmor.d
 
 	# --- build ---------------------------------------------------------------
 	sh aports/scripts/mkimage.sh \

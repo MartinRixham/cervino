@@ -1,0 +1,28 @@
+# AppArmor profile for the SPICE guest agent's daemon.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile spice-vdagentd /usr/sbin/spice-vdagentd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  /usr/sbin/spice-vdagentd mr,
+  /etc/zoneinfo/** r,
+  @{run}/spice-vdagentd/{,**} rwk,
+  @{run}/systemd/{,**} r,
+  /dev/uinput rw,
+  /dev/vport* rw,
+  /dev/virtio-ports/* rw,
+  @{sys}/** r,
+  /var/log/spice-vdagentd/{,**} rw,
+
+  @{PROC}/@{pid}/{cgroup,cmdline,stat,environ,sessionid} r,
+
+  include if exists <local/spice-vdagentd>
+}

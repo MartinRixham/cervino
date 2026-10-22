@@ -1,0 +1,69 @@
+# AppArmor profile for openrc-settingsd, the hostname1, timedate1 and
+# locale1 D-Bus services.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile openrc-settingsd /usr/libexec/openrc-settingsd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability dac_read_search,
+  capability kill,
+  capability sys_admin,
+  capability sys_ptrace,
+  capability sys_time,
+
+  ptrace (read),
+
+  /usr/libexec/openrc-settingsd mr,
+  /usr/share/openrc-settingsd/{,**} r,
+  /usr/share/zoneinfo/{,**} r,
+  /usr/share/X11/xkb/{,**} r,
+  /etc/ r,
+  /etc/rc.conf r,
+  /etc/os-release r,
+  /usr/lib/os-release r,
+  /etc/zoneinfo/{,**} r,
+
+  # What the services change, written to a temporary file and renamed
+  /etc/hostname rw,
+  /etc/machine-info rw,
+  /etc/localtime rw,
+  /etc/timezone rw,
+  /etc/.goutputstream-* rw,
+  /etc/conf.d/{,*} r,
+  /etc/conf.d/{hwclock,keymaps,loadkeys} rw,
+  /etc/conf.d/.goutputstream-* rw,
+  /etc/profile.d/locale.sh rw,
+  /etc/profile.d/.goutputstream-* rw,
+  /etc/X11/xorg.conf.d/ rw,
+  /etc/X11/xorg.conf.d/{00,30}-keyboard.conf rw,
+  /etc/X11/xorg.conf.d/.goutputstream-* rw,
+  /etc/runlevels/{,**} rw,
+  /dev/rtc* rw,
+
+  @{run}/openrc/{,**} r,
+  @{run}/chrony/chronyd.pid r,
+  @{sys}/devices/virtual/dmi/id/chassis_type r,
+  @{sys}/firmware/acpi/pm_profile r,
+  @{PROC}/cmdline r,
+  @{PROC}/sys/kernel/osrelease r,
+  @{PROC}/@{pid}/{environ,status} r,
+  @{PROC}/@{pid}/fd/ r,
+
+  # Reading conf.d files, and setting the hardware clock
+  /bin/busybox ix,
+  /sbin/hwclock ix,
+  # Starting and stopping the NTP service
+  /etc/init.d/* Ux,
+  /sbin/rc-service Ux,
+  /sbin/rc-update Ux,
+
+  include if exists <local/openrc-settingsd>
+}

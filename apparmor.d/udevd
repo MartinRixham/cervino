@@ -1,0 +1,63 @@
+# AppArmor profile for eudev's udevd and the helpers its rules run.
+# udevd starts in the sysinit runlevel,
+# after AppArmor (see /etc/conf.d/apparmor), so this attaches to it.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile udevd /sbin/udevd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability mknod,
+  capability net_admin,
+  capability setgid,
+  capability setuid,
+  capability sys_admin,
+  capability sys_module,
+  capability sys_nice,
+  capability sys_rawio,
+  capability sys_resource,
+
+  network netlink raw,
+  network inet dgram,
+  network inet6 dgram,
+
+  /sbin/udevd mr,
+  /etc/udev/{,**} r,
+  /usr/lib/udev/{,**} r,
+  /etc/modprobe.d/{,**} r,
+  /usr/lib/modprobe.d/{,**} r,
+  /{usr/,}lib/modules/** r,
+
+  /dev/{,**} rwkl,
+  @{sys}/** rw,
+  @{run}/udev/{,**} rwkl,
+  @{run}/systemd/{,**} r,
+  /var/lib/alsa/{,**} rw,
+
+  @{PROC}/cmdline r,
+  @{PROC}/sys/** r,
+  @{PROC}/@{pid}/mountinfo r,
+  @{PROC}/@{pid}/oom_score_adj rw,
+
+  # What the rules run (RUN, PROGRAM, IMPORT{program}): udev's own helpers,
+  # shell snippets and tools such as blkid, dmsetup and loginctl. They stay
+  # under this profile.
+  /usr/lib/udev/** ix,
+  /usr/libexec/** ix,
+  /{usr/,}{s,}bin/* ix,
+
+  include if exists <local/udevd>
+}

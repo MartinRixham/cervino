@@ -1,0 +1,36 @@
+# AppArmor profile for busybox acpid.
+# acpid is a busybox applet, which no profile can attach to by path:
+# /etc/conf.d/acpid starts it under this one by name. The event handlers it
+# runs (powering off on the power button, ...) are not confined by it.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile busybox-acpid flags=(attach_disconnected) {
+  include <abstractions/base>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  network netlink dgram,
+  network netlink raw,
+
+  /bin/busybox mr,
+  /etc/acpi/{,**} r,
+  /etc/acpid.conf r,
+  /etc/acpi.map r,
+  /dev/input/ r,
+  /dev/input/event* r,
+  @{PROC}/acpi/event r,
+  @{run}/acpid.pid rwk,
+  @{run}/acpid.socket rw,
+  /var/log/acpid.log rw,
+
+  # Handlers: scripts in /etc/acpi, run directly or with run-parts.
+  /etc/acpi/** Ux,
+  /bin/busybox Ux,
+
+  include if exists <local/busybox-acpid>
+}

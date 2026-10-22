@@ -1,0 +1,77 @@
+# AppArmor profile for fwupd.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile fwupd /usr/libexec/fwupd/fwupd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/ssl_certs>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability net_admin,
+  capability sys_admin,
+  capability sys_rawio,
+  capability syslog,
+
+  # Downloading metadata and firmware
+  network inet,
+  network inet6,
+  network netlink raw,
+
+  /usr/libexec/fwupd/{,**} mr,
+  /usr/lib/fwupd-*/{,**} mr,
+  /usr/share/fwupd/{,**} r,
+  /usr/share/mime/{,**} r,
+  /etc/fwupd/{,**} r,
+  /etc/pki/{,**} r,
+  /etc/machine-id r,
+  /etc/os-release r,
+  /usr/lib/os-release r,
+  /etc/zoneinfo/** r,
+  /etc/udev/udev.conf r,
+  /var/lib/fwupd/{,**} rwk,
+  /var/cache/fwupd/{,**} rwk,
+  @{run}/fwupd/{,**} rwk,
+  @{run}/udev/{,**} r,
+  @{run}/systemd/{,**} r,
+
+  # The devices it updates, and the EFI system partition for capsules
+  /dev/ r,
+  /dev/** rw,
+  @{sys}/** r,
+  @{sys}/firmware/efi/efivars/** rw,
+  @{sys}/bus/** w,
+  @{sys}/devices/** w,
+  /boot/{,**} rw,
+  /efi/{,**} rw,
+  /run/media/** rw,
+
+  @{PROC}/cmdline r,
+  @{PROC}/modules r,
+  @{PROC}/swaps r,
+  @{PROC}/mtrr r,
+  @{PROC}/iomem r,
+  @{PROC}/sys/** r,
+  @{PROC}/@{pid}/{cgroup,cmdline,mountinfo,mounts,stat,status} r,
+  @{PROC}/@{pid}/fd/ r,
+
+  # Firmware archives the clients hand it
+  @{HOMEDIRS}/** r,
+  /root/** r,
+  /tmp/** r,
+  /var/tmp/** r,
+
+  /usr/libexec/fwupd/* ix,
+
+  include if exists <local/fwupd>
+}

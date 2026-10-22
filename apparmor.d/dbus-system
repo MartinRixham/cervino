@@ -1,0 +1,54 @@
+# AppArmor profile for D-Bus's system bus.
+# dbus-daemon also runs every session bus, so this profile
+# does not attach by path: /etc/conf.d/dbus starts the system bus under it
+# by name.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile dbus-system flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability audit_write,
+  capability setgid,
+  capability setuid,
+  capability sys_resource,
+
+  network netlink raw,
+
+  /usr/bin/dbus-daemon mr,
+  /etc/dbus-1/{,**} r,
+  /usr/share/dbus-1/{,**} r,
+  /etc/machine-id r,
+  /var/lib/dbus/machine-id r,
+  @{run}/dbus/{,**} rw,
+
+  @{PROC}/@{pid}/cmdline r,
+  @{PROC}/@{pid}/oom_score_adj rw,
+
+  # Its clients pass each other file descriptors (devices from elogind,
+  # inhibitor pipes, disks from udisks, firmware for fwupd, ...), which it
+  # can only receive if it may access their files.
+  /dev/** rw,
+  @{run}/** rw,
+  /tmp/** rw,
+  /var/tmp/** rw,
+  /var/lib/** rw,
+  /var/cache/** rw,
+  @{HOMEDIRS}/** rw,
+  /root/** rw,
+  /memfd:* rw,
+
+  # The services it activates run under their own profiles, or unconfined
+  # (as they did without this one): the setuid helper that starts them
+  # runs unconfined, and they attach to their profiles by path.
+  /usr/libexec/dbus-daemon-launch-helper Ux,
+
+  include if exists <local/dbus-system>
+}

@@ -1,0 +1,36 @@
+# AppArmor profile for polkitd.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile polkitd /usr/lib/polkit-1/polkitd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability setgid,
+  capability setuid,
+  capability dac_read_search,
+  capability sys_ptrace,
+
+  ptrace (read),
+
+  /usr/lib/polkit-1/polkitd mr,
+  /etc/polkit-1/{,**} r,
+  /usr/share/polkit-1/{,**} r,
+  /etc/machine-id r,
+  /etc/zoneinfo/** r,
+  @{run}/systemd/{,**} r,
+
+  @{PROC}/@{pid}/{cgroup,cmdline,stat,status,environ,loginuid,sessionid} r,
+  @{PROC}/@{pid}/fdinfo/* r,
+
+  # Its home is /var/empty, where GLib would make a cache directory.
+  deny /var/empty/** w,
+
+  include if exists <local/polkitd>
+}

@@ -1,0 +1,35 @@
+# AppArmor profile for busybox syslogd.
+# syslogd is a busybox applet, which no profile can attach to by path:
+# /etc/conf.d/syslog starts it under this one by name.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile busybox-syslogd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/consoles>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  # Remote logging (-R)
+  network inet dgram,
+  network inet6 dgram,
+
+  /bin/busybox mr,
+  /etc/syslog.conf r,
+  /etc/zoneinfo/** r,
+
+  /dev/log rw,
+  /var/log/{,**} rw,
+  @{run}/syslogd.pid rwk,
+  # Messages for everyone (*.emerg *)
+  @{run}/utmp r,
+  /dev/console w,
+  /dev/tty* w,
+
+  include if exists <local/busybox-syslogd>
+}

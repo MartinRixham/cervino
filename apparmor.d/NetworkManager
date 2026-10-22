@@ -1,0 +1,83 @@
+# AppArmor profile for NetworkManager.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile NetworkManager /usr/sbin/NetworkManager flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/ssl_certs>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability audit_write,
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability net_admin,
+  capability net_bind_service,
+  capability net_raw,
+  capability setgid,
+  capability setuid,
+  capability sys_admin,
+  capability sys_module,
+  capability sys_ptrace,
+
+  network inet,
+  network inet6,
+  network netlink,
+  network packet,
+
+  ptrace (read),
+  signal (send),
+
+  /usr/sbin/NetworkManager mr,
+  / r,
+  /etc/ r,
+  /usr/lib/NetworkManager/{,**} r,
+  /etc/NetworkManager/{,**} rw,
+  /var/lib/NetworkManager/{,**} rwk,
+  @{run}/NetworkManager/{,**} rwk,
+  /etc/resolv.conf rw,
+  /etc/resolv.conf.* rw,
+  /etc/hostname r,
+  /etc/machine-id r,
+  /etc/udev/udev.conf r,
+  /etc/zoneinfo/** r,
+  /etc/ppp/{,**} r,
+
+  @{run}/udev/{,**} r,
+  @{run}/systemd/{,**} r,
+  # Inhibitor locks taken with elogind
+  @{run}/systemd/inhibit/*.ref w,
+  /dev/rfkill rw,
+  /dev/ppp rw,
+  /dev/net/tun rw,
+  @{sys}/** r,
+  @{sys}/devices/**/net/*/** w,
+  @{sys}/devices/virtual/net/*/** w,
+
+  @{PROC}/cmdline r,
+  @{PROC}/sys/** r,
+  @{PROC}/sys/net/** rw,
+  @{PROC}/@{pid}/{stat,status,cmdline,environ} r,
+  @{PROC}/@{pid}/net/** r,
+
+  # Loading kernel modules (bonds, PPP, ...)
+  /bin/kmod ix,
+  # Shared connections and VPN and modem helpers: under their own profiles
+  # where they have one.
+  /usr/sbin/dnsmasq PUx,
+  /usr/sbin/nft PUx,
+  /usr/sbin/pppd PUx,
+  /usr/lib/NetworkManager/** PUx,
+  /usr/libexec/nm-* PUx,
+
+  include if exists <local/NetworkManager>
+}

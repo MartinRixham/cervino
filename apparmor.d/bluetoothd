@@ -1,0 +1,41 @@
+# AppArmor profile for BlueZ's bluetoothd.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile bluetoothd /usr/lib/bluetooth/bluetoothd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability net_admin,
+  capability net_bind_service,
+  capability net_raw,
+  capability sys_admin,
+  capability sys_nice,
+
+  network bluetooth,
+  network netlink raw,
+  # Bluetooth LE pairing does its cryptography through AF_ALG.
+  network alg seqpacket,
+
+  /usr/lib/bluetooth/{,**} mr,
+  /etc/bluetooth/{,**} r,
+  /etc/machine-info r,
+  /etc/zoneinfo/** r,
+  /etc/udev/udev.conf r,
+  /var/lib/bluetooth/{,**} rwk,
+  @{run}/udev/{,**} r,
+  /dev/rfkill rw,
+  /dev/uhid rw,
+  /dev/uinput rw,
+  /dev/input/ r,
+  @{sys}/** r,
+  @{PROC}/sys/kernel/hostname r,
+
+  include if exists <local/bluetoothd>
+}

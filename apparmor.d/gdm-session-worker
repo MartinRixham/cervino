@@ -1,0 +1,79 @@
+# AppArmor profile for GDM's session worker, which authenticates users
+# through PAM and starts their sessions (and the login screen's).
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile gdm-session-worker /usr/libexec/gdm-session-worker flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/authentication>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  capability audit_write,
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability net_admin,
+  capability setgid,
+  capability setuid,
+  capability sys_resource,
+  capability sys_tty_config,
+
+  network netlink raw,
+
+  ptrace (read),
+  signal (send),
+  signal (receive) peer=gdm,
+
+  /usr/libexec/gdm-session-worker mr,
+  /etc/gdm/{,**} r,
+  /usr/share/gdm/{,**} r,
+  /etc/environment r,
+  /etc/locale.conf r,
+  /etc/shells r,
+  /etc/machine-id r,
+  /etc/zoneinfo/** r,
+
+  @{run}/gdm/{,**} rwk,
+  /var/lib/gdm/{,**} rw,
+  /var/log/gdm/{,**} rw,
+  @{run}/systemd/{,**} r,
+  # The session's end, signalled to elogind through this FIFO
+  @{run}/systemd/sessions/*.ref w,
+  @{run}/user/{,**} r,
+  @{run}/utmp rwk,
+  /var/log/wtmp rwk,
+  /var/log/lastlog rwk,
+  /dev/tty* rw,
+  /dev/console rw,
+
+  # Session logs, and pam_env's settings
+  @{HOMEDIRS}/ r,
+  @{HOMEDIRS}/*/ r,
+  @{HOMEDIRS}/*/.cache/ rw,
+  @{HOMEDIRS}/*/.cache/gdm/{,**} rw,
+  @{HOMEDIRS}/*/.pam_environment r,
+  @{HOMEDIRS}/*/.config/environment.d/{,*} r,
+
+  @{PROC}/@{pid}/{cgroup,cmdline,stat,status,environ,loginuid,sessionid} r,
+  @{PROC}/@{pid}/fd/ r,
+  @{PROC}/@{pid}/attr/{,apparmor/}exec rw,
+  @{PROC}/@{pid}/task/@{tid}/attr/{,apparmor/}exec rw,
+
+  # The sessions, the keyring daemon pam_gnome_keyring starts, and the
+  # scripts GDM runs as root around them
+  /usr/libexec/gdm-wayland-session Ux,
+  /usr/libexec/gdm-x-session Ux,
+  /usr/bin/gnome-keyring-daemon Ux,
+  /etc/gdm/{Init,PostLogin,PreSession,PostSession}/* Ux,
+
+  include if exists <local/gdm-session-worker>
+}

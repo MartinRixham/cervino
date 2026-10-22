@@ -1,0 +1,34 @@
+# AppArmor profile for GeoClue.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile geoclue /usr/libexec/geoclue flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/ssl_certs>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  # Wi-Fi and IP geolocation services, and NMEA sources on the network
+  network inet,
+  network inet6,
+  network netlink raw,
+
+  /usr/libexec/geoclue mr,
+  /etc/geoclue/{,**} r,
+  /etc/machine-id r,
+  /etc/zoneinfo/** r,
+  /usr/share/glib-2.0/schemas/gschemas.compiled r,
+  /var/lib/geoclue/{,**} rw,
+  # GPS receivers and modems
+  /dev/tty{ACM,USB}* rw,
+  /dev/gnss* rw,
+
+  @{PROC}/@{pid}/{cgroup,cmdline,stat} r,
+
+  include if exists <local/geoclue>
+}
