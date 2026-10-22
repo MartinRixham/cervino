@@ -8,8 +8,9 @@
 #      setup-alpine (through the ISO's wrapper, as a user would)
 #   2. test:    boots the installed system into GNOME, logged in as the
 #               user created during the install, and runs
-#               test/features.sh in that desktop session, then logs
-#               out and checks that GDM's login screen comes back
+#               test/features.sh in that desktop session and
+#               test/apparmor.sh as root, then logs out and checks
+#               that GDM's login screen comes back
 #
 # Exits non-zero if either stage fails or any test fails. The serial console
 # output of each boot is streamed to stdout and kept in $WORKDIR/<stage>.log.

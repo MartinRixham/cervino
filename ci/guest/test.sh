@@ -2,9 +2,9 @@
 # Runs as root on the installed system: checks that the live session was
 # left behind, logs the user created during the install in to GNOME, then
 # runs test/features.sh as that user with the session's environment
-# (taken from gnome-shell), as if from a terminal in the desktop. Last, it
-# logs the user out and checks that GDM's login screen comes back. Exits
-# with the number of failed tests.
+# (taken from gnome-shell), as if from a terminal in the desktop, and
+# test/apparmor.sh as root. Last, it logs the user out and checks that
+# GDM's login screen comes back. Exits with the number of failed tests.
 
 set -eu
 
@@ -80,7 +80,7 @@ if [ -t 1 ]; then
 else
 	C_PASS= C_FAIL= C_OFF= color=
 fi
-passed=0 failed=0
+passed=0 failed=0 skipped=0
 pass() {
 	passed=$((passed + 1))
 	printf '%s[PASS]%s %s\n' "$C_PASS" "$C_OFF" "$1"
@@ -92,22 +92,29 @@ fail() {
 	printf '       %s\n' "$2"
 }
 
-out=$(mktemp)
-{
-	rc=0
-	# Its output goes through tee, so it is told to colour it.
-	session_run "$user" "$pid" env $color bash "$(realpath "$dir")/test/features.sh" < /dev/null || rc=$?
-	echo "$rc" > "$out".rc
-} | tee "$out"
-# test/features.sh ends with "Passed: n  Failed: n  Skipped: n" and exits
-# with the number of failures.
-counts=$(sed -n 's/^Passed: \([0-9]*\)  Failed: \([0-9]*\)  Skipped: \([0-9]*\)$/\1 \2 \3/p' "$out" | tail -n 1)
-rc=$(cat "$out".rc)
-rm -f "$out" "$out".rc
-# shellcheck disable=SC2086
-set -- ${counts:-0 0 0}
-passed=$1 failed=$2 skipped=$3
-[ "$rc" -le "$failed" ] || failed=$rc
+# run_suite COMMAND [ARGS...]: runs a test script that prints its results as
+# test/features.sh does and adds its counts to the totals. Such a script
+# ends with "Passed: n  Failed: n  Skipped: n" and exits with the number of
+# failures. Its output goes through tee, so callers tell it to colour it.
+run_suite() {
+	out=$(mktemp)
+	{
+		rc=0
+		"$@" < /dev/null || rc=$?
+		echo "$rc" > "$out".rc
+	} | tee "$out"
+	counts=$(sed -n 's/^Passed: \([0-9]*\)  Failed: \([0-9]*\)  Skipped: \([0-9]*\)$/\1 \2 \3/p' "$out" | tail -n 1)
+	rc=$(cat "$out".rc)
+	rm -f "$out" "$out".rc
+	# shellcheck disable=SC2086
+	set -- ${counts:-0 0 0}
+	[ "$rc" -le "$2" ] || set -- "$1" "$rc" "$3"
+	passed=$((passed + $1)) failed=$((failed + $2)) skipped=$((skipped + $3))
+}
+
+run_suite session_run "$user" "$pid" env $color bash "$(realpath "$dir")/test/features.sh"
+echo
+run_suite env $color bash "$(realpath "$dir")/test/apparmor.sh"
 
 echo
 echo "== Installed system =="

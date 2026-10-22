@@ -41,7 +41,9 @@ from a desktop distribution, and keeps it when installed to disk:
   in user sessions and in the login screen, does both for it)
 
 [`test/features.sh`](test/features.sh) checks all of this on a running
-system.
+system. [`test/apparmor.sh`](test/apparmor.sh) checks that AppArmor confines
+the system daemons that Fedora's SELinux policy confines; most of these
+tests fail until the ISO has profiles for those daemons.
 
 ## Requirements
 
@@ -93,7 +95,7 @@ After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
 virtual disk with `setup-alpine`, checks that nothing of the live session
 was copied to the installed system, runs `test/features.sh` in the
-installed user's GNOME session, and finally logs out and checks that GDM's
+installed user's GNOME session and `test/apparmor.sh` as root, and finally logs out and checks that GDM's
 login screen comes back. The build fails, and no release is
 published, unless every test passes. The Raspberry Pi image is built but not
 tested this way: QEMU can't emulate a Pi that runs GNOME. To run the same

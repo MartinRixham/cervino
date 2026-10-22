@@ -72,7 +72,7 @@ jobs:
           retention-days: 14
 
       # Install the ISO with setup-alpine and run test/features.sh in the
-      # installed system's GNOME session. The job (and so the release) fails
+      # installed system's GNOME session, and test/apparmor.sh. The job (and so the release) fails
       # unless every test passes. The Pi image has no VM test: QEMU can't
       # emulate a Pi that runs GNOME.
       - name: Enable KVM
