@@ -195,8 +195,9 @@ builder_main() {
 		spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal"
 	case $TARGET in
 	iso) features="$features intel-media-driver libva-intel-driver" ;;
-	# vcgencmd, pinctrl etc.
-	rpi) features="$features raspberrypi-utils" ;;
+	# vcgencmd, pinctrl etc. raspberrypi-utils-raspinfo needs a sudo-virt
+	# other than sudo itself, which mkimage's fetch would otherwise pick.
+	rpi) features="$features raspberrypi-utils doas-sudo-shim" ;;
 	esac
 
 	local world
@@ -204,6 +205,21 @@ builder_main() {
 		elogind polkit-elogind "$BROWSER" \
 		eudev udev-init-scripts udev-init-scripts-openrc \
 		$gnome_deps $features | sort -u)
+	# mkimage puts the packages apk fetch --recursive picks in the image's
+	# repo, and that picks the default provider of each dependency on its
+	# own (sudo for raspinfo's sudo-virt, say). If installing the world as a
+	# whole needs one the fetch did not pick, every apk add on the live
+	# system fails, so check that the fetch covers the install.
+	local fetched installed missing
+	fetched=$(apk --root "$apkroot" fetch --simulate --recursive $world |
+		sed -n 's/^Downloading \(.*\)-[^-]*-r[0-9]*$/\1/p' | sort -u) ||
+		die "could not fetch the packages for the image"
+	installed=$(apk --root "$apkroot" add --simulate $world |
+		sed -n 's/^([0-9/]*) Installing \([^ ]*\) .*/\1/p' | sort -u) ||
+		die "the packages for the image conflict (see above)"
+	missing=$(comm -13 <(echo "$fetched") <(echo "$installed"))
+	[[ -z $missing ]] ||
+		die "the image's repo would lack $(echo $missing): add them to the features"
 
 	# Flatpak adds the remotes in /etc/flatpak/remotes.d (see the generator).
 	wget -qO aports/scripts/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo ||
