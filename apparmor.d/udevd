@@ -39,7 +39,9 @@ profile udevd /sbin/udevd flags=(attach_disconnected) {
   /usr/lib/udev/{,**} r,
   /etc/modprobe.d/{,**} r,
   /usr/lib/modprobe.d/{,**} r,
+  # On the live system /lib/modules is a symlink into the modloop.
   /{usr/,}lib/modules/** r,
+  /.modloop/modules/** r,
 
   /dev/{,**} rwkl,
   @{sys}/** rw,
