@@ -1,7 +1,7 @@
 # Cervino
 
-Build a bootable x86_64 Alpine Linux live ISO that starts straight into the
-GNOME desktop.
+Build a bootable x86_64 Alpine Linux live ISO, or a Raspberry Pi SD card
+image, that starts straight into the GNOME desktop.
 
 The image is Alpine's "standard" ISO plus everything `setup-desktop gnome`
 would install and enable, so you don't need to run `setup-alpine` first.
@@ -57,7 +57,8 @@ be installed on the host.
 ./build-alpine-gnome-iso.sh
 ```
 
-The ISO is written to `./out/`.
+The ISO is written to `./out/`. For the [Raspberry Pi](#raspberry-pi) image,
+set `TARGET=rpi`.
 
 Settings are passed as environment variables, for example:
 
@@ -68,8 +69,9 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 
 | Variable        | Default                                    | Description                                                         |
 | --------------- | ------------------------------------------ | ------------------------------------------------------------------- |
+| `TARGET`        | `iso`                                      | `iso` for the x86_64 ISO, `rpi` for the aarch64 Raspberry Pi image  |
 | `ALPINE_BRANCH` | latest stable                              | Alpine release branch, e.g. `v3.24`                                 |
-| `OUTDIR`        | `./out`                                    | Where the ISO is written                                            |
+| `OUTDIR`        | `./out`                                    | Where the image is written                                          |
 | `LIVE_USER`     | `alpine`                                   | Desktop user created at boot                                        |
 | `LIVE_PASSWORD` | none                                       | That user's password; with none, doas and admin prompts don't ask   |
 | `AUTOLOGIN`     | `1`                                        | Set to `0` to stop at the GDM login screen instead of logging in    |
@@ -80,10 +82,11 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 ### Prebuilt ISOs
 
 The [Build ISO](.github/workflows/build-iso.yml) GitHub Actions workflow runs
-the script on every push and pull request that touches it, and uploads the ISO
-and its `SHA256SUMS` as a workflow artifact. You can also start it by hand from
-the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also
-publishes the ISO as a GitHub release.
+the script on every push and pull request that touches it, for both targets,
+and uploads the ISO and the Raspberry Pi image, each with its `SHA256SUMS`, as
+workflow artifacts. You can also start it by hand from the Actions tab and
+choose an Alpine branch there. Pushing a `v*` tag also publishes both images
+as a GitHub release.
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -91,7 +94,9 @@ virtual disk with `setup-alpine`, checks that nothing of the live session
 was copied to the installed system, runs `test/features.sh` in the
 installed user's GNOME session, and finally logs out and checks that GDM's
 login screen comes back. The build fails, and no release is
-published, unless every test passes. To run the same test locally (it needs
+published, unless every test passes. The Raspberry Pi image is built but not
+tested this way: QEMU can't emulate a Pi that runs GNOME. To run the same
+test locally (it needs
 `qemu-system-x86_64`, `xorriso` and access to `/dev/kvm`):
 
 ```sh
@@ -143,20 +148,49 @@ home directory, its doas and polkit rules, its init script and GDM autologin
 are dropped from that copy, so create a user in `setup-alpine`'s user step and
 log in as that user. Without one there is no account GDM can log in to.
 
+## Raspberry Pi
+
+```sh
+TARGET=rpi ./build-alpine-gnome-iso.sh
+```
+
+builds `out/alpine-gnomelive-<release>-aarch64.img.gz`, an SD card image for
+the Raspberry Pi 4, 400, 5 and 500. Like the ISO, the live system runs from
+RAM, so it needs a Pi with **8 GB of RAM or more**. The image is built from
+Alpine's own Pi image, with the same packages, settings and features as the
+ISO (except the Intel VA-API drivers), so it doesn't need an ARM host or
+emulation. It also turns on the GPU's KMS driver (`dtoverlay=vc4-kms-v3d` in
+`usercfg.txt`), which GNOME needs.
+
+Write it to an SD card or USB drive with Raspberry Pi Imager ("Use custom"),
+or with:
+
+```sh
+gunzip -c out/alpine-gnomelive-*-aarch64.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync
+```
+
+Installing works as from the ISO (see [Installing to disk](#installing-to-disk)),
+to a USB or NVMe drive or to the SD card the Pi booted from: everything runs
+from RAM, so `setup-alpine` offers to unmount it. The installed system's boot
+partition gets the same `usercfg.txt`.
+
 ## How it works
 
 The script uses Alpine's own image tooling, `aports/scripts/mkimage.sh`, with
 a custom profile (`gnomelive`) that extends `profile_standard`:
 
 1. **Host:** works out the Alpine release and re-runs itself in an
-   `alpine:<release>` container, mounting the output directory.
+   `alpine:<release>` container, mounting the output directory. For the Pi,
+   `mkimage.sh` builds for aarch64 in the host's own container: it fetches
+   the aarch64 packages and assembles the image without running them.
 2. **Container:** installs the build tools, creates an unprivileged `build`
    user and an abuild signing key (`mkimage.sh` must run unprivileged).
 3. **Builder:** sparse-clones `aports/scripts`, resolves the package list
    that `setup-desktop gnome` would install plus the desktop features listed
    above, and generates:
    - the mkimage profile, which adds those packages (with all dependencies) to
-     the ISO's on-disc apk repository;
+     the ISO's on-disc apk repository (for the Pi it extends Alpine's
+     `rpiimg` profile instead, and adds `usercfg.txt`);
    - an apkovl generator. The apkovl is the same overlay mechanism `lbu` uses;
      it contains `/etc/apk/world`, the GDM config, the desktop features'
      configuration, OpenRC runlevels (udev in place of mdev, plus `cgroups`,

@@ -32,8 +32,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 240
-    permissions:
-      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # iso: the x86_64 ISO; rpi: the aarch64 Raspberry Pi image, cross-built
+        # on the same runner.
+        target: [iso, rpi]
     steps:
       - uses: actions/checkout@v4
 
@@ -46,8 +50,9 @@ jobs:
           sudo docker image prune --all --force
           df -h /
 
-      - name: Build ISO
+      - name: Build image
         env:
+          TARGET: ${{ matrix.target }}
           CONTAINER: docker
           ALPINE_BRANCH: ${{ inputs.alpine_branch }}
           OUTDIR: ${{ github.workspace }}/out
@@ -55,21 +60,23 @@ jobs:
 
       - name: Checksum
         working-directory: out
-        run: sha256sum *.iso | tee SHA256SUMS
+        run: sha256sum alpine-gnomelive-* | tee SHA256SUMS
 
       - uses: actions/upload-artifact@v4
         with:
-          name: alpine-gnome-iso
+          name: alpine-gnome-${{ matrix.target }}
           path: |
-            out/*.iso
+            out/alpine-gnomelive-*
             out/SHA256SUMS
           compression-level: 0
           retention-days: 14
 
       # Install the ISO with setup-alpine and run test/features.sh in the
       # installed system's GNOME session. The job (and so the release) fails
-      # unless every test passes.
+      # unless every test passes. The Pi image has no VM test: QEMU can't
+      # emulate a Pi that runs GNOME.
       - name: Enable KVM
+        if: matrix.target == 'iso'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
             sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -77,26 +84,46 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Install QEMU
+        if: matrix.target == 'iso'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils xorriso
 
       - name: Test ISO in VM
+        if: matrix.target == 'iso'
         env:
           WORKDIR: ${{ runner.temp }}/vm-test
         run: ci/vm-test.sh out/*.iso
 
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: failure() && matrix.target == 'iso'
         with:
           name: vm-test-logs
           path: ${{ runner.temp }}/vm-test/*.log
           retention-days: 14
 
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: alpine-gnome-*
+          path: out
+          merge-multiple: true
+
+      # Each target's artifact has a SHA256SUMS of its own image.
+      - name: Checksum
+        working-directory: out
+        run: sha256sum alpine-gnomelive-* | tee SHA256SUMS
+
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$GITHUB_REF_NAME" out/*.iso out/SHA256SUMS \
+          gh release create "$GITHUB_REF_NAME" out/alpine-gnomelive-* out/SHA256SUMS \
             --title "$GITHUB_REF_NAME" --generate-notes

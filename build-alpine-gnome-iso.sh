@@ -4,7 +4,9 @@
 #
 # Builds an x86_64 ISO that is Alpine's "standard" ISO plus everything that
 # `setup-desktop gnome` would install and enable, so the live system boots
-# straight to the GNOME desktop without running setup-alpine first. On top
+# straight to the GNOME desktop without running setup-alpine first, or
+# (TARGET=rpi) the same as an aarch64 Raspberry Pi SD card image, built on
+# Alpine's "rpiimg" image instead of the standard ISO. On top
 # of that it adds and configures what test/features.sh expects of a
 # desktop (bash, NetworkManager, PipeWire, CUPS, AppArmor, Flatpak, ...),
 # both on the live system and on systems installed from it.
@@ -24,8 +26,10 @@
 #   ./build-alpine-gnome-iso.sh
 #
 # Environment overrides:
+#   TARGET          iso: an x86_64 ISO; rpi: an aarch64 Raspberry Pi
+#                   (4, 400, 5, 500) SD card image (default: iso)
 #   ALPINE_BRANCH   Alpine release branch, e.g. v3.24 (default: latest-stable)
-#   OUTDIR          where the ISO is written (default: ./out)
+#   OUTDIR          where the image is written (default: ./out)
 #   LIVE_USER       desktop user created on boot (default: alpine)
 #   LIVE_PASSWORD   that user's password (default: none; the user logs in,
 #                   unlocks the screen and uses doas and polkit without one)
@@ -33,13 +37,20 @@
 #                   LIVE_USER straight in to GNOME (default: 1)
 #   BROWSER         browser package, as setup-desktop (default: firefox)
 #   CONTAINER       container runtime to use (default: podman, else docker)
+#   MIRROR          Alpine package mirror
+#                   (default: https://dl-cdn.alpinelinux.org/alpine)
 #
 # Note: the live system runs entirely from RAM (tmpfs), so booting the
-# resulting ISO needs roughly 6 GB of RAM or more.
+# resulting image needs roughly 6 GB of RAM or more (an 8 GB Pi).
 
 set -euo pipefail
 
-ARCH=x86_64
+TARGET=${TARGET:-iso}
+case $TARGET in
+iso) ARCH=x86_64 image_ext=iso ;;
+rpi) ARCH=aarch64 image_ext=img.gz ;;
+*) echo "error: bad TARGET: $TARGET (iso or rpi)" >&2; exit 1 ;;
+esac
 MIRROR=${MIRROR:-https://dl-cdn.alpinelinux.org/alpine}
 LIVE_USER=${LIVE_USER:-alpine}
 LIVE_PASSWORD=${LIVE_PASSWORD-}
@@ -72,7 +83,7 @@ host_main() {
 	OUTDIR=$(realpath -m "${OUTDIR:-./out}")
 	mkdir -p "$OUTDIR"
 
-	echo ">>> Building Alpine ${ALPINE_BRANCH#v} GNOME live ISO with $runtime"
+	echo ">>> Building Alpine ${ALPINE_BRANCH#v} GNOME live $TARGET image ($ARCH) with $runtime"
 	# On SELinux hosts, disable confinement for this container rather than
 	# relabelling the volumes with :Z: a container-private label on $OUTDIR
 	# stops libvirt's qemu from opening the ISO in it.
@@ -81,6 +92,7 @@ host_main() {
 		-v "$(realpath "$0")":/build.sh:ro \
 		-v "$(dirname "$(realpath "$0")")"/genapkovl-gnomelive.sh:/genapkovl-gnomelive.sh:ro \
 		-v "$OUTDIR":/out \
+		-e TARGET="$TARGET" \
 		-e ALPINE_BRANCH="$ALPINE_BRANCH" \
 		-e MIRROR="$MIRROR" \
 		-e LIVE_USER="$LIVE_USER" \
@@ -91,7 +103,7 @@ host_main() {
 		sh -c 'apk add --quiet bash && exec bash /build.sh --in-container'
 
 	echo ">>> Done:"
-	ls -lh "$OUTDIR"/*.iso
+	ls -lh "$OUTDIR"/*-"$ARCH.$image_ext"
 }
 
 # ---------------------------------------------------------------------------
@@ -102,7 +114,7 @@ container_main() {
 		> /etc/apk/repositories
 	apk update --quiet
 	apk add --quiet alpine-sdk alpine-conf apk-tools busybox fakeroot \
-		syslinux xorriso squashfs-tools mtools dosfstools grub grub-efi git
+		syslinux xorriso squashfs-tools mtools dosfstools sfdisk grub grub-efi git
 
 	# mkimage must run unprivileged: apk 3 rejects its --no-chown as root.
 	adduser -D build
@@ -116,7 +128,7 @@ container_main() {
 	cp /home/build/.abuild/*.rsa.pub /etc/apk/keys/
 
 	su build -s /bin/bash -c 'bash /build.sh --as-builder'
-	cp /work/iso/*.iso /out/
+	cp /work/out/*."$image_ext" /out/
 }
 
 builder_main() {
@@ -142,8 +154,17 @@ builder_main() {
 	#   setup-wayland-base: elogind polkit-elogind $BROWSER
 	#   setup-devd udev:    eudev udev-init-scripts udev-init-scripts-openrc
 	#   gnome:              apk add $(apk info --quiet --depends gnome gnome-apps-core)
+	# mkimage cross-builds for $ARCH, which need not be the container's own
+	# architecture, so resolve the packages in an apk root for $ARCH.
+	local apkroot=/work/apkroot
+	# (The keys there are symlinks: cp without -r copies the files.)
+	mkdir -p "$apkroot"/etc/apk/keys
+	cp /usr/share/apk/keys/"$ARCH"/* "$apkroot"/etc/apk/keys/
+	printf '%s\n' "$repo_main" "$repo_community" > "$apkroot"/etc/apk/repositories
+	apk --root "$apkroot" --arch "$ARCH" add --quiet --initdb --no-chown
+	apk --root "$apkroot" update --quiet
 	local gnome_deps
-	gnome_deps=$(apk info --quiet --depends gnome gnome-apps-core |
+	gnome_deps=$(apk --root "$apkroot" info --quiet --depends gnome gnome-apps-core |
 		sed -e 's/[<>=~].*//' | grep -v '^$' | sort -u)
 	[[ -n $gnome_deps ]] || die "could not resolve gnome dependencies"
 
@@ -154,9 +175,9 @@ builder_main() {
 	# Bluetooth, printing, mDNS, a firewall, power profiles, AppArmor, zram
 	# swap, PipeWire, xdg-utils, Flatpak, Alpine's packages in GNOME Software
 	# (apk-polkit-server and the AppStream catalog), VA-API (libva with the
-	# Mesa, Intel and vainfo packages), the SPICE guest agent, gcompat (the
-	# glibc loader, for programs built for glibc) and fstrim. Their
-	# configuration and services are set up in the apkovl below.
+	# Mesa, Intel (x86_64 only) and vainfo packages), the SPICE guest agent,
+	# gcompat (the glibc loader, for programs built for glibc) and fstrim.
+	# Their configuration and services are set up in the apkovl below.
 	# pipewire-pulse provides the pulseaudio that gnome-settings-daemon
 	# depends on, so PulseAudio itself is not installed.
 	local features="bash bash-completion file xz zstd pciutils dmidecode rsync
@@ -169,8 +190,12 @@ builder_main() {
 		pipewire-alsa pipewire-spa-bluez xdg-utils flatpak
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium
-		intel-media-driver libva-intel-driver spice-vdagent spice-vdagent-openrc
-		gcompat fstrim"
+		spice-vdagent spice-vdagent-openrc gcompat fstrim"
+	case $TARGET in
+	iso) features="$features intel-media-driver libva-intel-driver" ;;
+	# vcgencmd, pinctrl etc.
+	rpi) features="$features raspberrypi-utils" ;;
+	esac
 
 	local world
 	world=$(printf '%s\n' alpine-base doas \
@@ -187,23 +212,74 @@ builder_main() {
 	local lsm="lsm=landlock,lockdown,yama,loadpin,safesetid,integrity,apparmor"
 
 	# --- mkimage profile -----------------------------------------------------
-	cat > aports/scripts/mkimg.gnomelive.sh <<-EOF
-	profile_gnomelive() {
-		profile_standard
-		profile_abbrev="gnome"
-		title="GNOME Live"
-		desc="Alpine standard plus GNOME, booting straight into GDM."
-		arch="x86_64"
-		kernel_cmdline="\$kernel_cmdline $lsm"
-		apks="\$apks $(echo $world)"
-		apkovl="aports/scripts/genapkovl-gnomelive.sh"
-		hostname="alpine"
-	}
-	EOF
+	if [[ $TARGET == iso ]]; then
+		cat > aports/scripts/mkimg.gnomelive.sh <<-EOF
+		profile_gnomelive() {
+			profile_standard
+			profile_abbrev="gnome"
+			title="GNOME Live"
+			desc="Alpine standard plus GNOME, booting straight into GDM."
+			arch="x86_64"
+			kernel_cmdline="\$kernel_cmdline $lsm"
+			apks="\$apks $(echo $world)"
+			apkovl="aports/scripts/genapkovl-gnomelive.sh"
+			hostname="alpine"
+		}
+		EOF
+	else
+		# The Pi's config.txt includes usercfg.txt, for settings of our own:
+		# GNOME needs the GPU's KMS driver, which the firmware leaves off.
+		# The apkovl takes it along for the lbu shim to put on installs.
+		printf '%s\n' "# Load the GPU's KMS driver, which GNOME needs." \
+			dtoverlay=vc4-kms-v3d > aports/scripts/usercfg.txt
+		# Alpine's Pi image: one FAT partition with the firmware, kernel,
+		# apks and apkovl. section_rpi_config only builds the Pi's boot
+		# files (config.txt, cmdline.txt, firmware) for hostname rpi.
+		cat > aports/scripts/mkimg.gnomelive.sh <<-EOF
+		profile_gnomelive() {
+			profile_rpiimg
+			image_name="alpine-gnomelive"
+			title="GNOME Live"
+			desc="Alpine for the Raspberry Pi plus GNOME, booting straight into GDM."
+			arch="aarch64"
+			kernel_cmdline="\$kernel_cmdline $lsm"
+			apks="\$apks $(echo $world)"
+			output_format="gnomelive"
+			apkovl="aports/scripts/genapkovl-gnomelive.sh"
+			hostname="rpi"
+		}
+
+		section_gnomelive_usercfg() {
+			[ "\$PROFILE" = gnomelive ] || return 0
+			build_section gnomelive_usercfg \$(checksum < /work/aports/scripts/usercfg.txt)
+		}
+
+		build_gnomelive_usercfg() {
+			cp /work/aports/scripts/usercfg.txt "\$DESTDIR"/
+		}
+
+		# rpiimg's create_image_imggz makes a FAT16 partition only 8 MB bigger
+		# than the files, which the slack in its 32 KB clusters fills with this
+		# many files. FAT32 with 4 KB clusters (which the Pi boots from too),
+		# a tenth and 64 MB bigger, leaves room for the FAT and some free space.
+		create_image_gnomelive() {
+			sync "\$DESTDIR"
+			local imgfile="\$OUTDIR/\${output_filename%.gz}"
+			local size=\$(du -L -k -s "\$DESTDIR" | awk '{ print int(\$1 * 1.1 / 1024) + 64 }')
+			rm -f "\$imgfile"
+			truncate -s \$((size + 1))M "\$imgfile"
+			echo 'start=2048, type=c, bootable' | sfdisk "\$imgfile"
+			mkfs.vfat -n PIBOOT -F 32 -s 8 --offset 2048 "\$imgfile"
+			mcopy -s -i "\$imgfile"@@2048s "\$DESTDIR"/* "\$DESTDIR"/.alpine-release ::
+			echo "Compressing \$imgfile..."
+			pigz -f -9 "\$imgfile" || gzip -f -9 "\$imgfile"
+		}
+		EOF
+	fi
 
 	# --- apkovl generator ----------------------------------------------------
 	# genapkovl-gnomelive.sh reads the build settings from the .conf and the
-	# Flathub remote from the file next to it.
+	# Flathub remote (and on the Pi, usercfg.txt) from the files next to it.
 	printf '%s=%s\n' LIVE_USER "$(shquote "$LIVE_USER")" \
 		LIVE_PASSWORD "$(shquote "$LIVE_PASSWORD")" \
 		AUTOLOGIN "$(shquote "$AUTOLOGIN")" \
@@ -214,7 +290,7 @@ builder_main() {
 	# --- build ---------------------------------------------------------------
 	sh aports/scripts/mkimage.sh \
 		--tag "$(cat /etc/alpine-release)" \
-		--outdir /work/iso \
+		--outdir /work/out \
 		--workdir /work/mkimage \
 		--arch "$ARCH" \
 		--repository "$repo_main" \

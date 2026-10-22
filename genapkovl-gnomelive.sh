@@ -3,8 +3,9 @@
 # genapkovl-gnomelive.sh: the apkovl generator of the gnomelive mkimage
 # profile. build-alpine-gnome-iso.sh copies it into aports/scripts/, with
 # genapkovl-gnomelive.conf (the build settings: LIVE_USER, LIVE_PASSWORD,
-# AUTOLOGIN, LSM, WORLD) and flathub.flatpakrepo next to it, and mkimage runs
-# it with the hostname as its argument.
+# AUTOLOGIN, LSM, WORLD), flathub.flatpakrepo and, for the Raspberry Pi,
+# usercfg.txt next to it, and mkimage runs it with the hostname as its
+# argument.
 #
 # The runlevels are those the initramfs sets up on the standard ISO, changed
 # as setup-desktop gnome would change them: mdev/hwdrivers swapped for udev
@@ -411,7 +412,10 @@ EOF
 # is the one to log in as. If that user is an admin (in wheel, so doas lets
 # them in), root's password is locked in the copy, as setup-alpine was told
 # not to set one; without an admin, root is left as it is so the system can
-# still be logged in to.
+# still be logged in to. On the Pi it also adds boot/usercfg.txt (GNOME
+# needs the GPU's KMS driver): setup-disk unpacks the archive into the new
+# system with its boot partition mounted, and the bootloader package's
+# config.txt includes that file.
 # Unquoted heredoc: $LIVE_USER is filled in here.
 makefile root:root 0755 "$tmp"/usr/local/sbin/lbu <<EOF
 #!/bin/sh
@@ -439,8 +443,20 @@ if [ -f etc/group ] && awk -F: '\$1 == "wheel" && \$4 != "" { found = 1 } END { 
 fi
 [ -f etc/gdm/custom.conf ] && sed -i '/^AutomaticLogin/d' etc/gdm/custom.conf
 [ -f etc/apk/protected_paths.d/lbu.list ] && sed -i '\\:^+home/$LIVE_USER\$:d' etc/apk/protected_paths.d/lbu.list
+if [ -f /usr/local/share/gnomelive/usercfg.txt ]; then
+	mkdir -p boot
+	cp /usr/local/share/gnomelive/usercfg.txt boot/
+	echo boot/usercfg.txt >> "\$d"/list
+fi
 tar -c --no-recursion -T "\$d"/list -z
 EOF
+
+# The Pi image's usercfg.txt (see build-alpine-gnome-iso.sh), for the lbu
+# shim above to put on installed systems' boot partitions.
+if [ -f "$here"/usercfg.txt ]; then
+	makefile root:root 0644 "$tmp"/usr/local/share/gnomelive/usercfg.txt \
+		< "$here"/usercfg.txt
+fi
 
 # busybox adduser gives new users /bin/sh; give desktop users bash instead
 # (system users, created with -S, and an explicit -s are left alone).
