@@ -39,7 +39,7 @@ jobs:
         # on the same runner.
         target: [iso, rpi]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The mkimage work directory plus the ISO need several GB; the stock
       # runner image leaves too little free on / without this.
@@ -62,7 +62,7 @@ jobs:
         working-directory: out
         run: sha256sum alpine-gnomelive-* | tee SHA256SUMS
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: alpine-gnome-${{ matrix.target }}
           path: |
@@ -95,7 +95,7 @@ jobs:
           WORKDIR: ${{ runner.temp }}/vm-test
         run: ci/vm-test.sh out/*.iso
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure() && matrix.target == 'iso'
         with:
           name: vm-test-logs
@@ -109,7 +109,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: alpine-gnome-*
           path: out
