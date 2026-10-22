@@ -130,13 +130,6 @@ table inet filter {
 }
 EOF
 
-# sshd (if it is installed) takes keys only: a password can be guessed by
-# anyone on the network. With UsePAM, keyboard-interactive asks for it too.
-makefile root:root 0644 "$tmp"/etc/ssh/sshd_config.d/50-desktop.conf <<'EOF'
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-EOF
-
 # busybox syslogd rotates /var/log/messages itself, by default at 200 KiB
 # with one old file, which a busy desktop fills in minutes: keep 5 x 8 MiB.
 makefile root:root 0644 "$tmp"/etc/conf.d/syslog <<'EOF'
@@ -358,8 +351,8 @@ EOF
 # stopping any, skips the interface and DNS steps, keeps udev, which GNOME
 # needs, and defaults community to enabled. It also defaults the user step
 # to the plugdev (network settings) and lpadmin (printers) groups and the
-# installed kernel command line to one with AppArmor enabled, and skips
-# the root password (-e): the lbu shim below locks root on the installed
+# installed kernel command line to one with AppArmor enabled, installs no
+# SSH server, and skips the root password (-e): the lbu shim below locks root on the installed
 # system, whose admin user gets root through doas. An answer file passed
 # with -f still overrides these defaults.
 # The shims in the temporary directory only need to work until
@@ -383,7 +376,7 @@ done
 chmod +x "\$shim"/*
 DEVDOPTS=\${DEVDOPTS:-udev} APKREPOSOPTS=\${APKREPOSOPTS:--c} \\
 	USEROPTS=\${USEROPTS:--a -g audio,input,video,netdev,plugdev,lpadmin} \\
-	KERNELOPTS=\${KERNELOPTS:-quiet $LSM} \\
+	KERNELOPTS=\${KERNELOPTS:-quiet $LSM} SSHDOPTS=\${SSHDOPTS:-none} \\
 	PATH="\$shim:\$PATH" /usr/sbin/setup-alpine -e "\$@"
 rc=\$?
 rm -rf "\$shim"

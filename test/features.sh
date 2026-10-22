@@ -91,38 +91,6 @@ scheduled_job_files() {
     done
 }
 
-# Prints sshd's settings as "keyword value", keywords in lower case, in the
-# order sshd reads them, following Include where it appears. sshd uses the
-# first value it reads for a keyword. Settings in Match blocks are left out
-# (output stops at the first Match). sshd -T would say the same, but it
-# needs the host keys, which only root can read.
-sshd_config_lines() {
-    local f=$1 line kw rest g
-    [[ -r $f ]] || return 0
-    while read -r line; do
-        kw=${line%%[[:space:]=]*}
-        rest=${line#"$kw"}
-        rest=${rest#"${rest%%[![:space:]=]*}"}
-        case ${kw,,} in
-            '' | '#'*) ;;
-            match) return 1 ;;
-            include)
-                for g in $rest; do
-                    [[ $g == /* ]] || g=/etc/ssh/$g
-                    for g in $g; do
-                        sshd_config_lines "$g" || return 1
-                    done
-                done
-                ;;
-            *) printf '%s %s\n' "${kw,,}" "$rest" ;;
-        esac
-    done <"$f"
-}
-
-sshd_setting() {
-    sshd_config_lines /etc/ssh/sshd_config | awk -v k="$1" '$1 == k { print tolower($2); exit }'
-}
-
 # --------------------------------------------------------------------------
 # Shell and command-line environment
 # --------------------------------------------------------------------------
@@ -370,18 +338,12 @@ t_firewall_forwarding() {
     return 1
 }
 
-# A password login over SSH can be guessed by anyone on the same network.
-# With PAM, keyboard-interactive authentication asks for the password too.
-t_ssh_no_password_auth() {
-    local pw kbd
-    first_have sshd /usr/sbin/sshd >/dev/null || return 0
-    pw=$(sshd_setting passwordauthentication)
-    [[ ${pw:-yes} == no ]] || { echo "sshd accepts passwords (PasswordAuthentication ${pw:-yes})"; return 1; }
-    [[ $(sshd_setting usepam) == yes ]] || return 0
-    kbd=$(sshd_setting kbdinteractiveauthentication)
-    [[ -n $kbd ]] || kbd=$(sshd_setting challengeresponseauthentication)
-    [[ ${kbd:-yes} == no ]] ||
-        { echo "sshd accepts passwords through PAM (KbdInteractiveAuthentication ${kbd:-yes})"; return 1; }
+# A network service nobody asked for is something more to attack: sshd, if
+# installed, should only run once the user turns it on.
+t_sshd_disabled() {
+    service_enabled sshd && { echo "sshd is enabled"; return 1; }
+    proc_running sshd && { echo "sshd is running"; return 1; }
+    return 0
 }
 
 # The system log should go back days, not minutes, so that it still covers
@@ -667,7 +629,7 @@ run_test "Printing available"                          t_printing
 run_test "mDNS hostname published"                      t_mdns
 run_test "Firewall active"                             t_firewall
 run_test "Firewall forwards container and VM traffic"  t_firewall_forwarding
-run_test "SSH server refuses password logins"          t_ssh_no_password_auth
+run_test "SSH server disabled by default"              t_sshd_disabled
 run_test "Power management service"                    t_power_profiles
 run_test "System log keeps enough history"             t_log_retention
 run_test "Crash dump collector configured"             t_coredump_handler

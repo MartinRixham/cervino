@@ -20,7 +20,8 @@ from a desktop distribution, and keeps it when installed to disk:
 - Bluetooth, CUPS printing, Avahi mDNS, an nftables firewall (allowing SSH
   and mDNS in, and forwarding for container and VM bridges), and power
   profiles
-- sshd, if installed, set to accept keys only (no password logins)
+- no SSH server: the installer defaults to none, and sshd, if installed
+  later, is not enabled until you turn it on
 - AppArmor, zram swap (half the RAM, at most 8 GB), a crash dump collector
   writing to `/var/lib/coredump` (dumps are deleted after a week), a system
   log kept to 40 MB instead of busybox syslogd's 400 KB, and a weekly

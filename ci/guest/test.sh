@@ -2,10 +2,9 @@
 # Runs as root on the installed system: checks that the live session was
 # left behind, logs the user created during the install in to GNOME, then
 # runs test/features.sh as that user with the session's environment
-# (taken from gnome-shell), as if from a terminal in the desktop, and checks
-# that sshd runs with password logins off. Last, it logs the user out and
-# checks that GDM's login screen comes back. Exits with the number of failed
-# tests.
+# (taken from gnome-shell), as if from a terminal in the desktop. Last, it
+# logs the user out and checks that GDM's login screen comes back. Exits
+# with the number of failed tests.
 
 set -eu
 
@@ -177,20 +176,6 @@ t_logout_to_greeter() {
 	pass "Logging out returns to the GDM login screen"
 }
 
-# test/features.sh reads sshd's config files itself (sshd -T needs the host
-# keys, which only root can read); check that sshd runs and agrees.
-t_sshd() {
-	desc="SSH server running, refusing password logins (sshd -T)"
-	rc-service sshd status > /dev/null 2>&1 || { fail "$desc" "sshd is not running"; return 1; }
-	settings=$(sshd -T 2>&1) || { fail "$desc" "sshd -T: $settings"; return 1; }
-	for kw in passwordauthentication kbdinteractiveauthentication; do
-		value=$(echo "$settings" | awk -v k="$kw" '$1 == k { print $2 }')
-		[ "$value" = no ] || { fail "$desc" "$kw ${value:-unset}"; return 1; }
-	done
-	pass "$desc"
-}
-
-t_sshd || true
 t_logout_to_greeter || true
 
 echo

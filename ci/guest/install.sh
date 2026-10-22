@@ -2,9 +2,9 @@
 # Runs as root on the live ISO: installs to /dev/vda with setup-alpine, using
 # the ISO's wrapper in /usr/local/sbin as a user in the live desktop would.
 # The answer file leaves out what the wrapper sets defaults for (DEVDOPTS,
-# KERNELOPTS, no root password) or skips (interfaces and DNS:
+# KERNELOPTS, SSHDOPTS, no root password) or skips (interfaces and DNS:
 # NetworkManager handles the network), so those defaults are what gets
-# tested. It installs openssh, so that the ISO's sshd settings are tested.
+# tested.
 
 set -eu
 
@@ -29,7 +29,6 @@ TIMEZONEOPTS=UTC
 PROXYOPTS=none
 APKREPOSOPTS="-1 -c"
 USEROPTS="-a -u -g audio,input,video,netdev,plugdev,lpadmin tester"
-SSHDOPTS=openssh
 NTPOPTS=none
 DISKOPTS="-m sys /dev/vda"
 LBUOPTS=none
