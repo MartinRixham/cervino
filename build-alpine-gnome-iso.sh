@@ -192,7 +192,7 @@ builder_main() {
 		pipewire-alsa pipewire-spa-bluez xdg-utils flatpak
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium
-		spice-vdagent spice-vdagent-openrc gcompat fstrim"
+		spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal"
 	case $TARGET in
 	iso) features="$features intel-media-driver libva-intel-driver" ;;
 	# vcgencmd, pinctrl etc.

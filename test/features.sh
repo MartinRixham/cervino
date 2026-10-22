@@ -338,6 +338,70 @@ t_firewall_forwarding() {
     return 1
 }
 
+# Run as root by t_ipv6_rpfilter: sets up a network namespace joined to the
+# host by a veth pair, sends a TCP SYN to port 22 (open in the firewall) at
+# the host from an address it has a route back to and at another of its
+# addresses from one it has none back to (2001:db8:dead::/64 is
+# unreachable), and prints for each "in" or "out": whether it got past
+# every input chain, which a counter in a chain of its own that runs after
+# every other shows. Needs iproute2's ip (busybox ip has no netns).
+rpfilter_probe() {
+    local ns=rpftest c v=
+    cleanup() {
+        ip netns del "$ns" 2>/dev/null
+        ip -6 route del unreachable 2001:db8:dead::/64 2>/dev/null
+        nft delete table inet rpftest 2>/dev/null
+    }
+    cleanup
+    trap cleanup EXIT
+    (
+        set -e
+        ip netns add "$ns"
+        ip link add rpf-host type veth peer name eth0 netns "$ns"
+        nmcli device set rpf-host managed no 2>/dev/null || true
+        ip addr add fd18::1/64 dev rpf-host nodad
+        ip addr add fd18::3/128 dev rpf-host nodad
+        ip link set rpf-host up
+        ip -n "$ns" addr add fd18::2/64 dev eth0 nodad
+        ip -n "$ns" addr add 2001:db8:dead::2/128 dev eth0 nodad
+        ip -n "$ns" link set eth0 up
+        ip -n "$ns" -6 route add fd18::3/128 dev eth0 src 2001:db8:dead::2
+        ip -6 route add unreachable 2001:db8:dead::/64
+        nft -f - <<'EOF'
+table inet rpftest {
+    counter arrived {}
+    chain input {
+        type filter hook input priority 2147483647; policy accept;
+        iifname "rpf-host" tcp dport 22 counter name "arrived"
+    }
+}
+EOF
+    ) >/dev/null || return 1
+    for c in fd18::1 fd18::3; do
+        nft reset counter inet rpftest arrived >/dev/null
+        ip netns exec "$ns" timeout 2 bash -c 'exec 3<>"/dev/tcp/$1/22"' _ "$c" 2>/dev/null
+        nft list counter inet rpftest arrived | grep -Eq 'packets [1-9]' && v+=" in" || v+=" out"
+    done
+    echo $v
+}
+
+# Like Fedora (IPv6_rpfilter=loose in Workstation's firewalld.conf), drop
+# IPv6 packets from source addresses the host has no route back to, which
+# are spoofed. IPv4 has the kernel's rp_filter. Needs root, so the test is
+# skipped when the user cannot get it without a password.
+t_ipv6_rpfilter() {
+    local out
+    as_root true 2>/dev/null || { echo "cannot set up a test network without root"; return 2; }
+    out=$(as_root bash -c "$(declare -f rpfilter_probe); rpfilter_probe" 2>/dev/null) ||
+        { echo "cannot set up a test network (needs iproute2's ip and nft)"; return 1; }
+    case $out in
+        "in out") return 0 ;;
+        "in in") echo "a packet from 2001:db8:dead::2, which has no route back, got in" ;;
+        *) echo "cannot tell: a packet to SSH (port 22) from fd18::2 did not get in either" ;;
+    esac
+    return 1
+}
+
 # A network service nobody asked for is something more to attack: sshd, if
 # installed, should only run once the user turns it on.
 t_sshd_disabled() {
@@ -629,6 +693,7 @@ run_test "Printing available"                          t_printing
 run_test "mDNS hostname published"                      t_mdns
 run_test "Firewall active"                             t_firewall
 run_test "Firewall forwards container and VM traffic"  t_firewall_forwarding
+run_test "IPv6 reverse path filter"                     t_ipv6_rpfilter
 run_test "SSH server disabled by default"              t_sshd_disabled
 run_test "Power management service"                    t_power_profiles
 run_test "System log keeps enough history"             t_log_retention
