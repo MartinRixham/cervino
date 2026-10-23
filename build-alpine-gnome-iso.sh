@@ -234,8 +234,11 @@ builder_main() {
 	# at 32 MB (nvme.max_host_mem_size_mb=32 in its bootargs, which
 	# cmdline.txt comes after and so overrides). A DRAM-less drive that
 	# needs more, as many ask for 64 MB, then gets none and runs slower.
+	# The same bootargs turn off the memory cgroup controller
+	# (cgroup_disable=memory); the Pi kernel's cgroup_enable= turns it back
+	# on, so cgroups (containers' memory limits, for one) can limit memory.
 	if [[ $TARGET == rpi ]]; then
-		kernel_opts+=" nvme.max_host_mem_size_mb=64"
+		kernel_opts+=" nvme.max_host_mem_size_mb=64 cgroup_enable=memory"
 	fi
 
 	# --- mkimage profile -----------------------------------------------------

@@ -499,7 +499,8 @@ EOF
 # needs, and defaults community to enabled. It also defaults the user step
 # to the plugdev (network settings) and lpadmin (printers) groups and the
 # installed kernel command line to one with AppArmor enabled (and on the
-# Pi, NVMe drives' host memory buffer cap raised), offers only mirrors
+# Pi, NVMe drives' host memory buffer cap raised and the memory cgroup
+# controller back on), offers only mirrors
 # reached over HTTPS (setup-apkrepos picks from $MIRRORS, else from
 # mirrors.txt, which lists http:// URLs only; mirrors.json lists each
 # mirror's https:// URL too, the CDN first), installs no
