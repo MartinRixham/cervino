@@ -183,7 +183,8 @@ builder_main() {
 	# decoders: multithreaded H.264, and the E-AC-3 and DTS sound tracks
 	# GStreamer has no other decoder for), dav1d's AV1 decoder (much faster
 	# than libaom's, the only other one), the SPICE guest agent,
-	# gcompat (the glibc loader, for programs built for glibc) and fstrim.
+	# gcompat (the glibc loader, for programs built for glibc), fstrim and
+	# (x86_64 only) the CPU microcode.
 	# Their configuration and services are set up in the apkovl below.
 	# pipewire-pulse provides the pulseaudio that gnome-settings-daemon
 	# depends on, so PulseAudio itself is not installed.
@@ -199,7 +200,9 @@ builder_main() {
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium gst-libav
 		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal"
 	case $TARGET in
-	iso) features="$features intel-media-driver libva-intel-driver" ;;
+	# CPU microcode updates: setup-disk's boot loader (GRUB or syslinux)
+	# finds the images in /boot and loads them before the initramfs.
+	iso) features="$features intel-media-driver libva-intel-driver amd-ucode intel-ucode" ;;
 	# vcgencmd, pinctrl etc. raspberrypi-utils-raspinfo needs a sudo-virt
 	# other than sudo itself, which mkimage's fetch would otherwise pick.
 	rpi) features="$features raspberrypi-utils doas-sudo-shim" ;;
@@ -259,6 +262,10 @@ builder_main() {
 			desc="Alpine standard plus GNOME, booting straight into GDM."
 			arch="x86_64"
 			kernel_cmdline="\$kernel_cmdline $kernel_opts"
+			# CPU microcode, loaded by the ISO's boot loaders (as in
+			# profile_extended)
+			boot_addons="amd-ucode intel-ucode"
+			initrd_ucode="/boot/amd-ucode.img /boot/intel-ucode.img"
 			apks="\$apks $(echo $world)"
 			apkovl="aports/scripts/genapkovl-gnomelive.sh"
 			hostname="alpine"

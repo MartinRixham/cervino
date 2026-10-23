@@ -31,7 +31,8 @@ from a desktop distribution, and keeps it when installed to disk:
   [`apparmor.d/`](apparmor.d)), zram swap (half the RAM, at most 8 GB), a
   crash dump collector writing to `/var/lib/coredump` (dumps are deleted
   after a week), a system log kept to 40 MB instead of busybox syslogd's
-  400 KB, and a weekly `fstrim` for SSDs
+  400 KB, a weekly `fstrim` for SSDs, and Intel and AMD CPU microcode
+  updates, loaded by the boot loader (x86_64 only)
 - PipeWire as the sound server (in place of PulseAudio), with AirPlay
   speakers on the network as outputs, `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
@@ -179,9 +180,9 @@ builds `out/alpine-gnomelive-<release>-aarch64.img.gz`, an SD card image for
 the Raspberry Pi 4, 400, 5 and 500. Like the ISO, the live system runs from
 RAM, so it needs a Pi with **8 GB of RAM or more**. The image is built from
 Alpine's own Pi image, with the same packages, settings and features as the
-ISO (except the Intel VA-API drivers), so it doesn't need an ARM host or
-emulation. It also turns on the GPU's KMS driver (`dtoverlay=vc4-kms-v3d` in
-`usercfg.txt`), which GNOME needs.
+ISO (except the Intel VA-API drivers and the CPU microcode), so it doesn't
+need an ARM host or emulation. It also turns on the GPU's KMS driver
+(`dtoverlay=vc4-kms-v3d` in `usercfg.txt`), which GNOME needs.
 
 Write it to an SD card or USB drive with Raspberry Pi Imager ("Use custom"),
 or with:

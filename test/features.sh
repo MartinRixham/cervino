@@ -560,6 +560,27 @@ t_firmware() {
     ((${#missing[@]} == 0)) || { echo "no firmware for loaded drivers: ${missing[*]}"; return 1; }
 }
 
+t_cpu_microcode() {
+    # The boot loader loads the CPU vendor's microcode image before the
+    # initramfs. (A VM's CPU takes no updates, so check the configuration
+    # rather than the kernel log.) The live ISO's boot configuration is on
+    # its boot medium.
+    local vendor img f
+    vendor=$(awk -F': ' '$1 ~ /^vendor_id/ { print $2; exit }' /proc/cpuinfo)
+    case $vendor in
+        GenuineIntel) img=intel-ucode.img ;;
+        AuthenticAMD) img=amd-ucode.img ;;
+        *) echo "no microcode updates for ${vendor:-this} CPU ($(uname -m))"; return 2 ;;
+    esac
+    [[ -f /boot/$img ]] || { echo "no /boot/$img"; return 1; }
+    for f in /boot/grub/grub.cfg /boot/extlinux.conf /boot/limine/limine.conf \
+        /media/*/boot/syslinux/syslinux.cfg /media/*/boot/grub/grub.cfg; do
+        [[ -r $f ]] && grep -qF "$img" "$f" && return 0
+    done
+    echo "no boot loader configuration loads $img"
+    return 1
+}
+
 # --------------------------------------------------------------------------
 # Desktop integration
 # --------------------------------------------------------------------------
@@ -773,6 +794,7 @@ run_test "Mandatory access control active"             t_mandatory_access_contro
 run_test "Compressed swap (zram or zswap)"             t_memory_compression
 run_test "SSD TRIM enabled or scheduled"               t_ssd_trim
 run_test "Device firmware installed"                   t_firmware
+run_test "CPU microcode loaded at boot"                t_cpu_microcode
 
 echo
 echo "== Desktop integration =="
