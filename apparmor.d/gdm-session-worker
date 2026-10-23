@@ -38,6 +38,9 @@ profile gdm-session-worker /usr/libexec/gdm-session-worker flags=(attach_disconn
   /usr/libexec/gdm-session-worker mrix,
   /etc/gdm/{,**} r,
   /usr/share/gdm/{,**} r,
+  # The session desktop files; without them a reauthentication (unlocking
+  # the screen) fails and GDM ends the session
+  /usr/{,local/}share/{wayland-sessions,xsessions}/{,**} r,
   /etc/environment r,
   /etc/locale.conf r,
   /etc/shells r,
