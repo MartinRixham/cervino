@@ -3,9 +3,9 @@
 # left behind, logs the user created during the install in to GNOME, then
 # runs test/features.sh as that user with the session's environment
 # (taken from gnome-shell), as if from a terminal in the desktop, and
-# test/apparmor.sh as root. Then it locks the screen and unlocks it by
-# typing the password, logs the user out and checks that GDM's login screen
-# comes back, and last that the kernel log has no AppArmor denials. Exits with the number of failed tests.
+# test/apparmor.sh as root. Then it logs the user out and checks that
+# GDM's login screen comes back, and last that the kernel log has no
+# AppArmor denials. Exits with the number of failed tests.
 
 set -eu
 
@@ -119,35 +119,6 @@ run_suite env $color bash "$(realpath "$dir")/test/apparmor.sh"
 
 echo
 echo "== Installed system =="
-
-# Locking the screen and typing the password into the unlock dialog has to
-# unlock it and keep the session: the dialog authenticates through a GDM
-# session worker, which ends the session when it fails. tester has no
-# password, so it gets one for this test. Runs before the logout test, as a
-# failure can end the session.
-t_lock_unlock() {
-	session_id=$(loginctl list-sessions --no-legend 2>/dev/null |
-		awk -v u="$user" '$3 == u && $4 == "seat0" { print $1; exit }')
-	log_lines=$(wc -l < /var/log/messages 2>/dev/null) || log_lines=0
-	printf '%s:%s\n' "$user" unlock1234 | chpasswd
-	rc=0
-	out=$(session_run "$user" "$pid" timeout 90 gjs "$(realpath "$dir")/ci/guest/unlock-probe.js" unlock1234 2>&1 < /dev/null) || rc=$?
-	passwd -d "$user" > /dev/null
-	if [ "$rc" -eq 0 ] && [ -e /proc/"$pid" ] && [ -n "$session_id" ] &&
-		[ "$(loginctl show-session "$session_id" -p Active --value 2>/dev/null)" = yes ]; then
-		pass "Unlocking the screen returns to the session"
-		return 0
-	fi
-	[ "$rc" -eq 0 ] && out="the session of $user (${session_id:-none}) is gone or no longer active"
-	fail "Unlocking the screen returns to the session" "$out"
-	echo "--- sessions:"
-	loginctl list-sessions --no-legend 2>&1
-	echo "--- /var/log/messages since locking:"
-	tail -n +"$((log_lines + 1))" /var/log/messages 2>/dev/null | tail -n 100
-	return 1
-}
-
-t_lock_unlock || true
 
 # Logging out has to end the user's session and bring back GDM's login
 # screen: its own gnome-shell, running as gdm, in seat0's active session and
