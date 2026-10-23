@@ -181,7 +181,8 @@ ssh_setup() {
     ssh_host_keys=$(ls /etc/ssh/ssh_host_* 2>/dev/null)
     if ! rc-service sshd status >/dev/null 2>&1; then
         ssh_started=1
-        rc-service sshd start >/dev/null 2>&1 || { ssh_error="rc-service sshd start failed"; return; }
+        # stdin too: sshd's profile would deny it the terminal the tests run on
+        rc-service sshd start >/dev/null 2>&1 </dev/null || { ssh_error="rc-service sshd start failed"; return; }
     fi
     id "$SSH_USER" >/dev/null 2>&1 && userdel -r "$SSH_USER" >/dev/null 2>&1
     # '*': no password, but not locked ('!'), which sshd refuses keys for too
