@@ -238,8 +238,12 @@ builder_main() {
 	# The same bootargs turn off the memory cgroup controller
 	# (cgroup_disable=memory); the Pi kernel's cgroup_enable= turns it back
 	# on, so cgroups (containers' memory limits, for one) can limit memory.
+	# Without a console= argument the kernel takes /dev/console from the
+	# device tree's stdout-path, the debug UART, so the initramfs would ask
+	# for an encrypted root's passphrase there, leaving the screen blank;
+	# console=tty1 puts it on the screen.
 	if [[ $TARGET == rpi ]]; then
-		kernel_opts+=" nvme.max_host_mem_size_mb=64 cgroup_enable=memory"
+		kernel_opts+=" nvme.max_host_mem_size_mb=64 cgroup_enable=memory console=tty1"
 	fi
 
 	# --- mkimage profile -----------------------------------------------------

@@ -150,7 +150,9 @@ puts a wrapper in front of it that:
 - enables AppArmor on the installed system's kernel command line (on the
   Pi it also raises the firmware's 32 MB cap on an NVMe drive's host memory
   buffer to 64 MB, so DRAM-less drives that need 64 MB get one, and turns
-  the memory cgroup controller, which the firmware turns off, back on),
+  the memory cgroup controller, which the firmware turns off, back on, and
+  sets `console=tty1`, so an encrypted root's passphrase is asked for on
+  the screen rather than on the debug UART),
 - skips the root password question and locks root's password on the
   installed system when you create an admin user (the default), who gets
   root with `doas` instead,
