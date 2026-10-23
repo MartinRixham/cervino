@@ -225,9 +225,17 @@ builder_main() {
 	wget -qO aports/scripts/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo ||
 		die "could not download the Flathub remote"
 
-	# AppArmor is built into the kernel but needs enabling on the command line,
-	# both on the ISO and (through setup-disk's KERNELOPTS) on installs.
-	local lsm="lsm=landlock,lockdown,yama,loadpin,safesetid,integrity,apparmor"
+	# Kernel arguments, both on the image and (through setup-disk's
+	# KERNELOPTS) on installs. AppArmor is built into the kernel but needs
+	# enabling on the command line.
+	local kernel_opts="lsm=landlock,lockdown,yama,loadpin,safesetid,integrity,apparmor"
+	# The Pi firmware's device tree caps an NVMe drive's host memory buffer
+	# at 32 MB (nvme.max_host_mem_size_mb=32 in its bootargs, which
+	# cmdline.txt comes after and so overrides). A DRAM-less drive that
+	# needs more, as many ask for 64 MB, then gets none and runs slower.
+	if [[ $TARGET == rpi ]]; then
+		kernel_opts+=" nvme.max_host_mem_size_mb=64"
+	fi
 
 	# --- mkimage profile -----------------------------------------------------
 	if [[ $TARGET == iso ]]; then
@@ -238,7 +246,7 @@ builder_main() {
 			title="GNOME Live"
 			desc="Alpine standard plus GNOME, booting straight into GDM."
 			arch="x86_64"
-			kernel_cmdline="\$kernel_cmdline $lsm"
+			kernel_cmdline="\$kernel_cmdline $kernel_opts"
 			apks="\$apks $(echo $world)"
 			apkovl="aports/scripts/genapkovl-gnomelive.sh"
 			hostname="alpine"
@@ -260,7 +268,7 @@ builder_main() {
 			title="GNOME Live"
 			desc="Alpine for the Raspberry Pi plus GNOME, booting straight into GDM."
 			arch="aarch64"
-			kernel_cmdline="\$kernel_cmdline $lsm"
+			kernel_cmdline="\$kernel_cmdline $kernel_opts"
 			apks="\$apks $(echo $world)"
 			output_format="gnomelive"
 			apkovl="aports/scripts/genapkovl-gnomelive.sh"
@@ -302,7 +310,7 @@ builder_main() {
 	printf '%s=%s\n' LIVE_USER "$(shquote "$LIVE_USER")" \
 		LIVE_PASSWORD "$(shquote "$LIVE_PASSWORD")" \
 		AUTOLOGIN "$(shquote "$AUTOLOGIN")" \
-		LSM "$(shquote "$lsm")" \
+		KERNEL_OPTS "$(shquote "$kernel_opts")" \
 		WORLD "$(shquote "$world")" > aports/scripts/genapkovl-gnomelive.conf
 	install -m 0755 /genapkovl-gnomelive.sh aports/scripts/genapkovl-gnomelive.sh
 	cp -R /apparmor.d aports/scripts/apparmor.d

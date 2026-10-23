@@ -142,7 +142,9 @@ puts a wrapper in front of it that:
   change network settings and manage printers, gives them bash as the
   login shell, and makes their home directory readable only by them (users
   added later in GNOME Settings get the same),
-- enables AppArmor on the installed system's kernel command line,
+- enables AppArmor on the installed system's kernel command line (on the
+  Pi it also raises the firmware's 32 MB cap on an NVMe drive's host memory
+  buffer to 64 MB, so DRAM-less drives that need 64 MB get one),
 - skips the root password question and locks root's password on the
   installed system when you create an admin user (the default), who gets
   root with `doas` instead,

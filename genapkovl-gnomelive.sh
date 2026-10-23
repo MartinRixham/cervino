@@ -3,7 +3,7 @@
 # genapkovl-gnomelive.sh: the apkovl generator of the gnomelive mkimage
 # profile. build-alpine-gnome-iso.sh copies it into aports/scripts/, with
 # genapkovl-gnomelive.conf (the build settings: LIVE_USER, LIVE_PASSWORD,
-# AUTOLOGIN, LSM, WORLD), flathub.flatpakrepo, the repo's AppArmor
+# AUTOLOGIN, KERNEL_OPTS, WORLD), flathub.flatpakrepo, the repo's AppArmor
 # profiles (apparmor.d/) and, for the Raspberry Pi, usercfg.txt next to it,
 # and mkimage runs it with the hostname as its argument.
 #
@@ -489,7 +489,8 @@ EOF
 # stopping any, skips the interface and DNS steps, keeps udev, which GNOME
 # needs, and defaults community to enabled. It also defaults the user step
 # to the plugdev (network settings) and lpadmin (printers) groups and the
-# installed kernel command line to one with AppArmor enabled, installs no
+# installed kernel command line to one with AppArmor enabled (and on the
+# Pi, NVMe drives' host memory buffer cap raised), installs no
 # SSH server, skips the NTP step (its default, busybox ntpd, would run
 # next to the chronyd the install already has from the live runlevels),
 # and skips the root password (-e): the lbu shim below locks root on the installed
@@ -510,7 +511,7 @@ EOF
 # setup-alpine sources /etc/profile, which resets PATH; the lbu and
 # adduser shims, used after that, live in /usr/local/sbin, which
 # /etc/profile puts first.
-# Unquoted heredoc: $LSM is filled in here.
+# Unquoted heredoc: $KERNEL_OPTS is filled in here.
 makefile root:root 0755 "$tmp"/usr/local/sbin/setup-alpine <<EOF
 #!/bin/sh
 shim=\$(mktemp -d) || exit
@@ -546,7 +547,7 @@ done
 chmod +x "\$shim"/*
 DEVDOPTS=\${DEVDOPTS:-udev} APKREPOSOPTS=\${APKREPOSOPTS:--c} \\
 	USEROPTS=\${USEROPTS:--a -g audio,input,video,netdev,plugdev,lpadmin} \\
-	KERNELOPTS=\${KERNELOPTS:-quiet $LSM} SSHDOPTS=\${SSHDOPTS:-none} \\
+	KERNELOPTS=\${KERNELOPTS:-quiet $KERNEL_OPTS} SSHDOPTS=\${SSHDOPTS:-none} \\
 	NTPOPTS=\${NTPOPTS:-none} \\
 	PATH="\$shim:\$PATH" /usr/sbin/setup-alpine -e "\$@"
 EOF
