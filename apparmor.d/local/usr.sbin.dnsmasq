@@ -1,0 +1,11 @@
+# Additions to Alpine's dnsmasq profile (apparmor-profiles), which only
+# expects libvirt to manage dnsmasq. NetworkManager runs it as the local
+# DNS server (dns=dnsmasq): it reads dnsmasq's /proc entries to check its
+# pid file and stops it with a signal.
+
+# Signals from root's shells and what they run (kill, rc-service, ...),
+# which Alpine's busybox profile, in unconfined mode, labels busybox
+signal (receive) peer=busybox,
+
+signal (receive) peer=NetworkManager,
+ptrace (readby) peer=NetworkManager,

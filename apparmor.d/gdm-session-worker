@@ -74,10 +74,14 @@ profile gdm-session-worker /usr/libexec/gdm-session-worker flags=(attach_disconn
   @{PROC}/@{pid}/task/@{tid}/attr/{,apparmor/}exec rw,
 
   # The sessions, the keyring daemon pam_gnome_keyring starts, and the
-  # scripts GDM runs as root around them
+  # scripts GDM runs as root around them. The keyring daemon gets ux, not
+  # Ux: a clean exec sets AT_SECURE for its whole life, so GLib ignores
+  # DBUS_SESSION_BUS_ADDRESS when the session's autostart hands it over,
+  # and the daemon never provides the Secret Service. It runs as the user
+  # already (pam_gnome_keyring drops privileges before the exec).
   /usr/libexec/gdm-wayland-session Ux,
   /usr/libexec/gdm-x-session Ux,
-  /usr/bin/gnome-keyring-daemon Ux,
+  /usr/bin/gnome-keyring-daemon ux,
   /etc/gdm/{Init,PostLogin,PreSession,PostSession}/* Ux,
 
   include if exists <local/gdm-session-worker>

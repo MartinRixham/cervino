@@ -19,6 +19,10 @@ profile wpa_supplicant /sbin/wpa_supplicant flags=(attach_disconnected) {
   capability net_raw,
   capability dac_override,
   capability dac_read_search,
+  # Looking up an interface that doesn't exist yet (the P2P device it is
+  # about to create) makes the kernel try to load a module of that name;
+  # there is none to load, so refuse quietly
+  deny capability sys_module,
 
   network inet dgram,
   network inet6 dgram,

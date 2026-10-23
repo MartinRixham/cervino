@@ -56,6 +56,7 @@ profile udisksd /usr/libexec/udisks2/udisksd flags=(attach_disconnected) {
   /etc/udev/udev.conf r,
   /etc/zoneinfo/** r,
   /var/lib/udisks2/{,**} rwk,
+  @{run}/ r,
   @{run}/udisks2/{,**} rwk,
   @{run}/mount/{,**} rwk,
   @{run}/cryptsetup/{,**} rwk,

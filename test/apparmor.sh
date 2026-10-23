@@ -310,6 +310,7 @@ echo
 echo "== Network =="
 run_test "NetworkManager (NetworkManager_t)"                  t_daemon NetworkManager
 run_test "wpa_supplicant (NetworkManager_t)"                  t_daemon wpa_supplicant --dbus fi.w1.wpa_supplicant1
+run_test "dnsmasq DNS server (dnsmasq_t)"                     t_daemon dnsmasq
 run_test "chrony time sync (chronyd_t)"                       t_daemon chronyd
 run_test "Avahi mDNS (avahi_t)"                               t_daemon avahi-daemon
 run_test "Every system process on a network socket confined"  t_network_listeners

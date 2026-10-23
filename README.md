@@ -15,7 +15,10 @@ from a desktop distribution, and keeps it when installed to disk:
   CLI tools (`file`, `xz`, `zstd`, `lspci`, `dmidecode`, `rsync`), and
   `gcompat` so programs built for glibc run
 - a UTF-8 locale (`C.UTF-8`), English spell checking, emoji and CJK fonts
-- NetworkManager, chrony for time sync (the installer skips its NTP step, so
+- NetworkManager, with dnsmasq as the local DNS server, so a VPN's internal
+  names go to the VPN's DNS server and everything else to the network's (with
+  several servers in `resolv.conf`, musl takes whichever answers first),
+  chrony for time sync (the installer skips its NTP step, so
   busybox ntpd isn't added next to it), and `openrc-settingsd` for GNOME
   Settings' hostname, date/time and language panels
 - Bluetooth, CUPS printing, Avahi mDNS, an nftables firewall (allowing SSH,

@@ -173,7 +173,9 @@ builder_main() {
 	# --- Desktop features on top of that ------------------------------------
 	# What test/features.sh checks for: a full shell and the usual CLI
 	# tools, man pages, a UTF-8 locale, spell checking, emoji and CJK fonts,
-	# NetworkManager, NTP, the hostname1/timedate1/locale1 D-Bus services,
+	# NetworkManager (with dnsmasq as the local DNS server, built with the
+	# D-Bus support NetworkManager configures it through), NTP, the
+	# hostname1/timedate1/locale1 D-Bus services,
 	# Bluetooth, printing, mDNS, a firewall, an SSH client and server (not
 	# enabled), power profiles, AppArmor, zram swap, PipeWire (with AirPlay
 	# speakers found over mDNS: pipewire-zeroconf), xdg-utils,
@@ -191,7 +193,7 @@ builder_main() {
 	local features="bash bash-completion file xz zstd pciutils dmidecode rsync
 		mandoc mandoc-apropos mandoc-doc man-pages command-not-found nano
 		musl-locales musl-locales-lang hunspell-en font-noto-emoji font-noto-cjk
-		networkmanager networkmanager-cli networkmanager-wifi chrony
+		networkmanager networkmanager-cli networkmanager-wifi dnsmasq-dnssec-dbus chrony
 		openrc-settingsd bluez cups cups-client cups-filters avahi avahi-tools
 		nftables openssh power-profiles-daemon apparmor apparmor-utils apparmor-profiles
 		zram-init zram-init-openrc pipewire wireplumber pipewire-pulse

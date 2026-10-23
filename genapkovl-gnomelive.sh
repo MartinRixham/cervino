@@ -101,10 +101,17 @@ HOME_MODE 0700
 EOF
 
 # NetworkManager manages all interfaces; ifupdown only brings up lo.
+# With several name servers in resolv.conf, musl asks them all at once and
+# takes the first answer, NXDOMAIN included, so a VPN's internal names
+# resolve only when its server happens to answer first (and musl ignores
+# servers after the third). NetworkManager's dnsmasq, the only server in
+# resolv.conf, sends each connection's DNS domains to that connection's
+# servers instead.
 makefile root:root 0644 "$tmp"/etc/NetworkManager/conf.d/10-alpine.conf <<'EOF'
 [main]
 dhcp=internal
 plugins=keyfile
+dns=dnsmasq
 EOF
 makefile root:root 0644 "$tmp"/etc/network/interfaces <<'EOF'
 auto lo
@@ -270,11 +277,13 @@ exec find /var/lib/coredump -name 'core.*' -mtime +7 -delete
 EOF
 
 # AppArmor: profiles (from the repo's apparmor.d) for system daemons;
-# Alpine's apparmor-profiles has Avahi's.
+# Alpine's apparmor-profiles has Avahi's and dnsmasq's, which
+# apparmor.d/local adds to.
 # AppArmor loads them in sysinit, before udev starts, so that
 # udevd runs under its profile too.
-for f in "$here"/apparmor.d/*; do
-	makefile root:root 0644 "$tmp"/etc/apparmor.d/"${f##*/}" < "$f"
+for f in "$here"/apparmor.d/* "$here"/apparmor.d/local/*; do
+	[ -f "$f" ] || continue
+	makefile root:root 0644 "$tmp"/etc/apparmor.d/"${f#"$here"/apparmor.d/}" < "$f"
 done
 makefile root:root 0644 "$tmp"/etc/conf.d/apparmor <<'EOF'
 rc_need="sysfs"

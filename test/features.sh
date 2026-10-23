@@ -259,6 +259,37 @@ t_network_manager() {
     return 1
 }
 
+t_split_dns() {
+    # With several name servers in resolv.conf, musl asks them all at once
+    # and takes the first answer, so names only a VPN's server knows resolve
+    # some of the time. A local server that sends each connection's domains
+    # to that connection's servers (NetworkManager's dnsmasq,
+    # systemd-resolved) must be the only one listed.
+    local ns mode
+    ns=$(awk '$1 == "nameserver" { print $2 }' /etc/resolv.conf 2>/dev/null)
+    [[ -n $ns ]] || { echo "no name server in /etc/resolv.conf"; return 1; }
+    if grep -qvE '^(127\.|::1$)' <<<"$ns"; then
+        echo "/etc/resolv.conf lists name servers other than a local one:" $ns
+        return 1
+    fi
+    if proc_running NetworkManager && have gdbus; then
+        mode=$(gdbus call --system --dest org.freedesktop.NetworkManager \
+            --object-path /org/freedesktop/NetworkManager/DnsManager \
+            --method org.freedesktop.DBus.Properties.Get \
+            org.freedesktop.NetworkManager.DnsManager Mode 2>/dev/null)
+        case $mode in
+            *"'dnsmasq'"*)
+                proc_running dnsmasq ||
+                    { echo "NetworkManager's DNS mode is dnsmasq, but dnsmasq is not running"; return 1; } ;;
+            *"'systemd-resolved'"*) ;;
+            *) echo "NetworkManager's DNS mode is ${mode:-unknown}, not dnsmasq or systemd-resolved"; return 1 ;;
+        esac
+    fi
+    have getent || return 0
+    timeout 15 getent hosts dl-cdn.alpinelinux.org >/dev/null 2>&1 ||
+        { echo "dl-cdn.alpinelinux.org does not resolve through the local server"; return 1; }
+}
+
 t_time_sync() {
     # Two clients fight over the clock (setup-alpine's NTP step adds
     # busybox ntpd unless told otherwise)
@@ -619,6 +650,19 @@ t_xdg_open() {
     have xdg-open || { echo "xdg-utils not installed"; return 1; }
 }
 
+# Browsers and other apps keep their passwords in the Secret Service. Reading
+# its collections never prompts; if the keyring daemon is not on the session
+# bus, D-Bus activation hands the request to it and times out.
+t_secret_service() {
+    have gdbus || { echo "gdbus missing"; return 2; }
+    dbus_name_available --session org.gnome.SessionManager || { echo "not in a GNOME session"; return 2; }
+    gdbus call --session --timeout 15 --dest org.freedesktop.secrets \
+        --object-path /org/freedesktop/secrets \
+        --method org.freedesktop.DBus.Properties.Get \
+        org.freedesktop.Secret.Service Collections >/dev/null 2>&1 ||
+        { echo "no Secret Service (org.freedesktop.secrets) on the session bus"; return 1; }
+}
+
 t_app_store_sandbox() {
     have flatpak || { echo "Flatpak not installed"; return 1; }
     [[ -n $(flatpak remotes --columns=name 2>/dev/null) ]] || { echo "no Flatpak remote configured"; return 1; }
@@ -777,6 +821,7 @@ run_test "CJK fonts installed"                         t_fonts_cjk
 echo
 echo "== System services =="
 run_test "Network management daemon running"           t_network_manager
+run_test "Per-connection DNS (VPN split DNS)"           t_split_dns
 run_test "Network time synchronisation"                t_time_sync
 run_test "hostname1/timedate1/locale1 D-Bus services"  t_settings_dbus_services
 run_test "Bluetooth service enabled"                   t_bluetooth
@@ -802,6 +847,7 @@ run_test "PipeWire is the sound server"                t_pipewire_audio
 run_test "Audio output device available"               t_audio_sink
 run_test "AirPlay speaker discovery enabled"           t_airplay_discovery
 run_test "xdg-open available"                          t_xdg_open
+run_test "Password storage (Secret Service)"           t_secret_service
 run_test "Sandboxed app store (Flatpak)"               t_app_store_sandbox
 run_test "Package repositories fetched over HTTPS"     t_package_repos_https
 run_test "Distribution packages in GNOME Software"     t_app_store_distro_packages
