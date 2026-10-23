@@ -9,3 +9,7 @@ signal (receive) peer=busybox,
 
 signal (receive) peer=NetworkManager,
 ptrace (readby) peer=NetworkManager,
+
+# The time zone an installed system's setup-timezone copies in, which
+# /etc/localtime points at
+/etc/zoneinfo/** r,
