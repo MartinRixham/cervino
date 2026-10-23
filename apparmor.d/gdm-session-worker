@@ -33,7 +33,9 @@ profile gdm-session-worker /usr/libexec/gdm-session-worker flags=(attach_disconn
   signal (send),
   signal (receive) peer=gdm,
 
-  /usr/libexec/gdm-session-worker mr,
+  # Unlocking the screen: the session's worker starts another one to
+  # reauthenticate the user
+  /usr/libexec/gdm-session-worker mrix,
   /etc/gdm/{,**} r,
   /usr/share/gdm/{,**} r,
   /etc/environment r,
