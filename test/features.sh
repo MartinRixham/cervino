@@ -515,18 +515,42 @@ t_coredump_cleanup() {
 
 # SSDs slow down unless the file system tells them which blocks are free,
 # either as it frees them (the discard mount option) or now and then
-# (fstrim run by a timer or cron job).
+# (fstrim run by a timer or cron job). A device-mapper device (dm-crypt,
+# LVM) on an SSD must pass discards through, or neither reaches it.
+discards() {
+    local sys
+    sys=$(readlink -f "$1") || return 1
+    [[ -e $sys/partition ]] && sys=${sys%/*}
+    (($(cat "$sys/queue/discard_max_bytes" 2>/dev/null || echo 0) > 0))
+}
+
+# Whether a block device that drops discards sits on one that takes them.
+blocks_discards() {
+    local slave
+    for slave in "$1"/slaves/*; do
+        [[ -e $slave ]] || continue
+        discards "$slave" || blocks_discards "$(readlink -f "$slave")" && return 0
+    done
+    return 1
+}
+
 t_ssd_trim() {
-    local src mnt fs opts sys need=() trims=0
+    local src mnt fs opts maj min sys need=() blocked=() trims=0
     while read -r src mnt fs opts _; do
         [[ $src == /dev/* ]] || continue
         case $fs in ext2 | ext3 | ext4 | xfs | btrfs | f2fs | jfs | vfat | exfat) ;; *) continue ;; esac
-        sys=$(readlink -f "/sys/class/block/$(basename "$(readlink -f "$src")")") || continue
-        [[ -e $sys/partition ]] && sys=${sys%/*}
-        (($(cat "$sys/queue/discard_max_bytes" 2>/dev/null || echo 0) > 0)) || continue
+        # By device number: /dev/mapper/* may be nodes, not links to dm-*.
+        read -r maj min < <(stat -Lc '%t %T' "$src" 2>/dev/null) || continue
+        sys=/sys/dev/block/$((16#$maj)):$((16#$min))
+        if ! discards "$sys"; then
+            blocks_discards "$(readlink -f "$sys")" && blocked+=("$mnt")
+            continue
+        fi
         trims=1
         [[ ,$opts, == *,discard[,=]* ]] || need+=("$mnt")
     done </proc/mounts
+    ((${#blocked[@]} == 0)) ||
+        { echo "device-mapper drops TRIM before the SSD for: ${blocked[*]}"; return 1; }
     ((trims)) || { echo "no file system on a device that supports TRIM"; return 2; }
     ((${#need[@]} == 0)) && return 0
     if have systemctl && [[ -d /run/systemd/system ]]; then

@@ -107,11 +107,18 @@ EOF
 # servers after the third). NetworkManager's dnsmasq, the only server in
 # resolv.conf, sends each connection's DNS domains to that connection's
 # servers instead.
+# Wi-Fi power saving on Broadcom's SDIO chips (brcmfmac: the Raspberry
+# Pi's, and some x86 boards') adds hundreds of milliseconds of latency and
+# drops connections, so it is turned off for them alone.
 makefile root:root 0644 "$tmp"/etc/NetworkManager/conf.d/10-alpine.conf <<'EOF'
 [main]
 dhcp=internal
 plugins=keyfile
 dns=dnsmasq
+
+[connection-brcmfmac]
+match-device=driver:brcmfmac
+wifi.powersave=2
 EOF
 makefile root:root 0644 "$tmp"/etc/network/interfaces <<'EOF'
 auto lo

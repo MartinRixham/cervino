@@ -18,6 +18,8 @@ from a desktop distribution, and keeps it when installed to disk:
 - NetworkManager, with dnsmasq as the local DNS server, so a VPN's internal
   names go to the VPN's DNS server and everything else to the network's (with
   several servers in `resolv.conf`, musl takes whichever answers first),
+  Wi-Fi power saving turned off on Broadcom SDIO chips (`brcmfmac`, as on
+  the Raspberry Pi), where it adds latency and drops connections,
   chrony for time sync (the installer skips its NTP step, so
   busybox ntpd isn't added next to it), and `openrc-settingsd` for GNOME
   Settings' hostname, date/time and language panels
@@ -34,7 +36,8 @@ from a desktop distribution, and keeps it when installed to disk:
   [`apparmor.d/`](apparmor.d)), zram swap (half the RAM, at most 8 GB), a
   crash dump collector writing to `/var/lib/coredump` (dumps are deleted
   after a week), a system log kept to 40 MB instead of busybox syslogd's
-  400 KB, a weekly `fstrim` for SSDs, and Intel and AMD CPU microcode
+  400 KB, a weekly `fstrim` for SSDs (with discards let through an
+  encrypted root), and Intel and AMD CPU microcode
   updates, loaded by the boot loader (x86_64 only)
 - PipeWire as the sound server (in place of PulseAudio), with AirPlay
   speakers on the network as outputs, `xdg-utils`, Flatpak
@@ -154,7 +157,8 @@ puts a wrapper in front of it that:
   change network settings and manage printers, gives them bash as the
   login shell, and makes their home directory readable only by them (users
   added later in GNOME Settings get the same),
-- enables AppArmor on the installed system's kernel command line (on the
+- enables AppArmor on the installed system's kernel command line, and lets
+  discards through an encrypted root so `fstrim` reaches the SSD (on the
   Pi it also raises the firmware's 32 MB cap on an NVMe drive's host memory
   buffer to 64 MB, so DRAM-less drives that need 64 MB get one, and turns
   the memory cgroup controller, which the firmware turns off, back on, and

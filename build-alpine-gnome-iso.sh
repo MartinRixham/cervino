@@ -239,6 +239,11 @@ builder_main() {
 	# KERNELOPTS) on installs. AppArmor is built into the kernel but needs
 	# enabling on the command line.
 	local kernel_opts="lsm=landlock,lockdown,yama,loadpin,safesetid,integrity,apparmor"
+	# The initramfs opens an encrypted root without discards, so the
+	# weekly fstrim never reaches the SSD; cryptdiscards=yes lets them
+	# through (at the cost of showing which blocks are free). Without an
+	# encrypted root the initramfs ignores it.
+	kernel_opts+=" cryptdiscards=yes"
 	# The Pi firmware's device tree caps an NVMe drive's host memory buffer
 	# at 32 MB (nvme.max_host_mem_size_mb=32 in its bootargs, which
 	# cmdline.txt comes after and so overrides). A DRAM-less drive that
