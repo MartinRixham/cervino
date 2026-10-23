@@ -112,6 +112,16 @@ t_privilege_escalation() {
         { echo "$tool present but user is not in an admin group"; return 1; }
 }
 
+# Other users must not be able to look into the home directory (its group
+# is the user's own).
+t_private_home() {
+    local mode
+    mode=$(stat -c %a "$HOME") || { echo "cannot stat $HOME"; return 1; }
+    (( (8#$mode & 8#007) == 0 )) && return 0
+    echo "$HOME has mode $mode: other users can access it"
+    return 1
+}
+
 # Admin users get root through sudo/doas, so root itself should not be able
 # to log in with a password. /etc/shadow is only readable by root, so a user
 # asks AccountsService (which reads it as root) instead; it only counts a
@@ -674,6 +684,7 @@ t_spice_agent() {
 echo "== Shell and command line =="
 run_test "Full-featured interactive login shell"       t_interactive_shell
 run_test "Privilege escalation for admin users"        t_privilege_escalation
+run_test "Home directory private to its user"          t_private_home
 run_test "Root password login locked"                  t_root_locked
 run_test "Standard CLI tools installed"                t_cli_tools
 run_test "glibc programs can run (gcompat on musl)"    t_glibc_programs

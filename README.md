@@ -139,8 +139,9 @@ puts a wrapper in front of it that:
   manages the network,
 - enables the community repository, where GNOME lives, by default,
 - adds the new user to the `plugdev` and `lpadmin` groups as well, so they can
-  change network settings and manage printers, and gives them bash as the
-  login shell,
+  change network settings and manage printers, gives them bash as the
+  login shell, and makes their home directory readable only by them (users
+  added later in GNOME Settings get the same),
 - enables AppArmor on the installed system's kernel command line,
 - skips the root password question and locks root's password on the
   installed system when you create an admin user (the default), who gets

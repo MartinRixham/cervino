@@ -91,6 +91,14 @@ EOF
 makefile root:root 0644 "$tmp"/etc/default/useradd <<'EOF'
 SHELL=/bin/bash
 EOF
+# Only the owner (and root) can read a new user's home directory: useradd
+# creates it with HOME_MODE (the rest is Alpine's login.defs); the adduser
+# shim below does the same for busybox adduser, which has no such setting.
+makefile root:root 0644 "$tmp"/etc/login.defs <<'EOF'
+USERGROUPS_ENAB yes
+UID_MIN 1000
+HOME_MODE 0700
+EOF
 
 # NetworkManager manages all interfaces; ifupdown only brings up lo.
 makefile root:root 0644 "$tmp"/etc/NetworkManager/conf.d/10-alpine.conf <<'EOF'
@@ -460,6 +468,7 @@ start() {
 	ebegin "Creating live user $LIVE_USER"
 	if ! getent passwd $LIVE_USER >/dev/null; then
 		adduser -D -s /bin/bash -g "Live User" $LIVE_USER &&
+		chmod 700 /home/$LIVE_USER &&
 		for g in audio video netdev input plugdev lpadmin wheel; do
 			addgroup $LIVE_USER \$g 2>/dev/null
 		done
@@ -613,14 +622,29 @@ if [ -f "$here"/usercfg.txt ]; then
 		< "$here"/usercfg.txt
 fi
 
-# busybox adduser gives new users /bin/sh; give desktop users bash instead
-# (system users, created with -S, and an explicit -s are left alone).
+# busybox adduser gives new users /bin/sh and a home directory everyone can
+# read; give desktop users bash and a home only they can read instead
+# (system users, created with -S, are left alone, and so are an explicit
+# -s and -H). With two names, adduser adds an existing user to a group.
 makefile root:root 0755 "$tmp"/usr/local/sbin/adduser <<'EOF'
 #!/bin/sh
+shell=/bin/bash home=yes user= names=0 value=
 for a; do
-	case $a in -s|-[!-]*S*) exec /usr/sbin/adduser "$@" ;; esac
+	if [ -n "$value" ]; then value=; continue; fi
+	case $a in
+	-S|-[!-]*S*) exec /usr/sbin/adduser "$@" ;;
+	-s) shell= value=1 ;;
+	-[hgGuk]) value=1 ;;
+	-H|-[!-]*H*) home= ;;
+	-*) ;;
+	*) user=$a names=$((names + 1)) ;;
+	esac
 done
-exec /usr/sbin/adduser -s /bin/bash "$@"
+[ -z "$shell" ] || set -- -s "$shell" "$@"
+/usr/sbin/adduser "$@" || exit
+[ "$names" = 1 ] && [ -n "$home" ] || exit 0
+dir=$(getent passwd "$user" | cut -d: -f6)
+[ ! -d "$dir" ] || chmod 700 "$dir"
 EOF
 
 rc_add devfs sysinit
