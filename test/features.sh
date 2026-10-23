@@ -418,9 +418,11 @@ t_ipv6_rpfilter() {
     return 1
 }
 
-# A network service nobody asked for is something more to attack: sshd, if
-# installed, should only run once the user turns it on.
+# A network service nobody asked for is something more to attack: sshd is
+# installed, but should only run once the user turns it on.
 t_sshd_disabled() {
+    [ -x /usr/sbin/sshd ] || { echo "sshd is not installed"; return 1; }
+    command -v ssh > /dev/null || { echo "ssh is not installed"; return 1; }
     service_enabled sshd && { echo "sshd is enabled"; return 1; }
     proc_running sshd && { echo "sshd is running"; return 1; }
     return 0
@@ -722,7 +724,7 @@ run_test "mDNS hostname published"                      t_mdns
 run_test "Firewall active"                             t_firewall
 run_test "Firewall forwards container and VM traffic"  t_firewall_forwarding
 run_test "IPv6 reverse path filter"                     t_ipv6_rpfilter
-run_test "SSH server disabled by default"              t_sshd_disabled
+run_test "SSH installed, server disabled by default"  t_sshd_disabled
 run_test "Power management service"                    t_power_profiles
 run_test "System log keeps enough history"             t_log_retention
 run_test "Crash dump collector configured"             t_coredump_handler

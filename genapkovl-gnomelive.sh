@@ -146,6 +146,15 @@ table inet filter {
 }
 EOF
 
+# sshd (installed, not enabled) serves sftp with the external sftp-server,
+# which runs as the user outside sshd's AppArmor profile: Alpine's default,
+# internal-sftp, runs in sshd itself, whose profile would then have to let it
+# at every file. The first Subsystem line wins, and sshd_config includes
+# sshd_config.d before its own.
+makefile root:root 0644 "$tmp"/etc/ssh/sshd_config.d/50-sftp.conf <<'EOF'
+Subsystem sftp /usr/lib/ssh/sftp-server
+EOF
+
 # busybox syslogd rotates /var/log/messages itself, by default at 200 KiB
 # with one old file, which a busy desktop fills in minutes: keep 5 x 8 MiB.
 # It runs under its AppArmor profile (see AppArmor below).

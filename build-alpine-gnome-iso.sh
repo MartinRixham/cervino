@@ -174,8 +174,9 @@ builder_main() {
 	# What test/features.sh checks for: a full shell and the usual CLI
 	# tools, man pages, a UTF-8 locale, spell checking, emoji and CJK fonts,
 	# NetworkManager, NTP, the hostname1/timedate1/locale1 D-Bus services,
-	# Bluetooth, printing, mDNS, a firewall, power profiles, AppArmor, zram
-	# swap, PipeWire, xdg-utils, Flatpak, Alpine's packages in GNOME Software
+	# Bluetooth, printing, mDNS, a firewall, an SSH client and server (not
+	# enabled), power profiles, AppArmor, zram swap, PipeWire, xdg-utils,
+	# Flatpak, Alpine's packages in GNOME Software
 	# (apk-polkit-server and the AppStream catalog), VA-API (libva with the
 	# Mesa, Intel (x86_64 only) and vainfo packages), the SPICE guest agent,
 	# gcompat (the glibc loader, for programs built for glibc) and fstrim.
@@ -187,7 +188,7 @@ builder_main() {
 		musl-locales musl-locales-lang hunspell-en font-noto-emoji font-noto-cjk
 		networkmanager networkmanager-cli networkmanager-wifi chrony
 		openrc-settingsd bluez cups cups-client cups-filters avahi avahi-tools
-		nftables power-profiles-daemon apparmor apparmor-utils apparmor-profiles
+		nftables openssh power-profiles-daemon apparmor apparmor-utils apparmor-profiles
 		zram-init zram-init-openrc pipewire wireplumber pipewire-pulse
 		pipewire-alsa pipewire-spa-bluez xdg-utils flatpak
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc

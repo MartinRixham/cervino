@@ -162,6 +162,134 @@ t_network_listeners() {
     confined "${pids[@]}"
 }
 
+# sshd is installed but not enabled. ssh_setup starts it (ssh_cleanup stops
+# it again and deletes the host keys its start made) and adds a user to log
+# in as with a key, so that the tests below go through a whole login: the
+# listener, sshd-session and sshd-auth for each connection, and the user's
+# session outside the profile. That needs root, so the tests are skipped
+# without it.
+SSH_USER=apparmor-sshtest
+ssh_skip= ssh_error= ssh_dir= ssh_started=0 ssh_host_keys= ssh_opts=()
+
+ssh_setup() {
+    [[ -x /usr/sbin/sshd ]] && have ssh || { ssh_skip="OpenSSH is not installed"; return; }
+    ((EUID == 0)) || { ssh_skip="starting sshd and adding a user to log in as needs root"; return; }
+    have useradd || { ssh_skip="no useradd to add a user to log in as"; return; }
+    ssh_dir=$(mktemp -d) || { ssh_error="mktemp failed"; return; }
+    ssh_opts=(-i "$ssh_dir/key" -o IdentitiesOnly=yes -o BatchMode=yes
+        -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
+    ssh_host_keys=$(ls /etc/ssh/ssh_host_* 2>/dev/null)
+    if ! rc-service sshd status >/dev/null 2>&1; then
+        ssh_started=1
+        rc-service sshd start >/dev/null 2>&1 || { ssh_error="rc-service sshd start failed"; return; }
+    fi
+    id "$SSH_USER" >/dev/null 2>&1 && userdel -r "$SSH_USER" >/dev/null 2>&1
+    # '*': no password, but not locked ('!'), which sshd refuses keys for too
+    useradd -m -p '*' -s /bin/sh "$SSH_USER" >/dev/null 2>&1 ||
+        { ssh_error="useradd $SSH_USER failed"; return; }
+    ssh-keygen -q -t ed25519 -N '' -C '' -f "$ssh_dir/key" >/dev/null 2>&1 ||
+        { ssh_error="ssh-keygen failed"; return; }
+    local home
+    home=$(getent passwd "$SSH_USER" | cut -d: -f6)
+    install -d -m 0700 -o "$SSH_USER" -g "$SSH_USER" "$home/.ssh" &&
+        install -m 0600 -o "$SSH_USER" -g "$SSH_USER" "$ssh_dir/key.pub" "$home/.ssh/authorized_keys" ||
+        { ssh_error="cannot add the key to $home/.ssh/authorized_keys"; return; }
+}
+
+ssh_cleanup() {
+    local f
+    ((EUID == 0)) || return 0
+    if id "$SSH_USER" >/dev/null 2>&1; then
+        pkill -u "$SSH_USER" 2>/dev/null
+        sleep 1
+        userdel -r "$SSH_USER" >/dev/null 2>&1
+    fi
+    if ((ssh_started)); then
+        rc-service sshd stop >/dev/null 2>&1
+        for f in /etc/ssh/ssh_host_*; do
+            [[ -e $f ]] && ! grep -qxF "$f" <<<"$ssh_host_keys" && rm -f "$f"
+        done
+    fi
+    [[ -n $ssh_dir ]] && rm -rf "$ssh_dir"
+}
+
+ssh_ready() {
+    [[ -n $ssh_skip ]] && { echo "$ssh_skip"; return 2; }
+    [[ -n $ssh_error ]] && { echo "$ssh_error"; return 1; }
+    return 0
+}
+
+# The listener
+t_sshd() {
+    ssh_ready || return
+    t_daemon sshd
+}
+
+# The sshd-session and sshd-auth that handle a connection before it has
+# authenticated: a client that sends its version and then waits.
+t_sshd_preauth() {
+    ssh_ready || return
+    local banner pids i
+    exec 3<>/dev/tcp/127.0.0.1/22 || { echo "cannot connect to port 22"; return 1; }
+    read -r -t 10 banner <&3
+    [[ $banner == SSH-* ]] || { exec 3<&-; echo "no SSH version from port 22"; return 1; }
+    printf 'SSH-2.0-apparmor-test\r\n' >&3
+    for ((i = 0; i < 10; i++)); do
+        pids=$(pids_of sshd-auth)
+        [[ -n $pids ]] && break
+        sleep 1
+    done
+    [[ -n $pids ]] || { exec 3<&-; echo "no sshd-auth process for the connection"; return 1; }
+    pids+=" $(pids_of sshd-session)"
+    # shellcheck disable=SC2086
+    confined $pids
+    i=$?
+    exec 3<&-
+    return $i
+}
+
+# A login with a key and a terminal: the sshd-session processes (root's,
+# and the user's, which the shell is a child of) are confined; the shell
+# is not.
+t_sshd_login() {
+    ssh_ready || return
+    local out=$ssh_dir/login pid pids parent shell i rc
+    # shellcheck disable=SC2016
+    timeout 30 ssh "${ssh_opts[@]}" -tt "$SSH_USER@127.0.0.1" \
+        'cat /proc/$PPID/attr/apparmor/current 2>/dev/null || cat /proc/$PPID/attr/current
+         cat /proc/$$/attr/apparmor/current 2>/dev/null || cat /proc/$$/attr/current
+         sleep 5' >"$out" 2>&1 </dev/null &
+    pid=$!
+    for ((i = 0; i < 10; i++)); do
+        pids=$(pids_of sshd-session "$SSH_USER")
+        [[ -n $pids ]] && break
+        sleep 1
+    done
+    pids+=" $(pids_of sshd-session)"
+    if [[ -n ${pids// /} ]]; then
+        # shellcheck disable=SC2086
+        confined $pids
+        rc=$?
+    else
+        echo "no sshd-session process for the login"
+        rc=1
+    fi
+    wait "$pid" || { echo "ssh login failed: $(tr -d '\r' <"$out" | head -n 3)"; return 1; }
+    ((rc == 0)) || return "$rc"
+    { read -r parent; read -r shell; } < <(tr -d '\r' <"$out")
+    [[ $parent == 'sshd (enforce)' ]] || { echo "the shell's parent runs as '$parent', not under sshd"; return 1; }
+    [[ $shell == unconfined ]] || { echo "the login shell runs as '$shell', not unconfined"; return 1; }
+}
+
+# sftp goes through the external sftp-server, outside sshd's profile.
+t_sftp() {
+    ssh_ready || return
+    have sftp || { echo "no sftp client"; return 2; }
+    local out
+    out=$(timeout 30 sftp "${ssh_opts[@]}" -b - "$SSH_USER@127.0.0.1" <<<'ls /' 2>&1) ||
+        { echo "sftp failed: $(head -n 3 <<<"$out")"; return 1; }
+}
+
 # --------------------------------------------------------------------------
 
 echo "== Core system  =="
@@ -198,6 +326,15 @@ run_test "Thunderbolt device manager (boltd_t)"               t_daemon boltd --d
 run_test "Firmware updates (fwupd_t)"                         t_daemon fwupd --dbus org.freedesktop.fwupd
 run_test "CUPS print scheduler (cupsd_t)"                     t_daemon cupsd
 run_test "SPICE guest agent daemon (vdagent_t)"               t_daemon spice-vdagentd --optional
+
+echo
+echo "== Remote login (sshd, started for the tests) =="
+ssh_setup
+run_test "OpenSSH server (sshd_t)"                            t_sshd
+run_test "SSH connection before login (sshd_net_t)"           t_sshd_preauth
+run_test "SSH login session (sshd_t)"                         t_sshd_login
+run_test "sftp"                                               t_sftp
+ssh_cleanup
 
 echo
 printf 'Passed: %d  Failed: %d  Skipped: %d\n' "$PASS" "$FAIL" "$SKIP"

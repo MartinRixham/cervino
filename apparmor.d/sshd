@@ -1,0 +1,87 @@
+# AppArmor profile for the OpenSSH server (installed, but not enabled by
+# default). The listener execs sshd-session for each connection, which
+# execs sshd-auth for the unauthenticated part (chrooted to /var/empty, as
+# the sshd user); all three stay in this profile. The user's session (the
+# login shell, the command, ~/.ssh/rc, sftp-server, passwd for an expired
+# password) is not confined by it. sftp is the external sftp-server
+# (/etc/ssh/sshd_config.d/50-sftp.conf): Alpine's internal-sftp would run in
+# sshd-session, needing access to every file the user can reach.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile sshd /usr/sbin/sshd flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/authentication>
+  include <abstractions/consoles>
+  include <abstractions/openssl>
+  include <abstractions/wutmp>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+  # Between the listener and its sessions, and to the user's session
+  signal (send, receive) peer=sshd,
+  signal (send) peer=unconfined,
+
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability fowner,
+  capability fsetid,
+  capability kill,
+  capability net_bind_service,
+  capability setgid,
+  capability setuid,
+  capability sys_chroot,
+  capability sys_resource,
+  capability sys_tty_config,
+
+  # Connections, and port forwarding if it is turned on
+  network inet stream,
+  network inet6 stream,
+
+  /usr/sbin/sshd mrix,
+  /usr/lib/ssh/sshd-session mrix,
+  /usr/lib/ssh/sshd-auth mrix,
+
+  /etc/ssh/{,**} r,
+  /etc/hosts.equiv r,
+  /etc/motd r,
+  /etc/nologin r,
+  /var/empty/ r,
+  @{run}/sshd.pid rw,
+  @{run}/utmps/.{utmpd,wtmpd}-socket rw,
+
+  # Logins, read as the user
+  @{HOME}/.ssh/authorized_keys{,2} r,
+  @{HOME}/.ssh/environment r,
+
+  # Terminals
+  /dev/ptmx rw,
+  /dev/pts/{,*} rw,
+  /dev/tty rw,
+
+  # Agent forwarding's socket, made as the user
+  /tmp/ssh-*/ rw,
+  /tmp/ssh-*/agent.* rw,
+
+  @{PROC}/@{pid}/fd/ r,
+  @{PROC}/@{pid}/oom_{adj,score_adj} rw,
+  @{PROC}/sys/crypto/fips_enabled r,
+
+  # The user's session: login shells (sh, ash and nologin are busybox),
+  # ~/.ssh/rc and /etc/ssh/sshrc (through /bin/sh), sftp, X11 forwarding's
+  # cookie and passwd for an expired password
+  /bin/busybox Ux,
+  /bin/bash Ux,
+  /bin/zsh Ux,
+  /usr/bin/fish Ux,
+  /usr/lib/ssh/sftp-server Ux,
+  /usr/bin/xauth Ux,
+  /usr/bin/passwd Ux,
+
+  include if exists <local/sshd>
+}

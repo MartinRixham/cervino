@@ -22,10 +22,12 @@ from a desktop distribution, and keeps it when installed to disk:
   and mDNS in, forwarding for container and VM bridges, and an IPv6
   reverse path filter dropping spoofed source addresses), and power
   profiles
-- no SSH server: the installer defaults to none, and sshd, if installed
-  later, is not enabled until you turn it on
+- OpenSSH installed, but sshd not enabled until you turn it on
+  (`rc-update add sshd`): the installer's SSH step defaults to none. sftp
+  runs the external `sftp-server`, so sshd's AppArmor profile need not
+  allow access to the user's files
 - AppArmor, with profiles in enforce mode for udev, D-Bus, syslog, cron, elogind,
-  polkit, NetworkManager, chrony, GDM, UDisks, CUPS, fwupd, ...; (see
+  polkit, NetworkManager, chrony, GDM, UDisks, CUPS, fwupd, sshd, ...; (see
   [`apparmor.d/`](apparmor.d)), zram swap (half the RAM, at most 8 GB), a
   crash dump collector writing to `/var/lib/coredump` (dumps are deleted
   after a week), a system log kept to 40 MB instead of busybox syslogd's
