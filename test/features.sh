@@ -699,6 +699,33 @@ t_video_acceleration() {
     ((${#bad[@]} == 0)) || { echo "VA-API does not work on ${bad[*]}"; return 1; }
 }
 
+t_media_decoders() {
+    # GStreamer (Showtime, the file previews, WebKit's media) has a decoder
+    # for the formats of the usual video files: H.264, HEVC, AV1 and AAC, and
+    # the AC-3, E-AC-3 and DTS sound tracks, which only gst-libav decodes.
+    # AV1 needs dav1d's decoder: libaom's is too slow for 1080p on a Pi.
+    have gjs || { echo "gjs missing"; return 2; }
+    local missing
+    missing=$(timeout 60 gjs -c '
+        imports.gi.versions.Gst = "1.0";
+        const Gst = imports.gi.Gst;
+        Gst.init(null);
+        const formats = {
+            "H.264": "video/x-h264", "HEVC": "video/x-h265",
+            "AV1": "video/x-av1", "AAC": "audio/mpeg, mpegversion=(int)4",
+            "AC-3": "audio/x-ac3", "E-AC-3": "audio/x-eac3", "DTS": "audio/x-dts",
+        };
+        const decoders = Gst.ElementFactory.list_get_elements(
+            Gst.ELEMENT_FACTORY_TYPE_DECODER, Gst.Rank.MARGINAL);
+        const missing = Object.keys(formats).filter(name => !decoders.some(f =>
+            f.can_sink_any_caps(Gst.Caps.from_string(formats[name]))));
+        if (!Gst.ElementFactory.find("dav1ddec"))
+            missing.push("AV1 (dav1d)");
+        print(missing.join(" "));
+    ') || { echo "could not query GStreamer"; return 1; }
+    [[ -z $missing ]] || { echo "no decoder for $missing"; return 1; }
+}
+
 t_spice_agent() {
     [[ -e /dev/virtio-ports/com.redhat.spice.0 ]] || { echo "not a SPICE VM"; return 2; }
     proc_running spice-vdagent spice-vdagentd ||
@@ -758,6 +785,7 @@ run_test "Package repositories fetched over HTTPS"     t_package_repos_https
 run_test "Distribution packages in GNOME Software"     t_app_store_distro_packages
 run_test "Firmware updates in GNOME Software"          t_app_store_firmware_updates
 run_test "VA-API video acceleration available"         t_video_acceleration
+run_test "Decoders for common video and audio formats" t_media_decoders
 run_test "SPICE guest agent (VM clipboard/resize)"     t_spice_agent
 run_test "Logout not blocked by GNOME Shell"           t_logout_not_blocked_by_shell
 

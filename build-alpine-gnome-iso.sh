@@ -179,7 +179,10 @@ builder_main() {
 	# speakers found over mDNS: pipewire-zeroconf), xdg-utils,
 	# Flatpak, Alpine's packages in GNOME Software
 	# (apk-polkit-server and the AppStream catalog), VA-API (libva with the
-	# Mesa, Intel (x86_64 only) and vainfo packages), the SPICE guest agent,
+	# Mesa, Intel (x86_64 only) and vainfo packages), gst-libav (FFmpeg's
+	# decoders: multithreaded H.264, and the E-AC-3 and DTS sound tracks
+	# GStreamer has no other decoder for), dav1d's AV1 decoder (much faster
+	# than libaom's, the only other one), the SPICE guest agent,
 	# gcompat (the glibc loader, for programs built for glibc) and fstrim.
 	# Their configuration and services are set up in the apkovl below.
 	# pipewire-pulse provides the pulseaudio that gnome-settings-daemon
@@ -193,8 +196,8 @@ builder_main() {
 		zram-init zram-init-openrc pipewire wireplumber pipewire-pulse
 		pipewire-alsa pipewire-spa-bluez pipewire-zeroconf xdg-utils flatpak
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
-		alpine-appstream-downloader libva libva-utils mesa-va-gallium
-		spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal"
+		alpine-appstream-downloader libva libva-utils mesa-va-gallium gst-libav
+		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal"
 	case $TARGET in
 	iso) features="$features intel-media-driver libva-intel-driver" ;;
 	# vcgencmd, pinctrl etc. raspberrypi-utils-raspinfo needs a sudo-virt
