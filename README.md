@@ -138,6 +138,8 @@ puts a wrapper in front of it that:
 - skips the network interface and DNS questions, because NetworkManager
   manages the network,
 - enables the community repository, where GNOME lives, by default,
+- offers only mirrors that serve packages over HTTPS (set `MIRRORS` to
+  choose your own list),
 - adds the new user to the `plugdev` and `lpadmin` groups as well, so they can
   change network settings and manage printers, gives them bash as the
   login shell, and makes their home directory readable only by them (users

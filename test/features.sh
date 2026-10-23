@@ -588,6 +588,17 @@ t_app_store_sandbox() {
     [[ -n $(flatpak remotes --columns=name 2>/dev/null) ]] || { echo "no Flatpak remote configured"; return 1; }
 }
 
+# apk checks package signatures, but over plain HTTP anyone on the path
+# sees what is installed and can hold back updates. Local repositories
+# (paths, like the install medium) and comments are fine.
+t_package_repos_https() {
+    local f=/etc/apk/repositories plain
+    [[ -r $f ]] || { echo "no $f"; return 1; }
+    plain=$(grep -Ev '^[[:space:]]*(@[^[:space:]]+[[:space:]]+)?(#|/|https://|$)' "$f") || return 0
+    echo "repositories not fetched over HTTPS: $(echo $plain)"
+    return 1
+}
+
 t_app_store_distro_packages() {
     # GNOME Software lists the distribution's packages through a packaging
     # plugin (PackageKit, apk, ...) and the distribution's AppStream catalog.
@@ -727,6 +738,7 @@ run_test "PipeWire is the sound server"                t_pipewire_audio
 run_test "Audio output device available"               t_audio_sink
 run_test "xdg-open available"                          t_xdg_open
 run_test "Sandboxed app store (Flatpak)"               t_app_store_sandbox
+run_test "Package repositories fetched over HTTPS"     t_package_repos_https
 run_test "Distribution packages in GNOME Software"     t_app_store_distro_packages
 run_test "Firmware updates in GNOME Software"          t_app_store_firmware_updates
 run_test "VA-API video acceleration available"         t_video_acceleration
