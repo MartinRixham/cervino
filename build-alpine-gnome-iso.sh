@@ -175,7 +175,8 @@ builder_main() {
 	# tools, man pages, a UTF-8 locale, spell checking, emoji and CJK fonts,
 	# NetworkManager, NTP, the hostname1/timedate1/locale1 D-Bus services,
 	# Bluetooth, printing, mDNS, a firewall, an SSH client and server (not
-	# enabled), power profiles, AppArmor, zram swap, PipeWire, xdg-utils,
+	# enabled), power profiles, AppArmor, zram swap, PipeWire (with AirPlay
+	# speakers found over mDNS: pipewire-zeroconf), xdg-utils,
 	# Flatpak, Alpine's packages in GNOME Software
 	# (apk-polkit-server and the AppStream catalog), VA-API (libva with the
 	# Mesa, Intel (x86_64 only) and vainfo packages), the SPICE guest agent,
@@ -190,7 +191,7 @@ builder_main() {
 		openrc-settingsd bluez cups cups-client cups-filters avahi avahi-tools
 		nftables openssh power-profiles-daemon apparmor apparmor-utils apparmor-profiles
 		zram-init zram-init-openrc pipewire wireplumber pipewire-pulse
-		pipewire-alsa pipewire-spa-bluez xdg-utils flatpak
+		pipewire-alsa pipewire-spa-bluez pipewire-zeroconf xdg-utils flatpak
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium
 		spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal"

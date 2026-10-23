@@ -112,8 +112,11 @@ iface lo inet loopback
 iface lo inet6 loopback
 EOF
 
-# The default nftables ruleset drops incoming connections; allow SSH and
-# mDNS. It also drops all forwarded traffic, which would cut containers
+# The default nftables ruleset drops incoming connections; allow SSH,
+# mDNS and AirPlay: a speaker sends PipeWire's AirPlay sink timing and
+# control packets on UDP 6001 and up (6001/6002 for the first sink) before
+# PipeWire has sent anything there, so conntrack can't take them for
+# replies. It also drops all forwarded traffic, which would cut containers
 # (Docker, Podman, LXC/Incus) and VMs (libvirt) on their NAT bridges off
 # the network whatever rules they add in their own tables: let traffic from
 # their bridges out and the replies back in. Drop IPv6 packets from source
@@ -130,6 +133,7 @@ table inet filter {
 	chain input {
 		tcp dport 22 accept comment "SSH"
 		udp dport 5353 accept comment "mDNS"
+		udp dport 6001-6010 accept comment "AirPlay (PipeWire RAOP) timing and control"
 	}
 	chain forward {
 		ct state { established, related } accept comment "Replies"
@@ -144,6 +148,33 @@ table inet filter {
 		iifname "incusbr*" accept comment "Incus"
 	}
 }
+EOF
+
+# PipeWire adds a sink for each AirPlay speaker Avahi finds. Keep its stream
+# running while nothing plays: when a player pauses (VLC does while it
+# buffers), PipeWire would stop the stream and restart it on the same RTSP
+# session with a jump in the RTP timestamps, and AirPlay 2 speakers then drop
+# everything that follows in silence.
+makefile root:root 0644 "$tmp"/etc/pipewire/pipewire.conf.d/50-raop.conf <<'EOF'
+context.modules = [
+	{ name = libpipewire-module-raop-discover
+		condition = [ { module.raop = !false } ]
+		args = {
+			stream.rules = [
+				{ matches = [ { raop.ip = "~.*" } ]
+					actions = {
+						create-stream = {
+							stream.props = {
+								node.pause-on-idle = false
+								node.always-process = true
+							}
+						}
+					}
+				}
+			]
+		}
+	}
+]
 EOF
 
 # sshd (installed, not enabled) serves sftp with the external sftp-server,

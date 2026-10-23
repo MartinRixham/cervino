@@ -581,6 +581,19 @@ t_audio_sink() {
         { echo "sound card present but PipeWire has no audio sink"; return 1; }
 }
 
+# PipeWire looks for AirPlay speakers through Avahi only while its
+# module-raop-discover is loaded.
+t_airplay_discovery() {
+    local f comm
+    for f in /proc/[0-9]*/comm; do
+        read -r comm <"$f" 2>/dev/null || continue
+        [[ $comm == pipewire ]] || continue
+        grep -qs libpipewire-module-raop-discover "${f%/comm}/maps" && return 0
+    done
+    echo "PipeWire is not looking for AirPlay speakers (module-raop-discover not loaded)"
+    return 1
+}
+
 t_xdg_open() {
     have xdg-open || { echo "xdg-utils not installed"; return 1; }
 }
@@ -738,6 +751,7 @@ echo
 echo "== Desktop integration =="
 run_test "PipeWire is the sound server"                t_pipewire_audio
 run_test "Audio output device available"               t_audio_sink
+run_test "AirPlay speaker discovery enabled"           t_airplay_discovery
 run_test "xdg-open available"                          t_xdg_open
 run_test "Sandboxed app store (Flatpak)"               t_app_store_sandbox
 run_test "Package repositories fetched over HTTPS"     t_package_repos_https

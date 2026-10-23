@@ -18,8 +18,8 @@ from a desktop distribution, and keeps it when installed to disk:
 - NetworkManager, chrony for time sync (the installer skips its NTP step, so
   busybox ntpd isn't added next to it), and `openrc-settingsd` for GNOME
   Settings' hostname, date/time and language panels
-- Bluetooth, CUPS printing, Avahi mDNS, an nftables firewall (allowing SSH
-  and mDNS in, forwarding for container and VM bridges, and an IPv6
+- Bluetooth, CUPS printing, Avahi mDNS, an nftables firewall (allowing SSH,
+  mDNS and AirPlay in, forwarding for container and VM bridges, and an IPv6
   reverse path filter dropping spoofed source addresses), and power
   profiles
 - OpenSSH installed, but sshd not enabled until you turn it on
@@ -32,7 +32,8 @@ from a desktop distribution, and keeps it when installed to disk:
   crash dump collector writing to `/var/lib/coredump` (dumps are deleted
   after a week), a system log kept to 40 MB instead of busybox syslogd's
   400 KB, and a weekly `fstrim` for SSDs
-- PipeWire as the sound server (in place of PulseAudio), `xdg-utils`, Flatpak
+- PipeWire as the sound server (in place of PulseAudio), with AirPlay
+  speakers on the network as outputs, `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
 - Alpine's packages in GNOME Software: `apk-polkit-server` runs at boot, and
   the AppStream catalog of the repositories in `/etc/apk/repositories` is
