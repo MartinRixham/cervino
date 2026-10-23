@@ -375,8 +375,24 @@ EOF
 # spice-vdagentd blocks writing to its virtio port while nothing on the host
 # reads it (no SPICE client), and then ignores SIGTERM: kill it after 5 s,
 # and remove the socket it then leaves behind, or it cannot start again.
+# Only a VM with a SPICE channel has the agent's virtio port (udev-settle
+# has created it by the default runlevel): anywhere else the daemon has
+# nothing to do, so the service is left inactive instead of started.
 makefile root:root 0644 "$tmp"/etc/conf.d/spice-vdagentd <<'EOF'
+spice_port=/dev/virtio-ports/com.redhat.spice.0
 retry="TERM/5/KILL/5"
+start() {
+	if [ ! -e "$spice_port" ]; then
+		einfo "No SPICE channel, not starting ${name:-$RC_SVCNAME}"
+		mark_service_inactive
+		return 0
+	fi
+	default_start
+}
+stop() {
+	[ -e "$spice_port" ] || return 0
+	default_stop
+}
 stop_post() {
 	rm -f /run/spice-vdagentd/spice-vdagent-sock
 }
