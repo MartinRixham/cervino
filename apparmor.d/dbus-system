@@ -44,6 +44,8 @@ profile dbus-system flags=(attach_disconnected) {
   @{HOMEDIRS}/** rw,
   /root/** rw,
   /memfd:* rw,
+  # bluetoothd's audio transports (L2CAP and SCO sockets) for PipeWire
+  network bluetooth,
 
   # The services it activates run under their own profiles, or unconfined
   # (as they did without this one): the setuid helper that starts them
