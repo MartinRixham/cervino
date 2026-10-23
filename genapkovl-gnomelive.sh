@@ -154,7 +154,10 @@ EOF
 # running while nothing plays: when a player pauses (VLC does while it
 # buffers), PipeWire would stop the stream and restart it on the same RTSP
 # session with a jump in the RTP timestamps, and AirPlay 2 speakers then drop
-# everything that follows in silence.
+# everything that follows in silence. For the same reason, keep it in the
+# Dummy-Driver's group, so it always runs on that clock: otherwise, while
+# another sink such as HDMI plays (a GNOME alert sound is enough), PipeWire
+# moves it onto that sink's clock and back, and its RTP timestamps jump.
 makefile root:root 0644 "$tmp"/etc/pipewire/pipewire.conf.d/50-raop.conf <<'EOF'
 context.modules = [
 	{ name = libpipewire-module-raop-discover
@@ -167,6 +170,7 @@ context.modules = [
 							stream.props = {
 								node.pause-on-idle = false
 								node.always-process = true
+								node.group = pipewire.dummy
 							}
 						}
 					}
