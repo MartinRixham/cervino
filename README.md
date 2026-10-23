@@ -15,7 +15,8 @@ from a desktop distribution, and keeps it when installed to disk:
   CLI tools (`file`, `xz`, `zstd`, `lspci`, `dmidecode`, `rsync`), and
   `gcompat` so programs built for glibc run
 - a UTF-8 locale (`C.UTF-8`), English spell checking, emoji and CJK fonts
-- NetworkManager, chrony for time sync, and `openrc-settingsd` for GNOME
+- NetworkManager, chrony for time sync (the installer skips its NTP step, so
+  busybox ntpd isn't added next to it), and `openrc-settingsd` for GNOME
   Settings' hostname, date/time and language panels
 - Bluetooth, CUPS printing, Avahi mDNS, an nftables firewall (allowing SSH
   and mDNS in, forwarding for container and VM bridges, and an IPv6

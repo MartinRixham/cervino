@@ -29,7 +29,6 @@ TIMEZONEOPTS=UTC
 PROXYOPTS=none
 APKREPOSOPTS="-1 -c"
 USEROPTS="-a -u -g audio,input,video,netdev,plugdev,lpadmin tester"
-NTPOPTS=none
 DISKOPTS="-m sys /dev/vda"
 LBUOPTS=none
 APKCACHEOPTS=none

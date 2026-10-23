@@ -481,7 +481,9 @@ EOF
 # needs, and defaults community to enabled. It also defaults the user step
 # to the plugdev (network settings) and lpadmin (printers) groups and the
 # installed kernel command line to one with AppArmor enabled, installs no
-# SSH server, and skips the root password (-e): the lbu shim below locks root on the installed
+# SSH server, skips the NTP step (its default, busybox ntpd, would run
+# next to the chronyd the install already has from the live runlevels),
+# and skips the root password (-e): the lbu shim below locks root on the installed
 # system, whose admin user gets root through doas. An answer file passed
 # with -f still overrides these defaults.
 # Its hostname step restarts the hostname service and stops and starts
@@ -536,6 +538,7 @@ chmod +x "\$shim"/*
 DEVDOPTS=\${DEVDOPTS:-udev} APKREPOSOPTS=\${APKREPOSOPTS:--c} \\
 	USEROPTS=\${USEROPTS:--a -g audio,input,video,netdev,plugdev,lpadmin} \\
 	KERNELOPTS=\${KERNELOPTS:-quiet $LSM} SSHDOPTS=\${SSHDOPTS:-none} \\
+	NTPOPTS=\${NTPOPTS:-none} \\
 	PATH="\$shim:\$PATH" /usr/sbin/setup-alpine -e "\$@"
 EOF
 

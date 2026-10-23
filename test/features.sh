@@ -250,8 +250,15 @@ t_network_manager() {
 }
 
 t_time_sync() {
-    proc_running chronyd systemd-timesyncd ntpd openntpd ntpsec && return 0
-    echo "no NTP client running"
+    # Two clients fight over the clock (setup-alpine's NTP step adds
+    # busybox ntpd unless told otherwise)
+    local d running=()
+    for d in chronyd systemd-timesyncd ntpd openntpd ntpsec; do
+        proc_running "$d" && running+=("$d")
+    done
+    ((${#running[@]} == 1)) && return 0
+    ((${#running[@]})) || { echo "no NTP client running"; return 1; }
+    echo "more than one NTP client running: ${running[*]}"
     return 1
 }
 
