@@ -179,9 +179,10 @@ ssh_setup() {
     ssh_opts=(-i "$ssh_dir/key" -o IdentitiesOnly=yes -o BatchMode=yes
         -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
     ssh_host_keys=$(ls /etc/ssh/ssh_host_* 2>/dev/null)
-    if ! rc-service sshd status >/dev/null 2>&1; then
+    if ! rc-service sshd status >/dev/null 2>&1 </dev/null; then
         ssh_started=1
-        # stdin too: sshd's profile would deny it the terminal the tests run on
+        # stdin too: sshd (and the init script's sshd -G and -t) would be
+        # denied the terminal the tests run on
         rc-service sshd start >/dev/null 2>&1 </dev/null || { ssh_error="rc-service sshd start failed"; return; }
     fi
     id "$SSH_USER" >/dev/null 2>&1 && userdel -r "$SSH_USER" >/dev/null 2>&1
@@ -206,7 +207,7 @@ ssh_cleanup() {
         userdel -r "$SSH_USER" >/dev/null 2>&1
     fi
     if ((ssh_started)); then
-        rc-service sshd stop >/dev/null 2>&1
+        rc-service sshd stop >/dev/null 2>&1 </dev/null
         for f in /etc/ssh/ssh_host_*; do
             [[ -e $f ]] && ! grep -qxF "$f" <<<"$ssh_host_keys" && rm -f "$f"
         done
