@@ -159,17 +159,26 @@ container_main() {
 	# mkinitfs, so its init gets the live system's apk shim's filter
 	# (genapkovl-gnomelive.sh), which keeps apk's own messages and progress.
 	local init=/usr/share/mkinitfs/initramfs-init
-	[[ $(grep -c '^	if ! $MOCK apk add --root $sysroot ' "$init") == 2 ]] ||
+	[[ $(grep -c '^	if ! $MOCK apk add --root $sysroot ' "$init") == 2 &&
+		$(grep -c '^apkflags="--initramfs-diskless-boot' "$init") == 1 ]] ||
 		die "$init: the package install is not where expected"
+	cat > /tmp/apk_add <<'EOF'
+apk_add() (
+	set -o pipefail
+	{ $MOCK apk add "$@" 2>&1; } | awk 'BEGIN { RS = "\033" }
+		NR > 1 && $0 == "8" { next }
+		NR > 1 && substr($0, 1, 1) == "7" {
+			printf "\033[0K\033%s\0338", $0; bar = 1; fflush(); next
+		}
+		{ gsub(/  \* [^\n]*\n/, "") }
+		NR > 1 { $0 = "\033" $0 }
+		$0 == "" || $0 == "\033[0K" { next }
+		{ printf "%s", $0; bar = 0; fflush() }
+		END { if (bar) printf "\033[0K" }'
+)
+EOF
 	sed -i -e 's/^	if ! $MOCK apk add --root $sysroot /	if ! apk_add --root $sysroot /' \
-		-e '/^apkflags="--initramfs-diskless-boot/i\
-apk_add() (\
-	set -o pipefail\
-	{ $MOCK apk add "$@" 2>&1; } | awk '"'"'BEGIN { RS = "\\033"; ORS = "" }\
-		NR > 1 { printf "\\033" }\
-		{ gsub(/  \\* [^\\n]*\\n/, ""); printf "%s", $0; fflush() }'"'"'\
-)\
-' "$init"
+		-e '/^apkflags="--initramfs-diskless-boot/r /tmp/apk_add' "$init"
 
 	# mkimage must run unprivileged: apk 3 rejects its --no-chown as root.
 	adduser -D build

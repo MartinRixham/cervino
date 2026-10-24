@@ -289,9 +289,12 @@ EOF
 # GNOME packages' advice (add your user to plugdev, enable openrc-settingsd,
 # ...), which this system has already taken. This shim drops those lines
 # from that install (apk add --initdb), keeping apk's own messages, errors
-# and progress bar: it splits the output at the ESCs the bar is drawn
-# with, so the bar is passed on as it is drawn. Other apk runs are left
-# alone.
+# and progress bar. It splits the output at ESCs: apk draws the bar as
+# "\e7<bar>", and only sends the "\e8\e[0K" that puts the cursor back and
+# clears the line with its next update, so the shim draws each bar as soon
+# as the ESC after it arrives, putting the cursor back itself, and drops
+# apk's "\e8"s and the "\e[0K"s nothing follows; the bar shown is one
+# update behind apk's. Other apk runs are left alone.
 makefile root:root 0755 "$tmp"/usr/local/sbin/apk <<'EOF'
 #!/bin/sh
 case " $* " in
@@ -299,9 +302,16 @@ case " $* " in
 *) exec /sbin/apk "$@" ;;
 esac
 set -o pipefail
-{ /sbin/apk "$@" 2>&1; } | awk 'BEGIN { RS = "\033"; ORS = "" }
-	NR > 1 { printf "\033" }
-	{ gsub(/  \* [^\n]*\n/, ""); printf "%s", $0; fflush() }'
+{ /sbin/apk "$@" 2>&1; } | awk 'BEGIN { RS = "\033" }
+	NR > 1 && $0 == "8" { next }
+	NR > 1 && substr($0, 1, 1) == "7" {
+		printf "\033[0K\033%s\0338", $0; bar = 1; fflush(); next
+	}
+	{ gsub(/  \* [^\n]*\n/, "") }
+	NR > 1 { $0 = "\033" $0 }
+	$0 == "" || $0 == "\033[0K" { next }
+	{ printf "%s", $0; bar = 0; fflush() }
+	END { if (bar) printf "\033[0K" }'
 EOF
 
 # The Pi image's usercfg.txt (see build-alpine-gnome-iso.sh), for the lbu
