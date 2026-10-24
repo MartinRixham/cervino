@@ -280,6 +280,26 @@ fi
 tar -c --no-recursion -T "\$d"/list -z
 EOF
 
+# apk shows what packages' install scripts print (as "  * " lines, whatever
+# --quiet says), and setup-disk's install of the new system prints all the
+# GNOME packages' advice (add your user to plugdev, enable openrc-settingsd,
+# ...), which this system has already taken. This shim drops those lines
+# from that install (apk add --initdb), keeping apk's own messages, errors
+# and progress bar: it splits the output at the ESCs the bar is drawn
+# with, so the bar is passed on as it is drawn. Other apk runs are left
+# alone.
+makefile root:root 0755 "$tmp"/usr/local/sbin/apk <<'EOF'
+#!/bin/sh
+case " $* " in
+*" add "*" --initdb "*) ;;
+*) exec /sbin/apk "$@" ;;
+esac
+set -o pipefail
+{ /sbin/apk "$@" 2>&1; } | awk 'BEGIN { RS = "\033"; ORS = "" }
+	NR > 1 { printf "\033" }
+	{ gsub(/  \* [^\n]*\n/, ""); printf "%s", $0; fflush() }'
+EOF
+
 # The Pi image's usercfg.txt (see build-alpine-gnome-iso.sh), for the lbu
 # shim above to put on installed systems' boot partitions.
 if [ -f "$here"/usercfg.txt ]; then

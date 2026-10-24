@@ -149,7 +149,27 @@ container_main() {
 		> /etc/apk/repositories
 	apk update --quiet
 	apk add --quiet alpine-sdk alpine-conf apk-tools busybox fakeroot \
-		syslinux xorriso squashfs-tools mtools dosfstools sfdisk grub grub-efi git
+		syslinux xorriso squashfs-tools mtools dosfstools sfdisk grub grub-efi git \
+		mkinitfs
+
+	# The image's initramfs installs /etc/apk/world at every boot, and apk
+	# shows what the packages' install scripts print (as "  * " lines,
+	# whatever --quiet says): the GNOME packages' advice, which this system
+	# has already taken. mkimage builds the initramfs from this container's
+	# mkinitfs, so its init gets the live system's apk shim's filter
+	# (genapkovl-gnomelive.sh), which keeps apk's own messages and progress.
+	local init=/usr/share/mkinitfs/initramfs-init
+	[[ $(grep -c '^	if ! $MOCK apk add --root $sysroot ' "$init") == 2 ]] ||
+		die "$init: the package install is not where expected"
+	sed -i -e 's/^	if ! $MOCK apk add --root $sysroot /	if ! apk_add --root $sysroot /' \
+		-e '/^apkflags="--initramfs-diskless-boot/i\
+apk_add() (\
+	set -o pipefail\
+	{ $MOCK apk add "$@" 2>&1; } | awk '"'"'BEGIN { RS = "\\033"; ORS = "" }\
+		NR > 1 { printf "\\033" }\
+		{ gsub(/  \\* [^\\n]*\\n/, ""); printf "%s", $0; fflush() }'"'"'\
+)\
+' "$init"
 
 	# mkimage must run unprivileged: apk 3 rejects its --no-chown as root.
 	adduser -D build

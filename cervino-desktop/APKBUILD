@@ -8,8 +8,8 @@
 # or empty), flathub.flatpakrepo and the repo's AppArmor profiles
 # (apparmor.d/) next to it.
 #
-# Some of the files belong to other packages (alpine-baselayout's inittab,
-# motd and root crontab, shadow's login.defs, the daemons' conf.d files): replaces=
+# Some of the files belong to other packages (alpine-baselayout's inittab and
+# root crontab, shadow's login.defs, the daemons' conf.d files): replaces=
 # lets this package take them over, and keeps them when those packages are
 # upgraded or reinstalled. As with any package, a file in /etc changed since
 # it was installed is left as it is, and the new version written next to it
@@ -84,9 +84,6 @@ EOF
 	makefile root:root 0644 "$pkgdir"/etc/default/useradd <<'EOF'
 SHELL=/bin/bash
 EOF
-	# No message of the day: alpine-baselayout's points console logins at the
-	# Alpine wiki and setup-alpine, which installed systems have no use for.
-	makefile root:root 0644 "$pkgdir"/etc/motd < /dev/null
 	# Only the owner (and root) can read a new user's home directory: useradd
 	# creates it with HOME_MODE (the rest is Alpine's login.defs); the live
 	# image's adduser shim does the same for busybox adduser, which has no
