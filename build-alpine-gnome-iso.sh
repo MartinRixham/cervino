@@ -250,7 +250,7 @@ builder_main() {
 		networkmanager networkmanager-cli networkmanager-wifi dnsmasq-dnssec-dbus chrony
 		openrc-settingsd bluez cups cups-client cups-filters avahi avahi-tools
 		nftables openssh power-profiles-daemon apparmor apparmor-utils apparmor-profiles
-		zram-init zram-init-openrc pipewire wireplumber pipewire-pulse
+		zram-init zram-init-openrc pipewire wireplumber pipewire-pulse rtkit
 		pipewire-alsa pipewire-spa-bluez pipewire-zeroconf xdg-utils flatpak
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium gst-libav

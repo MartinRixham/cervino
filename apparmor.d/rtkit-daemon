@@ -1,0 +1,48 @@
+# AppArmor profile for RealtimeKit, which gives PipeWire's audio threads
+# (and other users' processes that ask over D-Bus) real-time scheduling.
+# D-Bus starts it as root; it chroots into /proc and drops to the rtkit
+# user, keeping only sys_nice and dac_read_search.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile rtkit-daemon /usr/libexec/rtkit-daemon flags=(attach_disconnected) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  # Dropping privileges: chroot("/proc"), the rtkit user and group, and
+  # the capability bounding set
+  capability sys_chroot,
+  capability setuid,
+  capability setgid,
+  capability setpcap,
+  # Setting the scheduling policy and nice level of other users' threads
+  capability sys_nice,
+  # Reading other users' /proc/PID/limits to check their RLIMIT_RTTIME
+  capability dac_read_search,
+
+  # Checking a thread's start time in /proc/PID/stat: the kernel checks for
+  # ptrace read access to the process. The file rules still limit what it
+  # reads.
+  ptrace (read),
+
+  /usr/libexec/rtkit-daemon mr,
+
+  # Paths are the same inside its chroot: AppArmor names them from the
+  # namespace's root, not the chroot's
+  @{PROC}/ r,
+  @{PROC}/@{pid}/{stat,limits} r,
+  @{PROC}/@{pid}/task/ r,
+  @{PROC}/@{pid}/task/@{tid}/stat r,
+
+  # The suspend delay lock it takes from elogind, to demote threads before
+  # the system sleeps
+  @{run}/systemd/inhibit/*.ref w,
+
+  include if exists <local/rtkit-daemon>
+}

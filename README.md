@@ -43,7 +43,8 @@ from a desktop distribution, and keeps it when installed to disk:
   the daily, weekly and monthly jobs after boot or resume when the machine
   was off at their time, and Intel and AMD CPU microcode
   updates, loaded by the boot loader (x86_64 only)
-- PipeWire as the sound server (in place of PulseAudio), with AirPlay
+- PipeWire as the sound server (in place of PulseAudio), its audio threads
+  given real-time priority through RealtimeKit, with AirPlay
   speakers on the network as outputs, `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
 - `gst-libav` (FFmpeg's decoders for GStreamer): multithreaded H.264 and

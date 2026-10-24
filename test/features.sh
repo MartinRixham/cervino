@@ -694,6 +694,33 @@ t_audio_sink() {
         { echo "sound card present but PipeWire has no audio sink"; return 1; }
 }
 
+# PipeWire's module-rt asks RealtimeKit for real-time scheduling of each
+# daemon's data loop, the thread that drives the audio graph and network
+# streams; with normal scheduling a busy desktop delays it.
+t_audio_realtime() {
+    local f comm d t s policy found=0 slow=
+    for f in /proc/[0-9]*/comm; do
+        read -r comm <"$f" 2>/dev/null || continue
+        [[ $comm == pipewire || $comm == pipewire-pulse ]] || continue
+        d=${f%/comm}
+        [[ -O $d ]] || continue
+        for t in "$d"/task/*; do
+            read -r comm <"$t/comm" 2>/dev/null || continue
+            [[ $comm == data-loop* ]] || continue
+            found=1
+            read -r s <"$t/stat" 2>/dev/null || continue
+            # Field 41, the scheduling policy, counted after "(comm)"
+            s=${s##*) }
+            read -r -a s <<<"$s"
+            policy=${s[38]}
+            # SCHED_FIFO is 1, SCHED_RR 2
+            [[ $policy == 1 || $policy == 2 ]] || slow+="${slow:+, }${d#/proc/}/${t##*/}"
+        done
+    done
+    ((found)) || { echo "no PipeWire data loop thread found"; return 1; }
+    [[ -z $slow ]] || { echo "PipeWire data loop threads without real-time scheduling: $slow"; return 1; }
+}
+
 # PipeWire looks for AirPlay speakers through Avahi only while its
 # module-raop-discover is loaded.
 t_airplay_discovery() {
@@ -914,6 +941,7 @@ echo
 echo "== Desktop integration =="
 run_test "PipeWire is the sound server"                t_pipewire_audio
 run_test "Audio output device available"               t_audio_sink
+run_test "Audio threads run with real-time priority"   t_audio_realtime
 run_test "AirPlay speaker discovery enabled"           t_airplay_discovery
 run_test "xdg-open available"                          t_xdg_open
 run_test "Password storage (Secret Service)"           t_secret_service

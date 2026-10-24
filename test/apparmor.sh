@@ -324,6 +324,7 @@ run_test "AccountsService (accountsd_t)"                      t_daemon accounts-
 run_test "UPower (devicekit_power_t)"                         t_daemon upowerd --dbus org.freedesktop.UPower
 run_test "UDisks (devicekit_disk_t)"                          t_daemon udisksd --dbus org.freedesktop.UDisks2
 run_test "power-profiles-daemon (powerprofiles_t)"            t_daemon power-profiles-daemon --dbus net.hadess.PowerProfiles
+run_test "RealtimeKit (rtkit_daemon_t)"                       t_daemon rtkit-daemon --dbus org.freedesktop.RealtimeKit1
 run_test "colord (colord_t)"                                  t_daemon colord --dbus org.freedesktop.ColorManager
 run_test "GeoClue location service (geoclue_t)"               t_daemon geoclue --dbus org.freedesktop.GeoClue2
 run_test "Bluetooth (bluetooth_t)"                            t_daemon bluetoothd --dbus org.bluez
