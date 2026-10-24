@@ -7,6 +7,7 @@ on:
     paths:
       - build-alpine-gnome-iso.sh
       - genapkovl-gnomelive.sh
+      - cervino-desktop/**
       - apparmor.d/**
       - test/**
       - ci/**
@@ -15,6 +16,7 @@ on:
     paths:
       - build-alpine-gnome-iso.sh
       - genapkovl-gnomelive.sh
+      - cervino-desktop/**
       - apparmor.d/**
       - test/**
       - ci/**
@@ -34,6 +36,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    # Tag builds sign with the APK_SIGNING_KEY secret of the release
+    # environment, which only v* tags may deploy to; other builds run
+    # without an environment, and so without the key.
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +57,22 @@ jobs:
             /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
           df -h /
+
+      # Release builds sign cervino-desktop and the image's repo with the
+      # release environment's APK_SIGNING_KEY secret, as the repo job signs
+      # the published repo, and
+      # point installs at that repo, on this repository's GitHub Pages. apk
+      # knows the key by its file name, the same in both jobs.
+      - name: Signing key
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          KEY: ${{ secrets.APK_SIGNING_KEY }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::The release environment has no APK_SIGNING_KEY secret"; exit 1; }
+          umask 077
+          printf '%s\n' "$KEY" > "$RUNNER_TEMP/cervino.rsa"
+          echo "SIGNING_KEY=$RUNNER_TEMP/cervino.rsa" >> "$GITHUB_ENV"
+          echo "APK_REPO=https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
 
       - name: Build image
         env:
@@ -71,6 +93,14 @@ jobs:
             out/alpine-gnomelive-*
             out/SHA256SUMS
           compression-level: 0
+          retention-days: 14
+
+      # cervino-desktop, laid out as in the published repo
+      # (<branch>/<arch>/), for the repo job.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cervino-repo-${{ matrix.target }}
+          path: out/repo
           retention-days: 14
 
       # Install the ISO with setup-alpine and run test/features.sh in the
@@ -129,3 +159,58 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" out/alpine-gnomelive-* out/SHA256SUMS \
             --title "$GITHUB_REF_NAME" --generate-notes
+
+  # Adds the release's cervino-desktop packages to the apk repo on the
+  # gh-pages branch, which GitHub Pages serves and installs get updates from.
+  # The branch holds only the repo, written by this job alone.
+  repo:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    # One push to gh-pages at a time.
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: cervino-repo-*
+          path: new
+          merge-multiple: true
+
+      - name: Check out gh-pages
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages > /dev/null; then
+            git fetch --depth 1 origin gh-pages
+            git worktree add --detach pages FETCH_HEAD
+          else
+            git worktree add --orphan -b gh-pages pages
+          fi
+
+      # In a container of each branch's release, so its apk can read the index.
+      - name: Add the packages
+        env:
+          KEY: ${{ secrets.APK_SIGNING_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$KEY" > "$RUNNER_TEMP/cervino.rsa"
+          for dir in new/v*; do
+            branch=${dir#new/}
+            docker run --rm -v "$PWD":/src -v "$RUNNER_TEMP/cervino.rsa":/cervino.rsa:ro \
+              "docker.io/library/alpine:${branch#v}" \
+              sh /src/ci/publish-repo.sh /src/new /src/pages /cervino.rsa "$branch"
+          done
+
+      - name: Push
+        working-directory: pages
+        run: |
+          git add -A
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898333+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "cervino-desktop from $GITHUB_REF_NAME"
+          git push origin HEAD:gh-pages

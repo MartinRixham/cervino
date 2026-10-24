@@ -16,8 +16,10 @@
 # profile that extends profile_standard, run inside an Alpine container, so
 # the host only needs podman or docker.
 #
-# How it works: the GNOME packages (with all dependencies) are added to the
-# ISO's on-disc apk repository, and an apkovl (the same overlay mechanism
+# How it works: the desktop features' configuration is built into a package,
+# cervino-desktop (cervino-desktop/APKBUILD), which depends on the features'
+# packages. It and the GNOME packages (with all dependencies) are added to
+# the ISO's on-disc apk repository, and an apkovl (the same overlay mechanism
 # `lbu` uses) is placed on the ISO. At boot the initramfs unpacks the apkovl
 # and installs everything in its /etc/apk/world from the disc into the RAM
 # root, then OpenRC starts udev, dbus, gdm etc. exactly as setup-desktop
@@ -40,6 +42,13 @@
 #   CONTAINER       container runtime to use (default: podman, else docker)
 #   MIRROR          Alpine package mirror
 #                   (default: https://dl-cdn.alpinelinux.org/alpine)
+#   SIGNING_KEY     abuild private key (its public key is derived from it,
+#                   named after the file plus .pub) to sign cervino-desktop
+#                   and the image's repo with (default: a new key each build)
+#   APK_REPO        URL of the repo cervino-desktop is published in, without
+#                   the branch; installs get updates from APK_REPO/<branch>
+#                   (default: none). Its packages must be signed with
+#                   SIGNING_KEY.
 #
 # Note: the live system runs entirely from RAM (tmpfs), so booting the
 # resulting image needs roughly 6 GB of RAM or more (an 8 GB Pi).
@@ -57,6 +66,8 @@ LIVE_USER=${LIVE_USER:-alpine}
 LIVE_PASSWORD=${LIVE_PASSWORD-}
 AUTOLOGIN=${AUTOLOGIN:-1}
 BROWSER=${BROWSER:-firefox}
+SIGNING_KEY=${SIGNING_KEY-}
+APK_REPO=${APK_REPO-}
 
 die() { echo "error: $*" >&2; exit 1; }
 # Quote $1 for sh: single quotes, with any ' inside written as '\''.
@@ -84,6 +95,24 @@ host_main() {
 	OUTDIR=$(realpath -m "${OUTDIR:-./out}")
 	mkdir -p "$OUTDIR"
 
+	# cervino-desktop's version: the time of the last commit, so that each
+	# commit's package upgrades the one before (the build time outside git).
+	local here pkgver
+	here=$(dirname "$(realpath "$0")")
+	pkgver=$(TZ=UTC0 git -C "$here" log -1 --date=format-local:%Y%m%d.%H%M%S \
+		--format=%cd 2>/dev/null) || pkgver=
+	pkgver=${pkgver:-$(date -u +%Y%m%d.%H%M%S)}
+
+	# The signing key goes in as a file, under a fixed path; apk knows a key by
+	# its file name, which is passed alongside.
+	local keyopts=()
+	if [[ -n $SIGNING_KEY ]]; then
+		[[ -r $SIGNING_KEY ]] || die "cannot read SIGNING_KEY: $SIGNING_KEY"
+		keyopts=(-v "$(realpath "$SIGNING_KEY")":/signing-key:ro
+			-e SIGNING_KEY_NAME="$(basename "$SIGNING_KEY")")
+	fi
+	[[ -z $APK_REPO || $APK_REPO == https://* ]] || die "APK_REPO must be an https:// URL"
+
 	echo ">>> Building Alpine ${ALPINE_BRANCH#v} GNOME live $TARGET image ($ARCH) with $runtime"
 	# On SELinux hosts, disable confinement for this container rather than
 	# relabelling the volumes with :Z: a container-private label on $OUTDIR
@@ -91,8 +120,9 @@ host_main() {
 	"$runtime" run --rm \
 		--security-opt label=disable \
 		-v "$(realpath "$0")":/build.sh:ro \
-		-v "$(dirname "$(realpath "$0")")"/genapkovl-gnomelive.sh:/genapkovl-gnomelive.sh:ro \
-		-v "$(dirname "$(realpath "$0")")"/apparmor.d:/apparmor.d:ro \
+		-v "$here"/genapkovl-gnomelive.sh:/genapkovl-gnomelive.sh:ro \
+		-v "$here"/cervino-desktop:/cervino-desktop:ro \
+		-v "$here"/apparmor.d:/apparmor.d:ro \
 		-v "$OUTDIR":/out \
 		-e TARGET="$TARGET" \
 		-e ALPINE_BRANCH="$ALPINE_BRANCH" \
@@ -101,11 +131,14 @@ host_main() {
 		-e LIVE_PASSWORD="$LIVE_PASSWORD" \
 		-e AUTOLOGIN="$AUTOLOGIN" \
 		-e BROWSER="$BROWSER" \
+		-e PKGVER="$pkgver" \
+		-e APK_REPO="${APK_REPO%/}" \
+		"${keyopts[@]}" \
 		"docker.io/library/alpine:${ALPINE_BRANCH#v}" \
 		sh -c 'apk add --quiet bash && exec bash /build.sh --in-container'
 
 	echo ">>> Done:"
-	ls -lh "$OUTDIR"/*-"$ARCH.$image_ext"
+	ls -lh "$OUTDIR"/*-"$ARCH.$image_ext" "$OUTDIR"/repo/*/"$ARCH"/*.apk
 }
 
 # ---------------------------------------------------------------------------
@@ -124,13 +157,30 @@ container_main() {
 	mkdir -p /work
 	chown build:build /work
 
-	# mkimage signs the ISO's apk index; the public key ends up in the image.
-	# (-i would shell out to doas/sudo, so install the key by hand.)
-	su build -s /bin/bash -c 'abuild-keygen -a -n'
-	cp /home/build/.abuild/*.rsa.pub /etc/apk/keys/
+	# abuild signs cervino-desktop and mkimage the ISO's apk index with the
+	# key abuild.conf names; the public key ends up in the image. Without
+	# SIGNING_KEY, a new one. (abuild-keygen -i would shell out to doas/sudo,
+	# so install the key by hand.)
+	local privkey
+	if [[ -n ${SIGNING_KEY_NAME:-} ]]; then
+		privkey=/home/build/.abuild/$SIGNING_KEY_NAME
+		mkdir -p /home/build/.abuild
+		install -m 0600 /signing-key "$privkey"
+		openssl rsa -in "$privkey" -pubout -out "$privkey".pub 2>/dev/null ||
+			die "SIGNING_KEY is not an RSA private key"
+		echo "PACKAGER_PRIVKEY=\"$privkey\"" > /home/build/.abuild/abuild.conf
+		chown -R build:build /home/build/.abuild
+	else
+		su build -s /bin/bash -c 'abuild-keygen -a -n'
+		privkey=$(. /home/build/.abuild/abuild.conf && echo "$PACKAGER_PRIVKEY")
+	fi
+	cp "$privkey".pub /etc/apk/keys/
 
 	su build -s /bin/bash -c 'bash /build.sh --as-builder'
 	cp /work/out/*."$image_ext" /out/
+	# The package, laid out as in the published repo.
+	mkdir -p /out/repo
+	cp -R /work/pkgout/. /out/repo/
 }
 
 builder_main() {
@@ -190,7 +240,8 @@ builder_main() {
 	# earlyoom (kills a process before running out of memory freezes the
 	# desktop) and
 	# (x86_64 only) the CPU microcode.
-	# Their configuration and services are set up in the apkovl below.
+	# Their configuration is in the cervino-desktop package, which depends on
+	# them (built below), and their services are set up in the apkovl.
 	# pipewire-pulse provides the pulseaudio that gnome-settings-daemon
 	# depends on, so PulseAudio itself is not installed.
 	local features="bash bash-completion file xz zstd pciutils dmidecode rsync
@@ -214,30 +265,64 @@ builder_main() {
 	rpi) features="$features raspberrypi-utils doas-sudo-shim" ;;
 	esac
 
-	local world
+	# /etc/apk/world: what setup-desktop gnome puts there, plus
+	# cervino-desktop, which brings in the features. So a feature added to
+	# the package later reaches installed systems with it, while GNOME's
+	# apps stay in world, where they can be removed one by one.
+	local world packages
 	world=$(printf '%s\n' alpine-base doas \
 		elogind polkit-elogind "$BROWSER" \
 		eudev udev-init-scripts udev-init-scripts-openrc \
-		$gnome_deps $features | sort -u)
+		$gnome_deps cervino-desktop | sort -u)
+	# What that installs, for the check below (cervino-desktop isn't built
+	# yet).
+	packages=$(printf '%s\n' $world $features | grep -vx cervino-desktop | sort -u)
 	# mkimage puts the packages apk fetch --recursive picks in the image's
 	# repo, and that picks the default provider of each dependency on its
 	# own (sudo for raspinfo's sudo-virt, say). If installing the world as a
 	# whole needs one the fetch did not pick, every apk add on the live
 	# system fails, so check that the fetch covers the install.
 	local fetched installed missing
-	fetched=$(apk --root "$apkroot" fetch --simulate --recursive $world |
+	fetched=$(apk --root "$apkroot" fetch --simulate --recursive $packages |
 		sed -n 's/^Downloading \(.*\)-[^-]*-r[0-9]*$/\1/p' | sort -u) ||
 		die "could not fetch the packages for the image"
-	installed=$(apk --root "$apkroot" add --simulate $world |
+	installed=$(apk --root "$apkroot" add --simulate $packages |
 		sed -n 's/^([0-9/]*) Installing \([^ ]*\) .*/\1/p' | sort -u) ||
 		die "the packages for the image conflict (see above)"
 	missing=$(comm -13 <(echo "$fetched") <(echo "$installed"))
 	[[ -z $missing ]] ||
 		die "the image's repo would lack $(echo $missing): add them to the features"
 
-	# Flatpak adds the remotes in /etc/flatpak/remotes.d (see the generator).
-	wget -qO aports/scripts/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo ||
+	# --- cervino-desktop package ---------------------------------------------
+	# Built from cervino-desktop/APKBUILD, with the AppArmor profiles and
+	# Flathub's remote (Flatpak adds the remotes in /etc/flatpak/remotes.d)
+	# next to it, and signed with the build's key, which mkimage puts in the
+	# image. It goes in a repo of its own for mkimage, indexed under $ARCH as
+	# a package for $ARCH: abuild files the noarch package under the
+	# container's architecture, and apk 3 looks for a package in the
+	# directory of the architecture its index gives. Its dependencies are in
+	# Alpine's repos, which the index doesn't cover.
+	local pkgsrc=/work/cervino/cervino-desktop pkgrepo=/work/pkgrepo
+	mkdir -p "$pkgsrc" "$pkgrepo/$ARCH"
+	cp -R /cervino-desktop/. /apparmor.d "$pkgsrc"/
+	wget -qO "$pkgsrc"/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo ||
 		die "could not download the Flathub remote"
+	# The package brings the public key, and with APK_REPO, the repo.
+	local pubkey
+	pubkey=$(. /home/build/.abuild/abuild.conf && echo "$PACKAGER_PRIVKEY".pub)
+	cp "$pubkey" "$pkgsrc"/
+	printf '%s=%s\n' PKGVER "$(shquote "$PKGVER")" \
+		DEPENDS "$(shquote "$(echo $features)")" \
+		PUBKEY "$(shquote "$(basename "$pubkey")")" \
+		REPO "$(shquote "${APK_REPO:+$APK_REPO/$ALPINE_BRANCH}")" > "$pkgsrc"/cervino-desktop.conf
+	(cd "$pkgsrc" && abuild -d -P /work/packages) || die "could not build cervino-desktop"
+	cp /work/packages/cervino/*/cervino-desktop-*.apk "$pkgrepo/$ARCH"/
+	mkdir -p /work/pkgout/"$ALPINE_BRANCH/$ARCH"
+	cp "$pkgrepo/$ARCH"/cervino-desktop-*.apk /work/pkgout/"$ALPINE_BRANCH/$ARCH"/
+	apk index --quiet --no-warnings --rewrite-arch "$ARCH" \
+		-o "$pkgrepo/$ARCH"/APKINDEX.tar.gz "$pkgrepo/$ARCH"/*.apk ||
+		die "could not index cervino-desktop"
+	abuild-sign -q "$pkgrepo/$ARCH"/APKINDEX.tar.gz
 
 	# Kernel arguments, both on the image and (through setup-disk's
 	# KERNELOPTS) on installs. AppArmor is built into the kernel but needs
@@ -341,16 +426,14 @@ builder_main() {
 	fi
 
 	# --- apkovl generator ----------------------------------------------------
-	# genapkovl-gnomelive.sh reads the build settings from the .conf, and the
-	# Flathub remote, the AppArmor profiles (and on the Pi, usercfg.txt) from
-	# the files next to it.
+	# genapkovl-gnomelive.sh reads the build settings from the .conf (and on
+	# the Pi, usercfg.txt from the file next to it).
 	printf '%s=%s\n' LIVE_USER "$(shquote "$LIVE_USER")" \
 		LIVE_PASSWORD "$(shquote "$LIVE_PASSWORD")" \
 		AUTOLOGIN "$(shquote "$AUTOLOGIN")" \
 		KERNEL_OPTS "$(shquote "$kernel_opts")" \
 		WORLD "$(shquote "$world")" > aports/scripts/genapkovl-gnomelive.conf
 	install -m 0755 /genapkovl-gnomelive.sh aports/scripts/genapkovl-gnomelive.sh
-	cp -R /apparmor.d aports/scripts/apparmor.d
 
 	# --- build ---------------------------------------------------------------
 	sh aports/scripts/mkimage.sh \
@@ -360,6 +443,7 @@ builder_main() {
 		--arch "$ARCH" \
 		--repository "$repo_main" \
 		--repository "$repo_community" \
+		--repository "$pkgrepo" \
 		--profile gnomelive
 }
 

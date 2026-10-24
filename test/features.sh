@@ -731,12 +731,17 @@ t_app_store_sandbox() {
 
 # apk checks package signatures, but over plain HTTP anyone on the path
 # sees what is installed and can hold back updates. Local repositories
-# (paths, like the install medium) and comments are fine.
+# (paths, like the install medium) and comments are fine. apk 3 also reads
+# the repositories.d lists (where cervino-desktop puts its repo).
 t_package_repos_https() {
-    local f=/etc/apk/repositories plain
-    [[ -r $f ]] || { echo "no $f"; return 1; }
-    plain=$(grep -Ev '^[[:space:]]*(@[^[:space:]]+[[:space:]]+)?(#|/|https://|$)' "$f") || return 0
-    echo "repositories not fetched over HTTPS: $(echo $plain)"
+    local f plain=
+    [[ -r /etc/apk/repositories ]] || { echo "no /etc/apk/repositories"; return 1; }
+    for f in /etc/apk/repositories /etc/apk/repositories.d/*.list; do
+        [[ -r $f ]] || continue
+        plain+=" $(grep -Ev '^[[:space:]]*(@[^[:space:]]+[[:space:]]+)?(#|/|https://|$)' "$f")"
+    done
+    [[ -z ${plain// /} ]] && return 0
+    echo "repositories not fetched over HTTPS:" $plain
     return 1
 }
 

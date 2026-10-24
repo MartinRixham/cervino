@@ -11,6 +11,18 @@ set -eu
 [ "$(command -v setup-alpine)" = /usr/local/sbin/setup-alpine ] ||
 	{ echo "setup-alpine is not the ISO's wrapper" >&2; exit 1; }
 
+# cervino-desktop's trigger loads the AppArmor profiles again when a package
+# changes them, which bumps the kernel's policy revision. apparmor-profiles
+# comes from the disc, and none of its files were changed, so reinstalling it
+# leaves no .apk-new behind for the install to copy. (Reading the revision
+# file again after its value waits for the next change, so read one line.)
+revision=/sys/kernel/security/apparmor/revision
+read -r before < "$revision"
+apk fix --quiet --reinstall apparmor-profiles
+read -r after < "$revision"
+[ "$after" != "$before" ] ||
+	{ echo "reinstalling apparmor-profiles did not reload the AppArmor profiles" >&2; exit 1; }
+
 # The install fetches packages from the network. NetworkManager can report
 # it up before names resolve, and setup-alpine's mirror step gives up on the
 # first failed lookup, so also wait for DNS.

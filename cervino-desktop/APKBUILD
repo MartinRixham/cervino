@@ -1,0 +1,517 @@
+# The desktop features' configuration, as a package: the live image installs
+# it from its on-disc repo, and so does setup-disk on systems installed from
+# it, so a newer package can bring configuration changes to those systems.
+# build-alpine-gnome-iso.sh copies this directory into the build, with
+# cervino-desktop.conf (PKGVER, the version; DEPENDS, the packages of the
+# desktop features; PUBKEY, the file name of the public key it is signed with,
+# which is copied next to it; REPO, the URL of the repo it is published in,
+# or empty), flathub.flatpakrepo and the repo's AppArmor profiles
+# (apparmor.d/) next to it.
+#
+# Some of the files belong to other packages (alpine-baselayout's inittab and
+# root crontab, shadow's login.defs, the daemons' conf.d files): replaces=
+# lets this package take them over, and keeps them when those packages are
+# upgraded or reinstalled. As with any package, a file in /etc changed since
+# it was installed is left as it is, and the new version written next to it
+# as .apk-new.
+. "$startdir"/cervino-desktop.conf
+
+pkgname=cervino-desktop
+pkgver=$PKGVER
+pkgrel=0
+pkgdesc="Configuration of the Cervino GNOME desktop"
+url="https://github.com/MartinRixham/cervino"
+arch="noarch"
+license="Apache-2.0"
+# gjs runs the gnome-shell-compat helper; the post-install script enables the
+# services of the -openrc packages.
+depends="gjs apk-polkit-rs-openrc apparmor-openrc avahi-openrc bluez-openrc
+	chrony-openrc cups-openrc earlyoom-openrc networkmanager-openrc
+	nftables-openrc openrc openrc-settingsd-openrc spice-vdagent-openrc
+	zram-init-openrc $DEPENDS"
+replaces="alpine-baselayout alpine-baselayout-data busybox-openrc dbus-openrc
+	earlyoom-openrc openrc shadow zram-init-openrc"
+install="$pkgname.post-install"
+triggers="$pkgname.trigger=/etc/apparmor.d:/etc/apparmor.d/*"
+options="!check"
+
+makefile() {
+	mkdir -p "$(dirname "$3")"
+	cat > "$3"
+	chown "$1" "$3"
+	chmod "$2" "$3"
+}
+
+package() {
+	# The key this package and its repo are signed with, so that a newer
+	# package can bring a new one, and the repo installs get newer ones from,
+	# where it is published. apk 3 reads repositories.d/*.list as well as
+	# /etc/apk/repositories, which stays the user's.
+	makefile root:root 0644 "$pkgdir"/etc/apk/keys/"$PUBKEY" < "$startdir"/"$PUBKEY"
+	if [ -n "$REPO" ]; then
+		echo "$REPO" | makefile root:root 0644 "$pkgdir"/etc/apk/repositories.d/cervino.list
+	fi
+
+	# Login shells: nano as the default editor, ~/.local/bin first in PATH
+	# (any existing entry removed, so nested login shells don't add it twice).
+	makefile root:root 0644 "$pkgdir"/etc/profile.d/50-editor.sh <<'EOF'
+export EDITOR="${EDITOR:-nano}"
+EOF
+	makefile root:root 0644 "$pkgdir"/etc/profile.d/99-local-bin.sh <<'EOF'
+_p=":$PATH:"
+while case $_p in *":$HOME/.local/bin:"*) true ;; *) false ;; esac; do
+	_p="${_p%%:"$HOME"/.local/bin:*}:${_p#*:"$HOME"/.local/bin:}"
+done
+_p="${_p#:}"
+_p="${_p%:}"
+PATH="$HOME/.local/bin${_p:+:$_p}"
+export PATH
+unset _p
+EOF
+	# command-not-found only installs a hook for login sh; bash sources /etc/bash/*.sh.
+	mkdir -p "$pkgdir"/etc/bash
+	ln -s /etc/profile.d/command-not-found.sh "$pkgdir"/etc/bash/command-not-found.sh
+
+	# Session language when the user has not picked one.
+	makefile root:root 0644 "$pkgdir"/etc/locale.conf <<'EOF'
+LANG=C.UTF-8
+EOF
+
+	# New users get bash as their login shell: shadow's useradd (used by
+	# GNOME Settings) reads this; setup-user's busybox adduser, run in the
+	# live system's installer, goes through the live image's adduser shim.
+	makefile root:root 0644 "$pkgdir"/etc/default/useradd <<'EOF'
+SHELL=/bin/bash
+EOF
+	# Only the owner (and root) can read a new user's home directory: useradd
+	# creates it with HOME_MODE (the rest is Alpine's login.defs); the live
+	# image's adduser shim does the same for busybox adduser, which has no
+	# such setting.
+	makefile root:root 0644 "$pkgdir"/etc/login.defs <<'EOF'
+USERGROUPS_ENAB yes
+UID_MIN 1000
+HOME_MODE 0700
+EOF
+
+	# NetworkManager manages all interfaces; ifupdown only brings up lo.
+	# With several name servers in resolv.conf, musl asks them all at once and
+	# takes the first answer, NXDOMAIN included, so a VPN's internal names
+	# resolve only when its server happens to answer first (and musl ignores
+	# servers after the third). NetworkManager's dnsmasq, the only server in
+	# resolv.conf, sends each connection's DNS domains to that connection's
+	# servers instead.
+	# Wi-Fi power saving on Broadcom's SDIO chips (brcmfmac: the Raspberry
+	# Pi's, and some x86 boards') adds hundreds of milliseconds of latency and
+	# drops connections, so it is turned off for them alone.
+	makefile root:root 0644 "$pkgdir"/etc/NetworkManager/conf.d/10-alpine.conf <<'EOF'
+[main]
+dhcp=internal
+plugins=keyfile
+dns=dnsmasq
+
+[connection-brcmfmac]
+match-device=driver:brcmfmac
+wifi.powersave=2
+EOF
+	makefile root:root 0644 "$pkgdir"/etc/network/interfaces <<'EOF'
+auto lo
+iface lo inet loopback
+iface lo inet6 loopback
+EOF
+
+	# The default nftables ruleset drops incoming connections; allow SSH,
+	# mDNS and AirPlay: a speaker sends PipeWire's AirPlay sink timing and
+	# control packets on UDP 6001 and up (6001/6002 for the first sink) before
+	# PipeWire has sent anything there, so conntrack can't take them for
+	# replies. It also drops all forwarded traffic, which would cut containers
+	# (Docker, Podman, LXC/Incus) and VMs (libvirt) on their NAT bridges off
+	# the network whatever rules they add in their own tables: let traffic from
+	# their bridges out and the replies back in. Drop IPv6 packets from source
+	# addresses the host has no route back to, as spoofed, before any input or
+	# forward rule sees them; Neighbor Discovery is exempt (DAD's solicits come
+	# from ::). IPv4 has the kernel's rp_filter.
+	makefile root:root 0644 "$pkgdir"/etc/nftables.d/50-desktop.nft <<'EOF'
+table inet filter {
+	chain rpfilter {
+		type filter hook prerouting priority filter + 10; policy accept;
+		icmpv6 type { nd-router-advert, nd-neighbor-solicit } accept
+		meta nfproto ipv6 fib saddr . mark oif missing drop comment "IPv6 reverse path filter"
+	}
+	chain input {
+		tcp dport 22 accept comment "SSH"
+		udp dport 5353 accept comment "mDNS"
+		udp dport 6001-6010 accept comment "AirPlay (PipeWire RAOP) timing and control"
+	}
+	chain forward {
+		ct state { established, related } accept comment "Replies"
+		ct state invalid drop comment "Drop invalid connections"
+		iifname "virbr*" accept comment "libvirt"
+		iifname "docker*" accept comment "Docker"
+		iifname "br-*" accept comment "Docker networks"
+		iifname "podman*" accept comment "Podman"
+		iifname "cni-*" accept comment "CNI"
+		iifname "lxcbr*" accept comment "LXC"
+		iifname "lxdbr*" accept comment "LXD"
+		iifname "incusbr*" accept comment "Incus"
+	}
+}
+EOF
+
+	# PipeWire adds a sink for each AirPlay speaker Avahi finds. Keep its stream
+	# running while nothing plays: when a player pauses (VLC does while it
+	# buffers), PipeWire would stop the stream and restart it on the same RTSP
+	# session with a jump in the RTP timestamps, and AirPlay 2 speakers then drop
+	# everything that follows in silence. For the same reason, keep it in the
+	# Dummy-Driver's group, so it always runs on that clock: otherwise, while
+	# another sink such as HDMI plays (a GNOME alert sound is enough), PipeWire
+	# moves it onto that sink's clock and back, and its RTP timestamps jump.
+	makefile root:root 0644 "$pkgdir"/etc/pipewire/pipewire.conf.d/50-raop.conf <<'EOF'
+context.modules = [
+	{ name = libpipewire-module-raop-discover
+		condition = [ { module.raop = !false } ]
+		args = {
+			stream.rules = [
+				{ matches = [ { raop.ip = "~.*" } ]
+					actions = {
+						create-stream = {
+							stream.props = {
+								node.pause-on-idle = false
+								node.always-process = true
+								node.group = pipewire.dummy
+							}
+						}
+					}
+				}
+			]
+		}
+	}
+]
+EOF
+
+	# sshd (installed, not enabled) serves sftp with the external sftp-server,
+	# which runs as the user outside sshd's AppArmor profile: Alpine's default,
+	# internal-sftp, runs in sshd itself, whose profile would then have to let it
+	# at every file. The first Subsystem line wins, and sshd_config includes
+	# sshd_config.d before its own.
+	makefile root:root 0644 "$pkgdir"/etc/ssh/sshd_config.d/50-sftp.conf <<'EOF'
+Subsystem sftp /usr/lib/ssh/sftp-server
+EOF
+
+	# busybox syslogd rotates /var/log/messages itself, by default at 200 KiB
+	# with one old file, which a busy desktop fills in minutes: keep 5 x 8 MiB.
+	# It runs under its AppArmor profile (see AppArmor below).
+	makefile root:root 0644 "$pkgdir"/etc/conf.d/syslog <<'EOF'
+SYSLOGD_OPTS="-t -s 8192 -b 4"
+apparmor_profile=busybox-syslogd
+. /usr/libexec/cervino/apparmor-start.sh
+EOF
+
+	# The kernel sets the system clock from the hardware clock as it finds it,
+	# and chrony keeps it right from then on, so hwclock need not set it again
+	# (hwclock --systz, which the init script always runs, still corrects for a
+	# hardware clock that keeps local time). Setting it waits for the clock's
+	# update interrupt, which some VMs never raise: 10 s, then an error. The
+	# file stays plain assignments: openrc-settingsd rewrites clock= in it.
+	makefile root:root 0644 "$pkgdir"/etc/conf.d/hwclock <<'EOF'
+clock="UTC"
+clock_hctosys="NO"
+EOF
+
+	# SSDs need to be told which blocks are free; trim mounted file systems
+	# weekly (anacron runs /etc/periodic, see below).
+	makefile root:root 0755 "$pkgdir"/etc/periodic/weekly/fstrim <<'EOF'
+#!/bin/sh
+exec fstrim -a -q
+EOF
+
+	# zram swap of half the RAM, at most 8 GiB (the init script sources this).
+	makefile root:root 0644 "$pkgdir"/etc/conf.d/zram-init <<'EOF'
+load_on_start=yes
+unload_on_stop=yes
+num_devices=1
+type0=swap
+size0=$(awk '/^MemTotal:/ { s = int($2 / 2048); print (s > 8192 ? 8192 : s) }' /proc/meminfo)
+algo0=zstd
+labl0=zram_swap
+EOF
+
+	# When memory and swap run out the kernel thrashes, and the desktop can
+	# freeze for minutes before its OOM killer acts. earlyoom kills the process
+	# with the highest oom_score first, once available memory and free swap
+	# (the zram above) are both below 10 % (SIGKILL below 5 %): browser
+	# content processes before anything else. It never picks what the session
+	# or logging in depends on (--ignore; --avoid would only lower their score),
+	# since killing one of those ends every app at once. Names are as in
+	# /proc/PID/comm, cut to 15 characters; the init script evals the regexes
+	# inside single quotes.
+	makefile root:root 0644 "$pkgdir"/etc/conf.d/earlyoom <<'EOF'
+prefer_cmds="^(Web Content|Isolated Web Co|WebKitWebProces)$"
+command_args="--ignore '^(gnome-shell|gnome-session-b|gnome-session-c|Xwayland|gdm|gdm-session-wor|gdm-wayland-ses|dbus-daemon|elogind-daemon|sshd|sshd-session)$'"
+EOF
+
+	# Core dumps go to /var/lib/coredump and are deleted after a week.
+	makefile root:root 0644 "$pkgdir"/etc/sysctl.d/50-coredump.conf <<'EOF'
+kernel.core_pattern = |/usr/libexec/cervino/coredump-handler %P %u %s %t
+EOF
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/coredump-handler <<'EOF'
+#!/bin/sh
+# Invoked by the kernel via core_pattern with: %P %u %s %t
+pid=$1 uid=$2 sig=$3 time=$4
+dir=/var/lib/coredump
+max_files=20
+max_bytes=2147483648
+
+umask 077
+mkdir -p "$dir"
+comm=$(tr -cd 'A-Za-z0-9_.-' < "/proc/$pid/comm" 2>/dev/null)
+out="$dir/core.${comm:-unknown}.$uid.$pid.$time"
+
+if command -v zstd >/dev/null 2>&1; then
+	out=$out.zst
+	head -c "$max_bytes" | zstd -q -o "$out"
+else
+	head -c "$max_bytes" > "$out"
+fi
+logger -t coredump "Process $pid (${comm:-unknown}) of user $uid dumped core on signal $sig: $out"
+
+ls -1t "$dir"/core.* 2>/dev/null | tail -n +$((max_files + 1)) | xargs -r rm -f
+find "$dir" -name 'core.*' -mtime +7 -delete
+EOF
+	# Dumps also expire when no new crash comes along to prune them.
+	makefile root:root 0755 "$pkgdir"/etc/periodic/daily/coredump-cleanup <<'EOF'
+#!/bin/sh
+[ -d /var/lib/coredump ] || exit 0
+exec find /var/lib/coredump -name 'core.*' -mtime +7 -delete
+EOF
+
+	# Periodic jobs: cron (cronie, which the setup-alpine wrapper enables in
+	# place of busybox crond) runs the daily, weekly and monthly ones at fixed
+	# times, 02:00 to 05:00, when a laptop is usually off or asleep; busybox
+	# crond never makes up a run it missed. So root's crontab keeps only the
+	# 15min and hourly ones, and anacron (from cronie) runs the rest, once
+	# per period, a few minutes after boot or within an hour of waking up if
+	# they are due. /var/spool/anacron, where it keeps when each last ran, is
+	# not in the package and not under /etc.
+	makefile root:root 0600 "$pkgdir"/etc/crontabs/root <<'EOF'
+# min	hour	day	month	weekday	command
+*/15	*	*	*	*	run-parts /etc/periodic/15min
+0	*	*	*	*	run-parts /etc/periodic/hourly
+# daily, weekly and monthly: /etc/anacrontab
+EOF
+	makefile root:root 0644 "$pkgdir"/etc/cron.d/anacron <<'EOF'
+@reboot	root	mkdir -p /var/spool/anacron && anacron -s
+30 * * * *	root	mkdir -p /var/spool/anacron && anacron -s
+EOF
+	makefile root:root 0644 "$pkgdir"/etc/anacrontab <<'EOF'
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# There is no sendmail to mail job output to.
+MAILTO=""
+# period	delay (min)	job	command
+1	5	periodic.daily	run-parts /etc/periodic/daily
+7	10	periodic.weekly	run-parts /etc/periodic/weekly
+@monthly	15	periodic.monthly	run-parts /etc/periodic/monthly
+EOF
+
+	# AppArmor: profiles (from the repo's apparmor.d) for system daemons;
+	# Alpine's apparmor-profiles has Avahi's and dnsmasq's, which
+	# apparmor.d/local adds to.
+	# AppArmor loads them in sysinit, before udev starts, so that
+	# udevd runs under its profile too.
+	for f in "$startdir"/apparmor.d/* "$startdir"/apparmor.d/local/*; do
+		[ -f "$f" ] || continue
+		makefile root:root 0644 "$pkgdir"/etc/apparmor.d/"${f#"$startdir"/apparmor.d/}" < "$f"
+	done
+	makefile root:root 0644 "$pkgdir"/etc/conf.d/apparmor <<'EOF'
+rc_need="sysfs"
+rc_before="udev"
+EOF
+	# A profile attaches to a program by its path, which does not tell busybox
+	# applets (syslogd, acpid, getty) from one another, or the system
+	# bus's dbus-daemon from the session buses'. Those are started under their
+	# profile by name, through this wrapper: from their conf.d files, which
+	# replace OpenRC's start with apparmor-start.sh's, and from /etc/inittab.
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/apparmor-exec <<'EOF'
+#!/bin/sh
+# apparmor-exec PROFILE COMMAND [ARG...]: runs COMMAND under the AppArmor
+# profile PROFILE, or unconfined when that profile is not loaded (AppArmor
+# turned off, or the profile removed).
+profile=$1
+shift
+if grep -qs "^$profile (" /sys/kernel/security/apparmor/profiles; then
+	exec aa-exec -p "$profile" -- "$@"
+fi
+exec "$@"
+EOF
+	makefile root:root 0644 "$pkgdir"/usr/libexec/cervino/apparmor-start.sh <<'EOF'
+# Sourced by a service's conf.d file, which sets apparmor_profile: OpenRC's
+# start, which the init script does not override, runs the daemon through
+# apparmor-exec.
+start() {
+	local daemon="$command"
+	command_args="$apparmor_profile $command $command_args"
+	command=/usr/libexec/cervino/apparmor-exec
+	default_start || return
+	# stop looks for the daemon, not for the wrapper.
+	service_set_value command "$daemon"
+}
+EOF
+	makefile root:root 0644 "$pkgdir"/etc/conf.d/acpid <<'EOF'
+apparmor_profile=busybox-acpid
+. /usr/libexec/cervino/apparmor-start.sh
+EOF
+	makefile root:root 0644 "$pkgdir"/etc/conf.d/dbus <<'EOF'
+apparmor_profile=dbus-system
+. /usr/libexec/cervino/apparmor-start.sh
+EOF
+	# alpine-baselayout's inittab, with the gettys started through the wrapper.
+	# The initramfs adds a plain getty for a serial console it finds; the live
+	# image's lbu shim wraps that one on installed systems.
+	makefile root:root 0644 "$pkgdir"/etc/inittab <<'EOF'
+# /etc/inittab
+
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+
+# Set up a couple of getty's
+tty1::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty 38400 tty1
+tty2::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty 38400 tty2
+tty3::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty 38400 tty3
+tty4::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty 38400 tty4
+tty5::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty 38400 tty5
+tty6::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty 38400 tty6
+
+# Put a getty on the serial port
+#ttyS0::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty -L 115200 ttyS0 vt100
+
+# Stuff to do for the 3-finger salute
+::ctrlaltdel:/sbin/reboot
+
+# Stuff to do before rebooting
+::shutdown:/sbin/openrc shutdown
+EOF
+
+	# Alpine's gnome-shell (50) is newer than its gnome-session and GDM (48), and
+	# misses two of their protocols, so this session helper stands in for it:
+	# - it registers with gnome-session as a client (so that gnome-session, run
+	#   without systemd, knows the shell is up) but never answers its
+	#   QueryEndSession and EndSession signals, so every logout waits for the
+	#   shell, listed as "Not responding".
+	# - it calls GDM's RegisterSession without the a{sv} argument GDM 48 expects,
+	#   so the call fails. GDM then takes the end of every session for a failure
+	#   ("Session never registered, failing"): it logs the autologin user straight
+	#   back in, and after a few such failures shows no login screen at all. The
+	#   login screen's own session is no different: when a user logs in through
+	#   it, GDM restarts the "failed" login screen, which takes the seat from the
+	#   new session and dies, until GDM gives up and the screen stays frozen.
+	# The login screen's gnome-session only autostarts what is in GDM's greeter
+	# directory, so the helper is listed there too.
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/gnome-shell-compat <<'EOF'
+#!/usr/bin/gjs
+// Registers the session with GDM and answers gnome-session's end-of-session
+// queries on behalf of GNOME Shell
+const {Gio, GLib} = imports.gi;
+const bus = Gio.DBus.session;
+const SM = 'org.gnome.SessionManager';
+const SHELL_APP_ID = 'org.gnome.Shell.desktop';
+
+function call(path, iface, method, args = null, ret = null) {
+    return bus.call_sync(SM, path, iface, method, args,
+        ret ? new GLib.VariantType(ret) : null, Gio.DBusCallFlags.NONE, 5000, null).deepUnpack();
+}
+
+// GDM finds the display from the caller's login session, which is this one.
+Gio.DBus.system.call('org.gnome.DisplayManager', '/org/gnome/DisplayManager/Manager',
+    'org.gnome.DisplayManager.Manager', 'RegisterSession', new GLib.Variant('(a{sv})', [{}]),
+    null, Gio.DBusCallFlags.NONE, -1, null, (conn, res) => {
+        try {
+            conn.call_finish(res);
+        } catch (e) {
+            logError(e, 'registering the session with GDM');
+        }
+    });
+
+bus.signal_subscribe(SM, `${SM}.ClientPrivate`, null, null, null, Gio.DBusSignalFlags.NONE,
+    (_c, _sender, path, _iface, signal) => {
+        if (signal !== 'QueryEndSession' && signal !== 'EndSession')
+            return;
+        try {
+            const [appId] = call(path, `${SM}.Client`, 'GetAppId', null, '(s)');
+            if (appId === SHELL_APP_ID) {
+                call(path, `${SM}.ClientPrivate`, 'EndSessionResponse',
+                    new GLib.Variant('(bs)', [true, '']));
+            }
+        } catch (e) {
+            logError(e, `answering ${signal} for ${path}`);
+        }
+    });
+
+new GLib.MainLoop(null, false).run();
+EOF
+	for dir in etc/xdg/autostart usr/share/gdm/greeter/autostart; do
+		makefile root:root 0644 "$pkgdir"/$dir/gnome-shell-compat.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=GNOME Shell compatibility helper
+Exec=/usr/libexec/cervino/gnome-shell-compat
+OnlyShowIn=GNOME;
+NoDisplay=true
+EOF
+	done
+
+	# The SPICE agent needs uinput.
+	makefile root:root 0644 "$pkgdir"/etc/modules-load.d/uinput.conf <<'EOF'
+uinput
+EOF
+	# spice-vdagentd blocks writing to its virtio port while nothing on the host
+	# reads it (no SPICE client), and then ignores SIGTERM: kill it after 5 s,
+	# and remove the socket it then leaves behind, or it cannot start again.
+	# Only a VM with a SPICE channel has the agent's virtio port (udev-settle
+	# has created it by the default runlevel): anywhere else the daemon has
+	# nothing to do, so the service is left inactive instead of started.
+	makefile root:root 0644 "$pkgdir"/etc/conf.d/spice-vdagentd <<'EOF'
+spice_port=/dev/virtio-ports/com.redhat.spice.0
+retry="TERM/5/KILL/5"
+start() {
+	if [ ! -e "$spice_port" ]; then
+		einfo "No SPICE channel, not starting ${name:-$RC_SVCNAME}"
+		mark_service_inactive
+		return 0
+	fi
+	default_start
+}
+stop() {
+	[ -e "$spice_port" ] || return 0
+	default_stop
+}
+stop_post() {
+	rm -f /run/spice-vdagentd/spice-vdagent-sock
+}
+EOF
+
+	makefile root:root 0644 "$pkgdir"/etc/flatpak/remotes.d/flathub.flatpakrepo \
+		< "$startdir"/flathub.flatpakrepo
+	# Only flatpak run as root adds those to the system installation; until
+	# then users see no remotes.
+	makefile root:root 0755 "$pkgdir"/etc/local.d/flatpak-remotes.start <<'EOF'
+#!/bin/sh
+flatpak remotes >/dev/null 2>&1 || true
+EOF
+
+	# GNOME Software lists Alpine's packages from the AppStream catalog of the
+	# repositories in /etc/apk/repositories, which nothing fetches by default.
+	# Fetch it daily (anacron, see above) and whenever a connection
+	# comes up; only what changed is downloaded.
+	makefile root:root 0755 "$pkgdir"/etc/periodic/daily/alpine-appstream <<'EOF'
+#!/bin/sh
+# NetworkManager's dispatcher runs this without /usr/sbin in PATH.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+exec flock -n /run/alpine-appstream.lock alpine-appstream-downloader >/dev/null 2>&1
+EOF
+	makefile root:root 0755 "$pkgdir"/etc/NetworkManager/dispatcher.d/50-alpine-appstream <<'EOF'
+#!/bin/sh
+[ "$2" = up ] || exit 0
+setsid /etc/periodic/daily/alpine-appstream </dev/null >/dev/null 2>&1 &
+EOF
+}

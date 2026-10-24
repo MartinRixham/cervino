@@ -1,0 +1,15 @@
+#!/bin/sh
+# Adds the desktop features' services to their runlevels, as the live image's
+# are. Only on install: an upgrade leaves a service the user took out alone.
+# (rc-update add does nothing for a service already in the runlevel.) The
+# packages with their init scripts are dependencies, so they are installed
+# first.
+
+rc-update -q add apparmor sysinit
+rc-update -q add zram-init boot
+for svc in networkmanager chronyd earlyoom openrc-settingsd bluetooth cupsd \
+	avahi-daemon nftables spice-vdagentd apk-polkit-server local; do
+	rc-update -q add "$svc" default
+done
+
+exit 0

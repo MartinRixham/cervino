@@ -101,6 +101,8 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 | `BROWSER`       | `firefox`                                  | Browser package to install, as in `setup-desktop`                   |
 | `CONTAINER`     | `podman`, else `docker`                    | Container runtime to use                                            |
 | `MIRROR`        | `https://dl-cdn.alpinelinux.org/alpine`    | Alpine package mirror                                               |
+| `SIGNING_KEY`   | a new key each build                       | abuild private key to sign `cervino-desktop` and the image's repo   |
+| `APK_REPO`      | none                                       | URL (without the branch) of the repo installs get `cervino-desktop` updates from; its packages must be signed with `SIGNING_KEY` |
 
 ### Prebuilt ISOs
 
@@ -109,7 +111,8 @@ the script on every push and pull request that touches it, for both targets,
 and uploads the ISO and the Raspberry Pi image, each with its `SHA256SUMS`, as
 workflow artifacts. You can also start it by hand from the Actions tab and
 choose an Alpine branch there. Pushing a `v*` tag also publishes both images
-as a GitHub release.
+as a GitHub release, and the `cervino-desktop` package to the update repo
+(see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -128,6 +131,36 @@ test locally (it needs
 ```sh
 ci/vm-test.sh out/*.iso
 ```
+
+## Updates
+
+The desktop features' configuration (and the packages they need) is the
+`cervino-desktop` package, so it can change on systems already installed.
+Release images point apk at an extra repository on this project's GitHub
+Pages, `https://martinrixham.github.io/cervino/<branch>`, through
+`/etc/apk/repositories.d/cervino.list`, and trust its signing key. A new
+`cervino-desktop` arrives with the next `apk upgrade`, or in GNOME
+Software's updates, like any other package. If it depends on a new
+package, that comes from Alpine's own repositories along with it.
+
+Each `v*` tag publishes the release's package to the `gh-pages` branch,
+which holds nothing but that repository (written by CI alone, never merged):
+`<branch>/<arch>/APKINDEX.tar.gz` with the newest five packages, and the
+public key, `cervino.rsa.pub`. Release builds and the repo are signed with
+the `APK_SIGNING_KEY` secret of the `release` environment, which only `v*`
+tags can use. To set this up for a fork:
+
+1. Make a key: `openssl genrsa -out cervino.rsa 2048` (or `abuild-keygen
+   -n`). Keep it safe: whoever holds it can change every installed system.
+2. In Settings → Environments, create a `release` environment, limit its
+   deployment branches and tags to the tag pattern `v*`, and save the key's
+   contents as its `APK_SIGNING_KEY` secret. If others can push to the
+   repository, also restrict who can create `v*` tags with a tag ruleset.
+3. Push a `v*` tag. The first release creates the `gh-pages` branch.
+4. In Settings → Pages, serve the `gh-pages` branch (root).
+
+Images built without `SIGNING_KEY` and `APK_REPO`, such as CI builds of pushes and pull
+requests, get no update repository: only tag builds are signed for it.
 
 ## Booting the ISO
 
@@ -183,7 +216,8 @@ puts a wrapper in front of it that:
 An answer file passed with `-f` still overrides these defaults.
 
 Like any Alpine `sys` install, the disk gets a copy of the running system: the
-same packages (so GNOME) and your changes under `/etc`. The live user, its
+same packages (so GNOME, and the `cervino-desktop` package, which holds the
+desktop features' configuration) and your changes under `/etc`. The live user, its
 home directory, its doas and polkit rules, its init script and GDM autologin
 are dropped from that copy, so create a user in `setup-alpine`'s user step and
 log in as that user. Without one there is no account GDM can log in to.
@@ -228,16 +262,20 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
 3. **Builder:** sparse-clones `aports/scripts`, resolves the package list
    that `setup-desktop gnome` would install plus the desktop features listed
    above, and generates:
-   - the mkimage profile, which adds those packages (with all dependencies) to
-     the ISO's on-disc apk repository (for the Pi it extends Alpine's
-     `rpiimg` profile instead, and adds `usercfg.txt`);
+   - the `cervino-desktop` package, built with abuild from
+     [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
+     features' configuration and the AppArmor profiles from
+     [`apparmor.d/`](apparmor.d), depending on the features' packages;
+   - the mkimage profile, which adds those packages and `cervino-desktop`
+     (with all dependencies) to the ISO's on-disc apk repository (for the
+     Pi it extends Alpine's `rpiimg` profile instead, and adds
+     `usercfg.txt`);
    - an apkovl generator. The apkovl is the same overlay mechanism `lbu` uses;
-     it contains `/etc/apk/world`, the GDM config, the desktop features'
-     configuration, the AppArmor profiles from [`apparmor.d/`](apparmor.d),
-     OpenRC runlevels (udev in place of mdev, plus `cgroups`, `dbus`, `gdm`
-     and the desktop features' services, and AppArmor in `sysinit`, before
-     udev), a `live-user` init script, and the `setup-alpine` wrapper with
-     its `lbu` and `adduser` shims.
+     it contains what only the live system needs: `/etc/apk/world`, the GDM
+     config, OpenRC runlevels (udev in place of mdev, plus `cgroups`,
+     `dbus`, `gdm` and the desktop features' services, and AppArmor in
+     `sysinit`, before udev), a `live-user` init script, and the
+     `setup-alpine` wrapper with its `lbu` and `adduser` shims.
 4. At boot the initramfs unpacks the apkovl, installs everything in its
    `/etc/apk/world` from the disc into the RAM root, and OpenRC starts udev,
    dbus, gdm and so on just as `setup-desktop` would have configured them.
