@@ -219,6 +219,17 @@ Icon=system-software-install
 Categories=System;
 EOF
 
+# cervino-desktop's "Update Alpine Linux" launcher is of no use here: the
+# live system runs from RAM, and an upgrade would be gone at the next boot.
+# An entry in /usr/local/share/applications hides the one of the same name
+# in /usr/share.
+makefile root:root 0644 "$tmp"/usr/local/share/applications/update-alpine.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Update Alpine Linux
+Hidden=true
+EOF
+
 # setup-disk copies the live /etc to the new system with "lbu package -",
 # and so would carry over the live user (with its known or empty password,
 # and its doas and polkit rules), its home directory (setup-alpine adds

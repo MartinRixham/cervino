@@ -143,6 +143,15 @@ Pages, `https://martinrixham.github.io/cervino/<branch>`, through
 Software's updates, like any other package. If it depends on a new
 package, that comes from Alpine's own repositories along with it.
 
+**Update Alpine Linux** in the app grid (or `doas update-alpine` in a
+terminal) asks for your password, upgrades every package in a terminal
+window, and then, when a newer stable Alpine release is out, offers to
+upgrade the system to it: it moves `/etc/apk/repositories` (and
+`cervino.list`) to the new branch, upgrades `apk-tools` and then everything
+with `apk upgrade --available`, and offers to restart. The release is only
+offered once this project's repository has a package for it. The live
+system hides the launcher, since it runs from RAM.
+
 Each `v*` tag publishes the release's package to the `gh-pages` branch,
 which holds nothing but that repository (written by CI alone, never merged):
 `<branch>/<arch>/APKINDEX.tar.gz` with the newest five packages, and the

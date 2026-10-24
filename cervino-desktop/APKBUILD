@@ -23,9 +23,10 @@ pkgdesc="Configuration of the Cervino GNOME desktop"
 url="https://github.com/MartinRixham/cervino"
 arch="noarch"
 license="Apache-2.0"
-# gjs runs the gnome-shell-compat helper; the post-install script enables the
-# services of the -openrc packages.
-depends="gjs apk-polkit-rs-openrc apparmor-openrc avahi-openrc bluez-openrc
+# gjs runs the gnome-shell-compat helper; the "Update Alpine Linux" launcher
+# runs update-alpine with doas in GNOME Console; the post-install script
+# enables the services of the -openrc packages.
+depends="doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc avahi-openrc bluez-openrc
 	chrony-openrc cups-openrc earlyoom-openrc networkmanager-openrc
 	nftables-openrc openrc openrc-settingsd-openrc spice-vdagent-openrc
 	zram-init-openrc $DEPENDS"
@@ -513,5 +514,115 @@ EOF
 #!/bin/sh
 [ "$2" = up ] || exit 0
 setsid /etc/periodic/daily/alpine-appstream </dev/null >/dev/null 2>&1 &
+EOF
+
+	# "Update Alpine Linux" in the app grid: upgrades the packages, then offers
+	# a newer stable Alpine release, if there is one, the way Alpine's release
+	# notes say to upgrade (repositories moved to the new branch, apk-tools
+	# first, then everything with --available). cervino-desktop's repo, where
+	# it is configured, moves along with them, so the release is only offered
+	# once that repo has it. Root's shell can run it as update-alpine.
+	makefile root:root 0755 "$pkgdir"/usr/sbin/update-alpine <<'EOF'
+#!/bin/sh
+# update-alpine: upgrades the installed packages, then offers to upgrade the
+# system to a newer stable Alpine release when one is out.
+set -u
+# Neither Ctrl-C nor closing the terminal stops apk halfway through; a
+# question then reads end of file, which answers no.
+trap '' HUP INT
+
+repos=/etc/apk/repositories
+list=/etc/apk/repositories.d/cervino.list
+
+ask() {
+	printf '\n%s [y/N] ' "$1"
+	read -r answer || return 1
+	case $answer in [Yy]*) return 0 ;; esac
+	return 1
+}
+
+[ "$(id -u)" = 0 ] || { echo "update-alpine: run it as root (doas update-alpine)" >&2; exit 1; }
+
+echo "Updating the installed packages..."
+apk upgrade --update-cache || exit
+
+# The release branch the repositories point at; nothing to offer on edge.
+read -r mirror current <<REPO
+$(sed -nE 's#^[[:space:]]*(https?://[^[:space:]]*)/(v[0-9]+\.[0-9]+)/main/?[[:space:]]*$#\1 \2#p' "$repos" | head -n1)
+REPO
+[ -n "${current:-}" ] || exit 0
+arch=$(apk --print-arch)
+latest=$(wget -qO- -T 20 "$mirror/latest-stable/releases/$arch/latest-releases.yaml" |
+	awk '/branch:/ { print $2; exit }')
+case $latest in v[0-9]*.[0-9]*) ;; *)
+	echo
+	echo "Could not find out the latest Alpine release from $mirror."
+	exit 0
+esac
+echo "${current#v} ${latest#v}" | awk '{
+	split($1, c, "."); split($2, l, ".")
+	exit !(l[1] > c[1] || (l[1] == c[1] && l[2] > c[2]))
+}' || { echo; echo "Alpine Linux ${current#v} is the latest release."; exit 0; }
+
+cervino=
+if [ -f "$list" ]; then
+	cervino=$(sed -nE 's#^[[:space:]]*(https?://[^[:space:]]*).*#\1#p' "$list" | head -n1)
+	case $cervino in */"$current")
+		cervino=${cervino%/*}/$latest
+		if ! wget -q -T 20 --spider "$cervino/$arch/APKINDEX.tar.gz"; then
+			echo
+			echo "Alpine Linux ${latest#v} is out, but Cervino's packages for it are"
+			echo "not published yet. Try again later."
+			exit 0
+		fi ;;
+	*) cervino= ;;
+	esac
+fi
+
+echo
+echo "Alpine Linux ${latest#v} is available (this system runs ${current#v})."
+ask "Upgrade to Alpine Linux ${latest#v} now?" || exit 0
+
+cp "$repos" "$repos.update-alpine"
+[ -z "$cervino" ] || cp "$list" "$list.update-alpine"
+sed -i "s#/$(echo "$current" | sed 's/\./\\./g')/#/$latest/#g" "$repos"
+[ -z "$cervino" ] || echo "$cervino" > "$list"
+if ! apk update; then
+	mv "$repos.update-alpine" "$repos"
+	[ -z "$cervino" ] || mv "$list.update-alpine" "$list"
+	echo
+	echo "Could not fetch Alpine Linux ${latest#v}'s package lists; nothing was changed."
+	exit 1
+fi
+rm -f "$repos.update-alpine" "$list.update-alpine"
+if ! apk add --upgrade apk-tools || ! apk upgrade --available; then
+	echo
+	echo "The upgrade did not finish. Once the problem above is fixed, finish it"
+	echo "with: doas apk upgrade --available"
+	exit 1
+fi
+# The new cervino-desktop brings the list just written; apk writes it as
+# .apk-new, as the file was changed.
+if [ -n "$cervino" ] && cmp -s "$list" "$list.apk-new"; then
+	rm -f "$list.apk-new"
+fi
+sync
+
+echo
+echo "The system now runs Alpine Linux ${latest#v}. Restart to finish the upgrade."
+ask "Restart now?" && reboot
+exit 0
+EOF
+	# GLib's fallback terminal list has no GNOME Console, so Terminal=true
+	# would not work; kgx is run directly. The window stays open so the last
+	# messages can be read.
+	makefile root:root 0644 "$pkgdir"/usr/share/applications/update-alpine.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Update Alpine Linux
+Comment=Install package updates and newer Alpine Linux releases
+Exec=kgx -T "Update Alpine Linux" -- sh -c "doas /usr/sbin/update-alpine; echo; printf 'Press Enter to close. '; read -r _"
+Icon=system-software-update
+Categories=System;
 EOF
 }
