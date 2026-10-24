@@ -45,7 +45,9 @@ from a desktop distribution, and keeps it when installed to disk:
   updates, loaded by the boot loader (x86_64 only)
 - PipeWire as the sound server (in place of PulseAudio), its audio threads
   given real-time priority through RealtimeKit, with AirPlay
-  speakers on the network as outputs, `xdg-utils`, Flatpak
+  speakers on the network as outputs (playing after 30 s of silence starts
+  a new AirPlay session, so a speaker that has dropped the old one
+  recovers), `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
 - `gst-libav` (FFmpeg's decoders for GStreamer): multithreaded H.264 and
   HEVC, and the AC-3, E-AC-3 and DTS sound tracks of most video files, and

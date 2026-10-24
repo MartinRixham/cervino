@@ -243,7 +243,8 @@ builder_main() {
 	# Their configuration is in the cervino-desktop package, which depends on
 	# them (built below), and their services are set up in the apkovl.
 	# pipewire-pulse provides the pulseaudio that gnome-settings-daemon
-	# depends on, so PulseAudio itself is not installed.
+	# depends on, so PulseAudio itself is not installed. rtkit gives
+	# PipeWire's audio threads real-time scheduling.
 	local features="bash bash-completion file xz zstd pciutils dmidecode rsync
 		mandoc mandoc-apropos mandoc-doc man-pages command-not-found nano
 		musl-locales musl-locales-lang hunspell-en font-noto-emoji font-noto-cjk

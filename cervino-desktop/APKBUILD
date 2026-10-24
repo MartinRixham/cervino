@@ -189,6 +189,29 @@ context.modules = [
 ]
 EOF
 
+	# Since those streams never stop, neither does their RTSP session, and a
+	# speaker can drop it without telling PipeWire (a KEF LSX II did), which
+	# then streams into it in silence for good. A WirePlumber hook suspends an
+	# AirPlay sink when a stream starts playing to it after 30 s with none,
+	# which gets it a new session; within those 30 s (a track change) it
+	# keeps the old one.
+	makefile root:root 0644 "$pkgdir"/etc/wireplumber/wireplumber.conf.d/50-raop-refresh.conf <<'EOF'
+wireplumber.components = [
+  {
+    name = cervino/raop-refresh.lua, type = script/lua
+    provides = custom.raop-refresh
+  }
+]
+
+wireplumber.profiles = {
+  main = {
+    custom.raop-refresh = required
+  }
+}
+EOF
+	makefile root:root 0644 "$pkgdir"/usr/share/wireplumber/scripts/cervino/raop-refresh.lua \
+		< "$startdir"/raop-refresh.lua
+
 	# sshd (installed, not enabled) serves sftp with the external sftp-server,
 	# which runs as the user outside sshd's AppArmor profile: Alpine's default,
 	# internal-sftp, runs in sshd itself, whose profile would then have to let it
