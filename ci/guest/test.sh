@@ -122,6 +122,26 @@ run_suite env $color bash "$(realpath "$dir")/test/apparmor.sh"
 echo
 echo "== Installed system =="
 
+# cervino-desktop's "Update Alpine Linux" launcher has to show in the app
+# grid of an installed system (the live image hides it), as GLib, which
+# GNOME Shell lists apps through, sees it in the user's session, and what it
+# runs has to be there.
+t_update_launcher() {
+	desc="Update Alpine Linux in the app grid"
+	exe=$(session_run "$user" "$pid" gjs -c "
+		const a = imports.gi.Gio.DesktopAppInfo.new('update-alpine.desktop');
+		if (!a || !a.should_show())
+			imports.system.exit(1);
+		print(a.get_executable());" < /dev/null 2>/dev/null) ||
+		{ fail "$desc" "update-alpine.desktop is missing or hidden"; return 1; }
+	for c in "$exe" doas /usr/sbin/update-alpine; do
+		command -v "$c" > /dev/null || { fail "$desc" "the launcher needs $c, which is not installed"; return 1; }
+	done
+	pass "$desc"
+}
+
+t_update_launcher || true
+
 # A runaway app in the session has to be killed by earlyoom, before the
 # kernel's OOM killer acts and without taking GNOME Shell with it. It runs
 # before the logout check, which needs the session, and its kill is covered

@@ -132,6 +132,12 @@ test locally (it needs
 ci/vm-test.sh out/*.iso
 ```
 
+Before that, [`ci/update-test.sh`](ci/update-test.sh) tests `update-alpine`
+from the package just built, in Alpine containers: it has to upgrade the
+packages, and, starting from the release before, offer the newer release,
+change nothing when that is turned down, and upgrade to it when accepted
+(`ci/update-test.sh out/repo` runs it locally).
+
 ## Updates
 
 The desktop features' configuration (and the packages they need) is the

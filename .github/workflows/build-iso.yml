@@ -103,6 +103,15 @@ jobs:
           path: out/repo
           retention-days: 14
 
+      # update-alpine, from the package just built, in containers of this
+      # release and the one before (see the script). The package is the same
+      # for both targets, so it is tested once.
+      - name: Test update-alpine
+        if: matrix.target == 'iso'
+        env:
+          CONTAINER: docker
+        run: ci/update-test.sh out/repo
+
       # Install the ISO with setup-alpine and run test/features.sh in the
       # installed system's GNOME session, and test/apparmor.sh. The job (and so the release) fails
       # unless every test passes. The Pi image has no VM test: QEMU can't
