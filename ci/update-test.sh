@@ -6,11 +6,15 @@
 # plain Alpine (CONTAINER: podman, else docker), where it runs in seconds:
 # - on the package's release: it upgrades the packages and checks for a
 #   newer release;
-# - on the release before: it offers the newer one, and turning that down
-#   changes nothing; then, accepted, it upgrades the system to it.
-# A container has no cervino.list, so the check of cervino-desktop's repo
-# for the new release is not covered. Prints results as test/features.sh
-# does and exits with the number of failed tests.
+# - on the release before, with a stand-in cervino-desktop installed from a
+#   signed repo served over HTTP in the container, whose cervino.list names
+#   that repo: while the repo has no packages for the newer release, it
+#   offers nothing and changes nothing; once it has, it offers the newer
+#   release, and turning that down changes nothing; then, accepted, it
+#   upgrades the system to it, cervino-desktop and cervino.list included.
+# The stand-in holds only cervino.list, so this doesn't install GNOME.
+# Prints results as test/features.sh does and exits with the number of
+# failed tests.
 
 set -eu
 
@@ -29,6 +33,8 @@ fail() {
 # Inside the container, as root.
 
 repos=/etc/apk/repositories
+list=/etc/apk/repositories.d/cervino.list
+cervino=http://127.0.0.1:8080
 
 # run ANSWERS: runs update-alpine with ANSWERS (printf %b) as its input, into
 # $out and $rc.
@@ -60,19 +66,69 @@ $left"; return 1; }
 	pass "$desc"
 }
 
-# On the release before the package's: a newer release is offered, and
-# turning it down leaves the repositories alone.
-t_offer() {
-	desc="update-alpine offers a newer release; turning it down changes nothing"
+# cervino_repo BRANCH VERSION: publishes a stand-in cervino-desktop VERSION,
+# which holds only a cervino.list naming its own repo, as BRANCH's repo
+# under $cervino, signed with a key apk trusts.
+cervino_repo() {
+	dir=/srv/$1/$(apk --print-arch)
+	mkdir -p /stand-in/"$1"/etc/apk/repositories.d "$dir"
+	echo "$cervino/$1" > /stand-in/"$1"/etc/apk/repositories.d/cervino.list
+	apk mkpkg -F /stand-in/"$1" -I name:cervino-desktop -I version:"$2" \
+		-I arch:"$(apk --print-arch)" -I description:stand-in -I license:none \
+		--sign-key /cervino-test.rsa -o "$dir"/cervino-desktop-"$2".apk &&
+		apk mkndx --sign-key /cervino-test.rsa -o "$dir"/APKINDEX.tar.gz "$dir"/*.apk > /dev/null
+}
+
+# Installs the stand-in cervino-desktop from its repo for this release, served
+# on $cervino.
+setup_cervino() {
 	release=$(cut -d. -f1,2 /etc/alpine-release)
+	apk add -q openssl busybox-extras &&
+		openssl genrsa -out /cervino-test.rsa 2048 2> /dev/null &&
+		openssl rsa -in /cervino-test.rsa -pubout -out /etc/apk/keys/cervino-test.rsa.pub 2> /dev/null &&
+		cervino_repo "v$release" 1-r0 &&
+		busybox-extras httpd -p "${cervino#http://}" -h /srv &&
+		apk add -q -X "$cervino/v$release" cervino-desktop &&
+		[ "$(cat "$list")" = "$cervino/v$release" ]
+}
+
+# save: keeps copies of the repository lists; unchanged DESCRIPTION: fails
+# DESCRIPTION if they changed since.
+save() {
 	cp "$repos" /repositories.orig
+	cp "$list" /cervino.list.orig
+}
+unchanged() {
+	cmp -s "$repos" /repositories.orig && cmp -s "$list" /cervino.list.orig && return 0
+	fail "$1" "the repository lists changed:
+$(diff /repositories.orig "$repos"; diff /cervino.list.orig "$list")"
+	return 1
+}
+
+# On the release before the package's: while cervino-desktop's repo has no
+# packages for the newer release, it is not offered.
+t_unpublished() {
+	desc="update-alpine waits for cervino-desktop's repo to have the newer release"
+	save
 	run ''
 	[ "$rc" = 0 ] || { run_fail "$desc" "it failed"; return 1; }
-	printf '%s\n' "$out" | grep -q "is available (this system runs $release)" ||
+	new=$(printf '%s\n' "$out" | sed -n 's/^Alpine Linux \([0-9]*\.[0-9]*\) is out, but Cervino.*/\1/p')
+	[ -n "$new" ] || { run_fail "$desc" "it did not say the repo has no packages for a newer release"; return 1; }
+	unchanged "$desc" || return 1
+	pass "$desc"
+}
+
+# Then, with the repo published, it is offered, and turning it down leaves
+# the repository lists alone.
+t_offer() {
+	desc="update-alpine offers a newer release; turning it down changes nothing"
+	cervino_repo "v$new" 2-r0 || { fail "$desc" "could not publish the stand-in for v$new"; return 1; }
+	save
+	run ''
+	[ "$rc" = 0 ] || { run_fail "$desc" "it failed"; return 1; }
+	printf '%s\n' "$out" | grep -q "Alpine Linux $new is available (this system runs $release)" ||
 		{ run_fail "$desc" "it offered no newer release"; return 1; }
-	cmp -s "$repos" /repositories.orig ||
-		{ fail "$desc" "turning the upgrade down changed $repos:
-$(diff /repositories.orig "$repos")"; return 1; }
+	unchanged "$desc" || return 1
 	pass "$desc"
 }
 
@@ -81,8 +137,8 @@ t_upgrade() {
 	desc="update-alpine upgrades to the newer release"
 	run 'y\nn\n'
 	[ "$rc" = 0 ] || { run_fail "$desc" "it failed"; return 1; }
-	new=$(printf '%s\n' "$out" | sed -n 's/^The system now runs Alpine Linux \([0-9]*\.[0-9]*\)\..*/\1/p')
-	[ -n "$new" ] || { run_fail "$desc" "it did not say it upgraded"; return 1; }
+	printf '%s\n' "$out" | grep -q "^The system now runs Alpine Linux $new\\." ||
+		{ run_fail "$desc" "it did not say it upgraded to $new"; return 1; }
 	case $(cat /etc/alpine-release) in "$new".*) ;; *)
 		fail "$desc" "it said it upgraded to $new, but /etc/alpine-release is $(cat /etc/alpine-release)"
 		return 1
@@ -90,6 +146,12 @@ t_upgrade() {
 	grep -q "/v$new/main" "$repos" && ! grep -q "/v$release/" "$repos" ||
 		{ fail "$desc" "$repos not moved to v$new:
 $(cat "$repos")"; return 1; }
+	[ "$(cat "$list")" = "$cervino/v$new" ] ||
+		{ fail "$desc" "$list not moved to v$new: $(cat "$list")"; return 1; }
+	[ ! -e "$list.apk-new" ] ||
+		{ fail "$desc" "$list.apk-new left behind"; return 1; }
+	apk list --installed cervino-desktop 2> /dev/null | grep -q '^cervino-desktop-2-r0 ' ||
+		{ fail "$desc" "cervino-desktop not upgraded to v$new's: $(apk list --installed cervino-desktop 2>&1)"; return 1; }
 	left=$(left_to_upgrade)
 	[ -z "$left" ] || { fail "$desc" "packages left to upgrade:
 $left"; return 1; }
@@ -104,9 +166,9 @@ in_container() {
 	current)
 		t_current || true ;;
 	older)
-		if t_offer; then
-			t_upgrade || true
-		fi ;;
+		setup_cervino ||
+			{ fail "Stand-in cervino-desktop installed from a local repo" "setting it up failed"; exit 1; }
+		t_unpublished && t_offer && t_upgrade || true ;;
 	esac
 	exit "$failed"
 }

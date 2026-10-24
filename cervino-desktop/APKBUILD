@@ -569,7 +569,7 @@ if [ -f "$list" ]; then
 	cervino=$(sed -nE 's#^[[:space:]]*(https?://[^[:space:]]*).*#\1#p' "$list" | head -n1)
 	case $cervino in */"$current")
 		cervino=${cervino%/*}/$latest
-		if ! wget -q -T 20 --spider "$cervino/$arch/APKINDEX.tar.gz"; then
+		if ! wget -q -T 20 --spider "$cervino/$arch/APKINDEX.tar.gz" 2> /dev/null; then
 			echo
 			echo "Alpine Linux ${latest#v} is out, but Cervino's packages for it are"
 			echo "not published yet. Try again later."
