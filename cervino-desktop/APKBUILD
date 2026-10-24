@@ -625,7 +625,7 @@ Type=Application
 Name=Update Alpine Linux
 Comment=Install package updates and newer Alpine Linux releases
 Exec=kgx -T "Update Alpine Linux" -- sh -c "doas /usr/sbin/update-alpine; echo; printf 'Press Enter to close. '; read -r _"
-Icon=system-software-update
+Icon=software-update-available
 Categories=System;
 EOF
 }
