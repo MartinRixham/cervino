@@ -32,10 +32,12 @@ from a desktop distribution, and keeps it when installed to disk:
   runs the external `sftp-server`, so sshd's AppArmor profile need not
   allow access to the user's files
 - AppArmor, with profiles in enforce mode for udev, D-Bus, syslog, cron, elogind,
-  polkit, NetworkManager, chrony, GDM, UDisks, CUPS, fwupd, sshd, ...; (see
-  [`apparmor.d/`](apparmor.d)), zram swap (half the RAM, at most 8 GB), a
-  crash dump collector writing to `/var/lib/coredump` (dumps are deleted
-  after a week), a system log kept to 40 MB instead of busybox syslogd's
+  polkit, NetworkManager, chrony, earlyoom, GDM, UDisks, CUPS, fwupd, sshd,
+  ...; (see [`apparmor.d/`](apparmor.d)), zram swap (half the RAM, at most
+  8 GB), `earlyoom`, which kills the process using the most memory (browser
+  tabs first, never the GNOME session or login) before running out freezes
+  the desktop, a crash dump collector writing to `/var/lib/coredump` (dumps
+  are deleted after a week), a system log kept to 40 MB instead of busybox syslogd's
   400 KB, a weekly `fstrim` for SSDs (with discards let through an
   encrypted root), cronie in place of busybox crond, with anacron running
   the daily, weekly and monthly jobs after boot or resume when the machine
@@ -113,8 +115,10 @@ After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
 virtual disk with `setup-alpine`, checks that nothing of the live session
 was copied to the installed system, runs `test/features.sh` in the
-installed user's GNOME session and `test/apparmor.sh` as root, then logs out and checks that GDM's
-login screen comes back. Both the live system and the installed one must
+installed user's GNOME session and `test/apparmor.sh` as root, runs an app
+in the session that takes memory until something kills it and checks that
+earlyoom does, before the kernel's OOM killer and without touching GNOME
+Shell, then logs out and checks that GDM's login screen comes back. Both the live system and the installed one must
 get through all this without a single AppArmor denial. The build fails, and no release is
 published, unless every test passes. The Raspberry Pi image is built but not
 tested this way: QEMU can't emulate a Pi that runs GNOME. To run the same

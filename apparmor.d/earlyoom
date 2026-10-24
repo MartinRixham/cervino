@@ -1,0 +1,33 @@
+# AppArmor profile for earlyoom, the user-space OOM killer. It runs as
+# nobody, with only the capabilities its init script gives it.
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile earlyoom /usr/bin/earlyoom flags=(attach_disconnected) {
+  include <abstractions/base>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  # Killing whichever process uses the most memory, and kill(PID, 0) to
+  # see whether it is gone
+  capability kill,
+  signal (send) set=(term, kill, exists),
+  # mlockall(), so earlyoom itself is not swapped out
+  capability ipc_lock,
+
+  # Weighing up which process to kill: for some of the /proc files below the
+  # kernel checks for ptrace read access to the process (seen for root's
+  # shells, labelled busybox). The file rules still limit what it reads.
+  ptrace (read),
+
+  /usr/bin/earlyoom mr,
+  @{PROC}/ r,
+  @{PROC}/meminfo r,
+  @{PROC}/@{pid}/{stat,statm,status,comm,cmdline,oom_score,oom_score_adj} r,
+
+  include if exists <local/earlyoom>
+}

@@ -625,6 +625,14 @@ t_memory_compression() {
     return 1
 }
 
+# The kernel's OOM killer acts only after the system has thrashed, often
+# for minutes; a user-space one kills a process before that.
+t_userspace_oom_killer() {
+    proc_running earlyoom systemd-oomd nohang oomd && return 0
+    echo "no user-space OOM killer running (earlyoom, systemd-oomd, nohang)"
+    return 1
+}
+
 t_firmware() {
     local mod fw f d ok missing=()
     have modinfo || { echo "no modinfo (kmod)"; return 2; }
@@ -892,6 +900,7 @@ run_test "Old core dumps removed"                      t_coredump_cleanup
 run_test "Missed periodic jobs run later"              t_missed_jobs_catch_up
 run_test "Mandatory access control active"             t_mandatory_access_control
 run_test "Compressed swap (zram or zswap)"             t_memory_compression
+run_test "User-space OOM killer running"               t_userspace_oom_killer
 run_test "SSD TRIM enabled or scheduled"               t_ssd_trim
 run_test "Device firmware installed"                   t_firmware
 run_test "CPU microcode loaded at boot"                t_cpu_microcode

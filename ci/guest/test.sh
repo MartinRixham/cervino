@@ -3,9 +3,11 @@
 # left behind, logs the user created during the install in to GNOME, then
 # runs test/features.sh as that user with the session's environment
 # (taken from gnome-shell), as if from a terminal in the desktop, and
-# test/apparmor.sh as root. Then it logs the user out and checks that
-# GDM's login screen comes back, and last that the kernel log has no
-# AppArmor denials. Exits with the number of failed tests.
+# test/apparmor.sh as root. Then it runs a runaway app in the session and
+# checks that earlyoom kills it (and nothing else) before the kernel's OOM
+# killer would, logs the user out and checks that GDM's login screen comes
+# back, and last that the kernel log has no AppArmor denials. Exits with
+# the number of failed tests.
 
 set -eu
 
@@ -119,6 +121,59 @@ run_suite env $color bash "$(realpath "$dir")/test/apparmor.sh"
 
 echo
 echo "== Installed system =="
+
+# A runaway app in the session has to be killed by earlyoom, before the
+# kernel's OOM killer acts and without taking GNOME Shell with it. It runs
+# before the logout check, which needs the session, and its kill is covered
+# by the AppArmor denial check at the end.
+t_memory_pressure() {
+	desc="Runaway app killed by earlyoom, session kept"
+	hog=$(realpath "$dir")/ci/guest/memory-hog.js
+	kernel_kills=$(dmesg | grep -c 'Killed process') || true
+	log_lines=$(wc -l < /var/log/messages 2>/dev/null) || log_lines=0
+
+	session_run "$user" "$pid" gjs "$hog" < /dev/null > /dev/null 2>&1 &
+	job=$!
+	hog_pid=
+	i=0
+	while kill -0 "$job" 2>/dev/null; do
+		if [ -z "$hog_pid" ]; then
+			for d in /proc/[0-9]*; do
+				[ "$(stat -c %u "$d" 2>/dev/null)" = "$uid" ] &&
+					tr '\0' ' ' 2>/dev/null < "$d"/cmdline | grep -qF "$hog" &&
+					{ hog_pid=${d#/proc/}; break; }
+			done
+		fi
+		i=$((i + 1))
+		if [ "$i" -gt 300 ]; then
+			kill "$job" ${hog_pid:+"$hog_pid"} 2>/dev/null
+			fail "$desc" "the app still runs after 300 s: nothing killed it"
+			return 1
+		fi
+		sleep 1
+	done
+	wait "$job" 2>/dev/null || true
+	# Let the session swap back in before the next checks.
+	sleep 10
+
+	log=$(tail -n +"$((log_lines + 1))" /var/log/messages 2>/dev/null)
+	if [ "$(dmesg | grep -c 'Killed process')" -gt "${kernel_kills:-0}" ]; then
+		fail "$desc" "the kernel's OOM killer acted first: $(dmesg | grep 'Killed process' | tail -n 3)"
+		return 1
+	fi
+	if [ -z "$hog_pid" ] || ! printf '%s\n' "$log" | grep -q "earlyoom.*sending SIG[A-Z]* to process $hog_pid "; then
+		fail "$desc" "earlyoom did not kill the app (pid ${hog_pid:-not found}); its log: $(printf '%s\n' "$log" | grep earlyoom | tail -n 5)"
+		return 1
+	fi
+	victims=$(printf '%s\n' "$log" | sed -n 's/.*earlyoom.*sending SIG[A-Z]* to process \([0-9]*\) .*/\1/p' |
+		grep -vx "$hog_pid" | sort -u | tr '\n' ' ')
+	[ -z "$victims" ] ||
+		{ fail "$desc" "earlyoom killed other processes too: $(printf '%s\n' "$log" | grep 'earlyoom.*sending SIG' | grep -v "process $hog_pid ")"; return 1; }
+	[ -e /proc/"$pid" ] || { fail "$desc" "GNOME Shell ($pid) did not survive"; return 1; }
+	pass "$desc"
+}
+
+t_memory_pressure || true
 
 # Logging out has to end the user's session and bring back GDM's login
 # screen: its own gnome-shell, running as gdm, in seat0's active session and

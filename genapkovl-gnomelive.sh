@@ -242,6 +242,20 @@ algo0=zstd
 labl0=zram_swap
 EOF
 
+# When memory and swap run out the kernel thrashes, and the desktop can
+# freeze for minutes before its OOM killer acts. earlyoom kills the process
+# with the highest oom_score first, once available memory and free swap
+# (the zram above) are both below 10 % (SIGKILL below 5 %): browser
+# content processes before anything else. It never picks what the session
+# or logging in depends on (--ignore; --avoid would only lower their score),
+# since killing one of those ends every app at once. Names are as in
+# /proc/PID/comm, cut to 15 characters; the init script evals the regexes
+# inside single quotes.
+makefile root:root 0644 "$tmp"/etc/conf.d/earlyoom <<'EOF'
+prefer_cmds="^(Web Content|Isolated Web Co|WebKitWebProces)$"
+command_args="--ignore '^(gnome-shell|gnome-session-b|gnome-session-c|Xwayland|gdm|gdm-session-wor|gdm-wayland-ses|dbus-daemon|elogind-daemon|sshd|sshd-session)$'"
+EOF
+
 # Core dumps go to /var/lib/coredump and are deleted after a week. lbu.list
 # makes "lbu package" (and so setup-disk) take /usr/local/libexec along to
 # installed systems.
@@ -774,6 +788,7 @@ rc_add cgroups default
 rc_add dbus default
 rc_add networkmanager default
 rc_add chronyd default
+rc_add earlyoom default
 rc_add openrc-settingsd default
 rc_add bluetooth default
 rc_add cupsd default

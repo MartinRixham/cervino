@@ -303,6 +303,7 @@ run_test "cron (crond_t)"                                     t_daemon crond
 run_test "ACPI event daemon (apmd_t)"                         t_daemon acpid --optional
 run_test "Console login prompts (getty_t)"                    t_daemon getty
 run_test "elogind (systemd_logind_t)"                         t_daemon elogind-daemon
+run_test "earlyoom OOM killer (systemd_oomd_t)"               t_daemon earlyoom --user nobody
 run_test "polkit (policykit_t)"                               t_daemon polkitd --dbus org.freedesktop.PolicyKit1
 run_test "Hostname/time/locale services (systemd_hostnamed_t)" t_daemon openrc-settingsd --dbus org.freedesktop.hostname1
 
