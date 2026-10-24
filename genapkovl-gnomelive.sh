@@ -557,6 +557,9 @@ EOF
 # mirror's https:// URL too, the CDN first), installs no
 # SSH server, skips the NTP step (its default, busybox ntpd, would run
 # next to the chronyd the install already has from the live runlevels),
+# leaves acpid out of the runlevels (its only handler, for the power
+# button, powers off at once; elogind handles the button and lets GNOME
+# decide what it does),
 # and skips the root password (-e): the lbu shim below locks root on the installed
 # system, whose admin user gets root through doas. An answer file passed
 # with -f still overrides these defaults.
@@ -604,6 +607,13 @@ case " \$* " in
 *" mdev "*) exit 0 ;;
 esac
 exec /usr/sbin/setup-devd "\$@"
+SHIM
+cat > "\$shim"/rc-update <<'SHIM'
+#!/bin/sh
+case " \$* " in
+*" add acpid "*) exit 0 ;;
+esac
+exec /sbin/rc-update "\$@"
 SHIM
 for cmd in setup-interfaces setup-dns; do
 	printf '#!/bin/sh\necho "%s: skipped, NetworkManager manages the network"\n' \$cmd > "\$shim"/\$cmd

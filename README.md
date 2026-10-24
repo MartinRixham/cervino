@@ -164,6 +164,9 @@ puts a wrapper in front of it that:
   the memory cgroup controller, which the firmware turns off, back on, and
   sets `console=tty1`, so an encrypted root's passphrase is asked for on
   the screen rather than on the debug UART),
+- leaves `acpid` disabled, which would power off as soon as the power button
+  is pressed; elogind handles the button instead, so GNOME's setting for it
+  applies,
 - skips the root password question and locks root's password on the
   installed system when you create an admin user (the default), who gets
   root with `doas` instead,

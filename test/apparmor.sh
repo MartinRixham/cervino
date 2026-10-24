@@ -300,7 +300,7 @@ run_test "udev device manager (udev_t)"                       t_daemon udevd
 run_test "D-Bus system bus (system_dbusd_t)"                  t_daemon dbus-daemon --user messagebus
 run_test "System logger (syslogd_t)"                          t_daemon syslogd
 run_test "cron (crond_t)"                                     t_daemon crond
-run_test "ACPI event daemon (apmd_t)"                         t_daemon acpid
+run_test "ACPI event daemon (apmd_t)"                         t_daemon acpid --optional
 run_test "Console login prompts (getty_t)"                    t_daemon getty
 run_test "elogind (systemd_logind_t)"                         t_daemon elogind-daemon
 run_test "polkit (policykit_t)"                               t_daemon polkitd --dbus org.freedesktop.PolicyKit1

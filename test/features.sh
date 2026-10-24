@@ -571,6 +571,18 @@ t_power_profiles() {
     return 1
 }
 
+# An acpid that acts on the power button itself (Alpine's busybox acpid
+# runs poweroff) goes around logind, and so around the desktop's setting
+# for what the button does.
+t_power_button() {
+    proc_running acpid || return 0
+    if compgen -G "/etc/acpi/PWRF/*" >/dev/null ||
+        grep -rqs 'button/power' /etc/acpi/events; then
+        echo "acpid handles the power button itself, not logind"
+        return 1
+    fi
+}
+
 t_coredump_handler() {
     local pat
     pat=$(cat /proc/sys/kernel/core_pattern)
@@ -856,6 +868,7 @@ run_test "Firewall forwards container and VM traffic"  t_firewall_forwarding
 run_test "IPv6 reverse path filter"                     t_ipv6_rpfilter
 run_test "SSH installed, server disabled by default"  t_sshd_disabled
 run_test "Power management service"                    t_power_profiles
+run_test "Power button left to logind"                 t_power_button
 run_test "System log keeps enough history"             t_log_retention
 run_test "Crash dump collector configured"             t_coredump_handler
 run_test "Old core dumps removed"                      t_coredump_cleanup
