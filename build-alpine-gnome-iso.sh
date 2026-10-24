@@ -248,6 +248,13 @@ builder_main() {
 	# through (at the cost of showing which blocks are free). Without an
 	# encrypted root the initramfs ignores it.
 	kernel_opts+=" cryptdiscards=yes"
+	# With no auditd, the kernel prints audit records (AppArmor's among
+	# them) through printk, which drops all but 10 every 5 s, and queues at
+	# most 64 before kauditd runs: the profile loads alone are ~190, so
+	# denials went missing from dmesg. Lift both limits, from boot on (a
+	# sysctl.d file would only apply after the apparmor and udev sysinit
+	# services), and make the 128 KiB log buffer big enough to keep them.
+	kernel_opts+=" sysctl.kernel.printk_ratelimit=0 audit_backlog_limit=8192 log_buf_len=4M"
 	# The Pi firmware's device tree caps an NVMe drive's host memory buffer
 	# at 32 MB (nvme.max_host_mem_size_mb=32 in its bootargs, which
 	# cmdline.txt comes after and so overrides). A DRAM-less drive that

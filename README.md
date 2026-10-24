@@ -163,8 +163,9 @@ puts a wrapper in front of it that:
   change network settings and manage printers, gives them bash as the
   login shell, and makes their home directory readable only by them (users
   added later in GNOME Settings get the same),
-- enables AppArmor on the installed system's kernel command line, and lets
-  discards through an encrypted root so `fstrim` reaches the SSD (on the
+- enables AppArmor on the installed system's kernel command line, keeps
+  every AppArmor message in the kernel log (without auditd the kernel would
+  otherwise drop all but a few), and lets discards through an encrypted root so `fstrim` reaches the SSD (on the
   Pi it also raises the firmware's 32 MB cap on an NVMe drive's host memory
   buffer to 64 MB, so DRAM-less drives that need 64 MB get one, and turns
   the memory cgroup controller, which the firmware turns off, back on, and
