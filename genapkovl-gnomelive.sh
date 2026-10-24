@@ -107,6 +107,10 @@ start() {
 		mkdir -p /etc/doas.d
 		echo 'permit persist :wheel' > /etc/doas.d/20-wheel.conf
 		$password
+		# GNOME Shell offers the tour until this is set; leave that to
+		# installed systems. Writing it needs dconf-service on a bus.
+		su -s /bin/sh -c "dbus-run-session -- gsettings set org.gnome.shell welcome-dialog-last-shown-version \"'999'\"" $LIVE_USER \
+			>/dev/null 2>&1
 	fi
 	eend 0
 }
