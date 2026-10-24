@@ -185,7 +185,8 @@ builder_main() {
 	# decoders: multithreaded H.264, and the E-AC-3 and DTS sound tracks
 	# GStreamer has no other decoder for), dav1d's AV1 decoder (much faster
 	# than libaom's, the only other one), the SPICE guest agent,
-	# gcompat (the glibc loader, for programs built for glibc), fstrim and
+	# gcompat (the glibc loader, for programs built for glibc), fstrim,
+	# cronie (cron with anacron, for periodic jobs missed while off) and
 	# (x86_64 only) the CPU microcode.
 	# Their configuration and services are set up in the apkovl below.
 	# pipewire-pulse provides the pulseaudio that gnome-settings-daemon
@@ -200,7 +201,8 @@ builder_main() {
 		pipewire-alsa pipewire-spa-bluez pipewire-zeroconf xdg-utils flatpak
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium gst-libav
-		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal"
+		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal
+		cronie cronie-openrc"
 	case $TARGET in
 	# CPU microcode updates: setup-disk's boot loader (GRUB or syslinux)
 	# finds the images in /boot and loads them before the initramfs.

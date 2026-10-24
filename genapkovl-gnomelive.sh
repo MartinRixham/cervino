@@ -225,7 +225,7 @@ clock_hctosys="NO"
 EOF
 
 # SSDs need to be told which blocks are free; trim mounted file systems
-# weekly (crond, which setup-alpine enables, runs /etc/periodic).
+# weekly (anacron runs /etc/periodic, see below).
 makefile root:root 0755 "$tmp"/etc/periodic/weekly/fstrim <<'EOF'
 #!/bin/sh
 exec fstrim -a -q
@@ -283,6 +283,35 @@ makefile root:root 0755 "$tmp"/etc/periodic/daily/coredump-cleanup <<'EOF'
 exec find /var/lib/coredump -name 'core.*' -mtime +7 -delete
 EOF
 
+# Periodic jobs: cron (cronie, which the setup-alpine wrapper enables in
+# place of busybox crond) runs the daily, weekly and monthly ones at fixed
+# times, 02:00 to 05:00, when a laptop is usually off or asleep; busybox
+# crond never makes up a run it missed. So root's crontab keeps only the
+# 15min and hourly ones, and anacron (from cronie) runs the rest, once
+# per period, a few minutes after boot or within an hour of waking up if
+# they are due. /var/spool/anacron, where it keeps when each last ran, is
+# not in the package and not under /etc.
+makefile root:root 0600 "$tmp"/etc/crontabs/root <<'EOF'
+# min	hour	day	month	weekday	command
+*/15	*	*	*	*	run-parts /etc/periodic/15min
+0	*	*	*	*	run-parts /etc/periodic/hourly
+# daily, weekly and monthly: /etc/anacrontab
+EOF
+makefile root:root 0644 "$tmp"/etc/cron.d/anacron <<'EOF'
+@reboot	root	mkdir -p /var/spool/anacron && anacron -s
+30 * * * *	root	mkdir -p /var/spool/anacron && anacron -s
+EOF
+makefile root:root 0644 "$tmp"/etc/anacrontab <<'EOF'
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# There is no sendmail to mail job output to.
+MAILTO=""
+# period	delay (min)	job	command
+1	5	periodic.daily	run-parts /etc/periodic/daily
+7	10	periodic.weekly	run-parts /etc/periodic/weekly
+@monthly	15	periodic.monthly	run-parts /etc/periodic/monthly
+EOF
+
 # AppArmor: profiles (from the repo's apparmor.d) for system daemons;
 # Alpine's apparmor-profiles has Avahi's and dnsmasq's, which
 # apparmor.d/local adds to.
@@ -297,7 +326,7 @@ rc_need="sysfs"
 rc_before="udev"
 EOF
 # A profile attaches to a program by its path, which does not tell busybox
-# applets (syslogd, crond, acpid, getty) from one another, or the system
+# applets (syslogd, acpid, getty) from one another, or the system
 # bus's dbus-daemon from the session buses'. Those are started under their
 # profile by name, through this wrapper: from their conf.d files, which
 # replace OpenRC's start with apparmor-start.sh's, and from /etc/inittab.
@@ -325,11 +354,6 @@ start() {
 	# stop looks for the daemon, not for the wrapper.
 	service_set_value command "$daemon"
 }
-EOF
-makefile root:root 0644 "$tmp"/etc/conf.d/crond <<'EOF'
-CRON_OPTS="-c /etc/crontabs"
-apparmor_profile=busybox-crond
-. /usr/local/libexec/apparmor-start.sh
 EOF
 makefile root:root 0644 "$tmp"/etc/conf.d/acpid <<'EOF'
 apparmor_profile=busybox-acpid
@@ -477,7 +501,7 @@ EOF
 
 # GNOME Software lists Alpine's packages from the AppStream catalog of the
 # repositories in /etc/apk/repositories, which nothing fetches by default.
-# Fetch it daily (setup-alpine enables crond) and whenever a connection
+# Fetch it daily (anacron, see above) and whenever a connection
 # comes up; only what changed is downloaded.
 makefile root:root 0755 "$tmp"/etc/periodic/daily/alpine-appstream <<'EOF'
 #!/bin/sh
@@ -559,7 +583,8 @@ EOF
 # next to the chronyd the install already has from the live runlevels),
 # leaves acpid out of the runlevels (its only handler, for the power
 # button, powers off at once; elogind handles the button and lets GNOME
-# decide what it does),
+# decide what it does), enables cronie, whose anacron runs the periodic
+# jobs a laptop was off for, where it would enable busybox crond,
 # and skips the root password (-e): the lbu shim below locks root on the installed
 # system, whose admin user gets root through doas. An answer file passed
 # with -f still overrides these defaults.
@@ -612,6 +637,7 @@ cat > "\$shim"/rc-update <<'SHIM'
 #!/bin/sh
 case " \$* " in
 *" add acpid "*) exit 0 ;;
+*" add crond "*) exec /sbin/rc-update -q add cronie ;;
 esac
 exec /sbin/rc-update "\$@"
 SHIM

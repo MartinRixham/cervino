@@ -37,7 +37,9 @@ from a desktop distribution, and keeps it when installed to disk:
   crash dump collector writing to `/var/lib/coredump` (dumps are deleted
   after a week), a system log kept to 40 MB instead of busybox syslogd's
   400 KB, a weekly `fstrim` for SSDs (with discards let through an
-  encrypted root), and Intel and AMD CPU microcode
+  encrypted root), cronie in place of busybox crond, with anacron running
+  the daily, weekly and monthly jobs after boot or resume when the machine
+  was off at their time, and Intel and AMD CPU microcode
   updates, loaded by the boot loader (x86_64 only)
 - PipeWire as the sound server (in place of PulseAudio), with AirPlay
   speakers on the network as outputs, `xdg-utils`, Flatpak
@@ -164,6 +166,7 @@ puts a wrapper in front of it that:
   the memory cgroup controller, which the firmware turns off, back on, and
   sets `console=tty1`, so an encrypted root's passphrase is asked for on
   the screen rather than on the debug UART),
+- enables `cronie` (with anacron) where it would enable busybox `crond`,
 - leaves `acpid` disabled, which would power off as soon as the power button
   is pressed; elogind handles the button instead, so GNOME's setting for it
   applies,

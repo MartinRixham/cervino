@@ -583,6 +583,23 @@ t_power_button() {
     fi
 }
 
+# cron runs daily and weekly jobs at a fixed time, often at night, when a
+# laptop is off or asleep: something has to run the ones it missed later
+# (anacron, fcron, or systemd timers with Persistent=true).
+t_missed_jobs_catch_up() {
+    if have systemctl && [[ -d /run/systemd/system ]]; then
+        systemctl cat '*.timer' 2>/dev/null | grep -q '^Persistent=true' && return 0
+    fi
+    proc_running fcron && return 0
+    if have anacron && [[ -r /etc/anacrontab ]]; then
+        scheduled_job_files | xargs -r grep -lw anacron >/dev/null 2>&1 && return 0
+        echo "anacron is installed but no cron job runs it"
+        return 1
+    fi
+    echo "nothing runs periodic jobs missed while the machine was off (no anacron, fcron or persistent timers)"
+    return 1
+}
+
 t_coredump_handler() {
     local pat
     pat=$(cat /proc/sys/kernel/core_pattern)
@@ -872,6 +889,7 @@ run_test "Power button left to logind"                 t_power_button
 run_test "System log keeps enough history"             t_log_retention
 run_test "Crash dump collector configured"             t_coredump_handler
 run_test "Old core dumps removed"                      t_coredump_cleanup
+run_test "Missed periodic jobs run later"              t_missed_jobs_catch_up
 run_test "Mandatory access control active"             t_mandatory_access_control
 run_test "Compressed swap (zram or zswap)"             t_memory_compression
 run_test "SSD TRIM enabled or scheduled"               t_ssd_trim
