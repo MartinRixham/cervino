@@ -294,7 +294,9 @@ EOF
 # clears the line with its next update, so the shim draws each bar as soon
 # as the ESC after it arrives, putting the cursor back itself, and drops
 # apk's "\e8"s and the "\e[0K"s nothing follows; the bar shown is one
-# update behind apk's. Other apk runs are left alone.
+# update behind apk's. apk sizes the bar to its stdout, which here is the
+# pipe, so the shim draws it again as wide as the terminal. Other apk runs
+# are left alone.
 makefile root:root 0755 "$tmp"/usr/local/sbin/apk <<'EOF'
 #!/bin/sh
 case " $* " in
@@ -302,8 +304,17 @@ case " $* " in
 *) exec /sbin/apk "$@" ;;
 esac
 set -o pipefail
-{ /sbin/apk "$@" 2>&1; } | awk 'BEGIN { RS = "\033" }
+{ cols=$(stty size <&3 2>/dev/null); } 3>&1
+{ /sbin/apk "$@" 2>&1; } | awk -v cols="${cols#* }" 'BEGIN {
+		RS = "\033"
+		c = ENVIRON["APK_PROGRESS_CHAR"]
+		if (c == "") c = ENVIRON["LANG"] ~ /UTF-8/ ? "\342\226\210" : "#"
+	}
 	NR > 1 && $0 == "8" { next }
+	NR > 1 && cols > 25 && $0 ~ /^7 *[0-9]+% / {
+		p = substr($0, 2, 3) + 0; w = cols - 6; $0 = sprintf("7%3d%% ", p)
+		for (i = 0; i < w; i++) $0 = $0 (i < int(w * p / 100) ? c : " ")
+	}
 	NR > 1 && substr($0, 1, 1) == "7" {
 		printf "\033[0K\033%s\0338", $0; bar = 1; fflush(); next
 	}

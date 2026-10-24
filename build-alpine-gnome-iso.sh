@@ -165,8 +165,17 @@ container_main() {
 	cat > /tmp/apk_add <<'EOF'
 apk_add() (
 	set -o pipefail
-	{ $MOCK apk add "$@" 2>&1; } | awk 'BEGIN { RS = "\033" }
+	{ cols=$(stty size <&3 2>/dev/null); } 3>&1
+	{ $MOCK apk add "$@" 2>&1; } | awk -v cols="${cols#* }" 'BEGIN {
+			RS = "\033"
+			c = ENVIRON["APK_PROGRESS_CHAR"]
+			if (c == "") c = ENVIRON["LANG"] ~ /UTF-8/ ? "\342\226\210" : "#"
+		}
 		NR > 1 && $0 == "8" { next }
+		NR > 1 && cols > 25 && $0 ~ /^7 *[0-9]+% / {
+			p = substr($0, 2, 3) + 0; w = cols - 6; $0 = sprintf("7%3d%% ", p)
+			for (i = 0; i < w; i++) $0 = $0 (i < int(w * p / 100) ? c : " ")
+		}
 		NR > 1 && substr($0, 1, 1) == "7" {
 			printf "\033[0K\033%s\0338", $0; bar = 1; fflush(); next
 		}
