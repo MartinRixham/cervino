@@ -5,13 +5,15 @@
 # Tests the ISO end to end in QEMU/KVM, driven over the serial console:
 #
 #   1. install: boots the ISO and installs it to a blank virtual disk with
-#      setup-alpine (through the ISO's wrapper, as a user would)
+#      setup-alpine (through the ISO's wrapper, as a user would), as an
+#      atomic or a sys install ($INSTALL_MODE)
 #   2. test:    boots the installed system into GNOME, logged in as the
 #               user created during the install, and runs
 #               test/features.sh in that desktop session and
 #               test/apparmor.sh as root, then logs out and checks
 #               that GDM's login screen comes back
-#   3. upgrade: three more boots, in which ci/guest/upgrade.sh has
+#   3. upgrade: (atomic installs only) three more boots, in which
+#               ci/guest/upgrade.sh has
 #               update-alpine stage an update of the atomic install,
 #               checks that the system switched to it at the restart,
 #               and that a rollback goes back
@@ -23,6 +25,7 @@
 # second virtual disk, /dev/vdb.
 #
 # Environment overrides:
+#   INSTALL_MODE  atomic or sys, setup-disk's -m (default: atomic)
 #   WORKDIR     disk image, logs etc. (default: ./vm-test)
 #   VM_MEMORY   guest RAM; the live system runs from RAM (default: 8G)
 #   VM_CPUS     guest CPUs (default: all host CPUs)
@@ -35,8 +38,11 @@ REPO=$(dirname "$(dirname "$(realpath "$0")")")
 WORKDIR=$(realpath -m "${WORKDIR:-./vm-test}")
 VM_MEMORY=${VM_MEMORY:-8G}
 VM_CPUS=${VM_CPUS:-$(nproc)}
+INSTALL_MODE=${INSTALL_MODE:-atomic}
 
 die() { echo "error: $*" >&2; exit 1; }
+
+case $INSTALL_MODE in atomic | sys) ;; *) die "INSTALL_MODE must be atomic or sys" ;; esac
 
 qemu_pid=
 vm_user=root
@@ -154,7 +160,7 @@ cmdline=$(awk '$1 == "APPEND" { $1 = ""; print; exit }' "$WORKDIR"/syslinux.cfg)
 vm_start install -cdrom "$ISO" \
 	-kernel "$WORKDIR"/vmlinuz-lts -initrd "$WORKDIR"/initramfs-lts \
 	-append "$cmdline console=ttyS0,115200"
-vm_run root "$unpack_share && /tmp/ci/ci/guest/install.sh" 3600
+vm_run root "$unpack_share && /tmp/ci/ci/guest/install.sh $INSTALL_MODE" 3600
 vm_stop
 ((rc == 0)) || die "installing with setup-alpine failed"
 
@@ -162,10 +168,12 @@ vm_start test
 # The installed system's root is locked, so log in as the user created
 # during the install, whom install.sh lets log in and use doas without a
 # password.
-vm_run tester "doas sh -c '$unpack_share && /tmp/ci/ci/guest/test.sh'" 1500
+vm_run tester "doas sh -c '$unpack_share && /tmp/ci/ci/guest/test.sh $INSTALL_MODE'" 1500
 vm_stop
 ((rc == 0)) || die "$rc test(s) failed"
 echo ">>> All OS feature tests passed"
+
+[[ $INSTALL_MODE == atomic ]] || exit 0
 
 # Updating the atomic install: an update is staged, the shutdown switches to
 # it, and a rollback goes back.

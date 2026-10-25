@@ -112,12 +112,29 @@ jobs:
           CONTAINER: docker
         run: ci/update-test.sh out/repo
 
-      # Install the ISO with setup-alpine and run test/features.sh in the
-      # installed system's GNOME session, and test/apparmor.sh. The job (and so the release) fails
-      # unless every test passes. The Pi image has no VM test: QEMU can't
-      # emulate a Pi that runs GNOME.
+  # Installs the ISO with setup-alpine and runs test/features.sh in the
+  # installed system's GNOME session, and test/apparmor.sh, once as an
+  # atomic install (then updating and rolling it back) and once as a sys
+  # install, each on a runner of its own: the VM needs 8 GB, and a runner
+  # has 16. The release waits for both, and fails unless every test passes.
+  # The Pi image has no VM test: QEMU can't emulate a Pi that runs GNOME.
+  vm-test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        install: [atomic, sys]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: alpine-gnome-iso
+          path: out
+
       - name: Enable KVM
-        if: matrix.target == 'iso'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
             sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -125,26 +142,25 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Install QEMU
-        if: matrix.target == 'iso'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils xorriso
 
       - name: Test ISO in VM
-        if: matrix.target == 'iso'
         env:
+          INSTALL_MODE: ${{ matrix.install }}
           WORKDIR: ${{ runner.temp }}/vm-test
         run: ci/vm-test.sh out/*.iso
 
       - uses: actions/upload-artifact@v7
-        if: failure() && matrix.target == 'iso'
+        if: failure()
         with:
-          name: vm-test-logs
+          name: vm-test-logs-${{ matrix.install }}
           path: ${{ runner.temp }}/vm-test/*.log
           retention-days: 14
 
   release:
-    needs: build
+    needs: [build, vm-test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -173,7 +189,7 @@ jobs:
   # gh-pages branch, which GitHub Pages serves and installs get updates from.
   # The branch holds only the repo, written by this job alone.
   repo:
-    needs: build
+    needs: [build, vm-test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: release

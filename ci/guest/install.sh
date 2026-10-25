@@ -1,13 +1,16 @@
 #!/bin/sh
-# Runs as root on the live ISO: installs to /dev/vda with setup-alpine, using
-# the ISO's wrapper in /usr/local/sbin as a user in the live desktop would,
-# as an atomic install.
+# ci/guest/install.sh MODE: runs as root on the live ISO: installs to
+# /dev/vda with setup-alpine, using the ISO's wrapper in /usr/local/sbin as a
+# user in the live desktop would, as an atomic or a sys install (MODE,
+# setup-disk's -m).
 # The answer file leaves out what the wrapper sets defaults for (DEVDOPTS,
 # KERNELOPTS, SSHDOPTS, no root password) or skips (interfaces and DNS:
 # NetworkManager handles the network), so those defaults are what gets
 # tested.
 
 set -eu
+
+mode=${1:?usage: $0 atomic|sys}
 
 [ "$(command -v setup-alpine)" = /usr/local/sbin/setup-alpine ] ||
 	{ echo "setup-alpine is not the ISO's wrapper" >&2; exit 1; }
@@ -35,14 +38,14 @@ until nslookup mirrors.alpinelinux.org >/dev/null 2>&1; do
 	sleep 2
 done
 
-cat > /tmp/answers <<'EOF'
+cat > /tmp/answers <<EOF
 KEYMAPOPTS=none
 HOSTNAMEOPTS=cervino
 TIMEZONEOPTS=UTC
 PROXYOPTS=none
 APKREPOSOPTS="-1 -c"
 USEROPTS="-a -u -g audio,input,video,netdev,plugdev,lpadmin tester"
-DISKOPTS="-m atomic /dev/vda"
+DISKOPTS="-m $mode /dev/vda"
 LBUOPTS=none
 APKCACHEOPTS=none
 EOF
@@ -61,8 +64,8 @@ fi
 # serial console as tester and needs root without a password prompt. tester
 # is left locked by the install (setup-user -u runs shadow's passwd -u, which
 # refuses to leave an empty password), so give it an empty one, and a doas
-# rule that does not ask. The installed root is a subvolume, roots/<id>, of
-# the btrfs volume.
+# rule that does not ask. An atomic install's root is a subvolume,
+# roots/<id>, of the btrfs volume; a sys install's is a partition.
 mnt=$(mktemp -d)
 root=
 for part in /dev/vda[0-9]*; do

@@ -1,5 +1,6 @@
 #!/bin/sh
-# Runs as root on the installed system: checks that the live session was
+# ci/guest/test.sh MODE: runs as root on the installed system, an atomic or
+# a sys install (MODE, setup-disk's -m): checks that the live session was
 # left behind, logs the user created during the install in to GNOME, then
 # runs test/features.sh as that user with the session's environment
 # (taken from gnome-shell), as if from a terminal in the desktop, and
@@ -11,6 +12,7 @@
 
 set -eu
 
+mode=${1:?usage: $0 atomic|sys}
 dir=$(dirname "$0")/../..
 user=tester
 uid=$(id -u "$user")
@@ -142,9 +144,18 @@ t_update_launcher() {
 
 t_update_launcher || true
 
-# The install is atomic: the system's files are read-only, while /etc, /var,
-# /home and root's home can be written to.
+# An atomic install's system files are read-only, while /etc, /var, /home
+# and root's home can be written to. A sys install is an ordinary system.
 t_read_only_system() {
+	if [ "$mode" = sys ]; then
+		desc="System writable (a sys install)"
+		[ ! -e /etc/kernel/cmdline ] && [ "$(btrfs property get -ts / ro 2>/dev/null)" != ro=true ] ||
+			{ fail "$desc" "the sys install is an atomic one"; return 1; }
+		touch /usr/.ci-write 2>/dev/null && rm -f /usr/.ci-write ||
+			{ fail "$desc" "root cannot write to /usr"; return 1; }
+		pass "$desc"
+		return 0
+	fi
 	desc="System read-only, /etc, /var, /home and /root writable"
 	[ "$(btrfs property get -ts / ro 2>/dev/null)" = ro=true ] ||
 		{ fail "$desc" "/ is not a read-only btrfs subvolume"; return 1; }

@@ -125,9 +125,9 @@ was copied to the installed system, runs `test/features.sh` in the
 installed user's GNOME session and `test/apparmor.sh` as root, runs an app
 in the session that takes memory until something kills it and checks that
 earlyoom does, before the kernel's OOM killer and without touching GNOME
-Shell, then logs out and checks that GDM's login screen comes back. It
-installs as an atomic install, so it then restarts the installed system
-three more times: `update-alpine add` stages a new version with a package
+Shell, then logs out and checks that GDM's login screen comes back. It runs twice,
+in parallel on two runners: once as a sys install, and once as an atomic
+install, which it then restarts three more times: `update-alpine add` stages a new version with a package
 added and leaves the running one alone, the restart switches to it with
 the changes made to `/etc` meanwhile, and `update-alpine rollback` goes
 back. Both the live system and the installed one must
@@ -138,7 +138,8 @@ test locally (it needs
 `qemu-system-x86_64`, `xorriso` and access to `/dev/kvm`):
 
 ```sh
-ci/vm-test.sh out/*.iso
+ci/vm-test.sh out/*.iso                     # an atomic install
+INSTALL_MODE=sys ci/vm-test.sh out/*.iso    # a sys install
 ```
 
 Before that, [`ci/update-test.sh`](ci/update-test.sh) tests `update-alpine`
