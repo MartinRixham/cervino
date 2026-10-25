@@ -26,7 +26,7 @@ license="Apache-2.0"
 # gjs runs the gnome-shell-compat helper; the "Update Alpine Linux" launcher
 # runs update-alpine with doas in GNOME Console; the post-install script
 # enables the services of the -openrc packages.
-depends="doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc avahi-openrc bluez-openrc
+depends="/bin/sh doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc avahi-openrc bluez-openrc
 	chrony-openrc cups-openrc earlyoom-openrc networkmanager-openrc
 	nftables-openrc openrc openrc-settingsd-openrc spice-vdagent-openrc
 	zram-init-openrc $DEPENDS"
@@ -34,7 +34,10 @@ replaces="alpine-baselayout alpine-baselayout-data busybox-openrc dbus-openrc
 	earlyoom-openrc openrc shadow zram-init-openrc"
 install="$pkgname.post-install"
 triggers="$pkgname.trigger=/etc/apparmor.d:/etc/apparmor.d/*:/boot:/usr/share/limine"
-options="!check"
+# abuild would make the package provide a cmd: for each of its commands,
+# and cmd:apk, for the apk wrapper, conflicts with apk-tools' own; so no
+# tracing, and the /bin/sh the install scripts need is listed by hand.
+options="!check !tracedeps"
 
 makefile() {
 	mkdir -p "$(dirname "$3")"
@@ -913,6 +916,74 @@ start() {
 	/usr/libexec/cervino/atomic-finalize
 	return 0
 }
+EOF
+
+	# apk on an atomic install: apk cannot change the read-only system, so
+	# this wrapper, found before /sbin/apk in PATH (/etc/profile's and doas's
+	# alike), hands apk add, del and upgrade to update-alpine, which makes them
+	# in a new version of the system, and turns down other changes. Anywhere
+	# else (the live system, sys installs, update-alpine's chroot of a new
+	# version), for anything that only reads, and for another root (--root),
+	# it is apk itself.
+	makefile root:root 0755 "$pkgdir"/usr/sbin/apk <<'EOF'
+#!/bin/sh
+# apk, on an atomic install: add, del and upgrade go through update-alpine.
+real=/sbin/apk
+lib=/usr/libexec/cervino/atomic.sh
+[ -f "$lib" ] || exec "$real" "$@"
+. "$lib"
+atomic_detect 2>/dev/null || exec "$real" "$@"
+
+refuse() {
+	cat >&2 <<MSG
+apk: this system is read-only (an atomic install), so apk cannot $1 it.
+Instead, as root:
+  update-alpine add PACKAGE...   adds packages
+  update-alpine del PACKAGE...   removes them
+  update-alpine                  upgrades everything
+Each makes a new version of the system, which it starts with next time.
+MSG
+	exit 1
+}
+
+# The applet is the first argument that is not an option (or an option's
+# value). Options that only change what apk prints, or refresh the indexes
+# (in /var, which is writable), can be passed on; any other one is turned
+# down, as update-alpine would not do what it asks.
+applet= pkgs= odd=
+skip=
+for a; do
+	if [ -n "$skip" ]; then skip=; continue; fi
+	case $a in
+	-s|--simulate|-p|--root|--root=*|-h|--help) exec "$real" "$@" ;;
+	-U|--update-cache|-q|--quiet|-v|--verbose|--progress|--no-progress|--interactive|-i) ;;
+	-X|--repository|-t|--virtual|--arch|--cache-dir|--keys-dir|--repositories-file|--from|--cache-max-age)
+		odd=1 skip=1 ;;
+	-*) odd=1 ;;
+	*)
+		if [ -z "$applet" ]; then
+			applet=$a
+		else
+			case $a in */*|*.apk) odd=1 ;; esac
+			pkgs="$pkgs $a"
+		fi ;;
+	esac
+done
+
+case $applet in
+add|del)
+	[ -z "$odd" ] && [ -n "$pkgs" ] || refuse "change"
+	echo "apk: this system is read-only (an atomic install): update-alpine $applet makes the change in a new version of it, which it starts with next time." >&2
+	# shellcheck disable=SC2086
+	exec update-alpine "$applet" $pkgs ;;
+upgrade)
+	[ -z "$odd" ] && [ -z "$pkgs" ] || refuse "upgrade"
+	echo "apk: this system is read-only (an atomic install): update-alpine upgrades it in a new version, which it starts with next time." >&2
+	exec update-alpine ;;
+fix)
+	refuse "fix" ;;
+esac
+exec "$real" "$@"
 EOF
 
 	# "Update Alpine Linux" in the app grid: upgrades the packages, then offers

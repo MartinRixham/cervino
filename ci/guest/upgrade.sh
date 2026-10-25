@@ -2,7 +2,8 @@
 # ci/guest/upgrade.sh STEP: tests updating an atomic install, as root, over
 # three starts of the installed system (ci/vm-test.sh restarts it between
 # the steps):
-#   stage     update-alpine adds a package (one of a few small ones that is
+#   stage     apk add, which cervino-desktop's apk wrapper hands to
+#             update-alpine, adds a package (one of a few small ones that is
 #             not installed) to a new version of the system,
 #             which it stages, leaving the running one as it was; /etc is
 #             changed before and after
@@ -42,7 +43,9 @@ stage)
 	echo "$pkg" > "$notes"/pkg
 	echo before > /etc/ci-before
 	echo gone > /etc/ci-gone
-	update-alpine add "$pkg" < /dev/null || die "update-alpine add failed"
+	apk info -e apk-tools > /dev/null || die "apk info does not get through the apk wrapper"
+	! apk fix < /dev/null 2> /dev/null || die "apk fix was not turned down"
+	apk add "$pkg" < /dev/null || die "apk add (update-alpine add) failed"
 	! apk info -e "$pkg" > /dev/null || die "$pkg was installed into the running system"
 	[ "$(btrfs property get -ts / ro)" = ro=true ] || die "/ is not read-only"
 	boots_first "$atomic_id" || die "the boot menu does not start the running version before the restart"

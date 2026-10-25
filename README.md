@@ -283,7 +283,8 @@ kernel, initramfs and CPU microcode are copied there; the
 `cervino-desktop` package's `update-boot` does that, and writes Limine's
 menu. Each version's kernel arguments are in its `/etc/kernel/cmdline`.
 GNOME Software installs apps from Flatpak only, as apk cannot write to the
-system: `update-alpine` installs packages (see [Updates](#updates)).
+system: `update-alpine` installs packages (see [Updates](#updates)), and
+`doas apk add`, `del` and `upgrade` hand over to it.
 
 Like any Alpine `sys` install, the disk gets a copy of the running system: the
 same packages (so GNOME, and the `cervino-desktop` package, which holds the

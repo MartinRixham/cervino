@@ -213,13 +213,6 @@ t_memory_pressure() {
 	pass "$desc"
 }
 
-# On the first start after the install, the first login's background work
-# (GNOME Software fetching Flathub's catalog, and so on) is still going on
-# a minute after boot, and the runaway app then fills memory faster than the
-# swap takes it, so the kernel's OOM killer acts before earlyoom. Let it
-# settle first (until atomic installs skipped it, GNOME Software's slow
-# package search in test/features.sh did that).
-sleep 120
 t_memory_pressure || true
 
 # Logging out has to end the user's session and bring back GDM's login

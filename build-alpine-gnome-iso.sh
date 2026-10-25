@@ -333,6 +333,11 @@ builder_main() {
 		-o "$pkgrepo/$ARCH"/APKINDEX.tar.gz "$pkgrepo/$ARCH"/*.apk ||
 		die "could not index cervino-desktop"
 	abuild-sign -q "$pkgrepo/$ARCH"/APKINDEX.tar.gz
+	# The live system installs the world at boot, and goes on without it if
+	# that fails, so check that the package installs with it (a cmd: or file
+	# it provides could conflict with another package's).
+	apk --root "$apkroot" add --simulate --allow-untrusted --repository "$pkgrepo" \
+		$world > /dev/null || die "cervino-desktop does not install with the rest of the image (see above)"
 
 	# Kernel arguments, both on the image and (through setup-disk's
 	# KERNELOPTS) on installs. AppArmor is built into the kernel but needs
