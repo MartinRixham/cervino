@@ -1,6 +1,7 @@
 #!/bin/sh
 # Runs as root on the live ISO: installs to /dev/vda with setup-alpine, using
-# the ISO's wrapper in /usr/local/sbin as a user in the live desktop would.
+# the ISO's wrapper in /usr/local/sbin as a user in the live desktop would,
+# as an atomic install.
 # The answer file leaves out what the wrapper sets defaults for (DEVDOPTS,
 # KERNELOPTS, SSHDOPTS, no root password) or skips (interfaces and DNS:
 # NetworkManager handles the network), so those defaults are what gets
@@ -41,7 +42,7 @@ TIMEZONEOPTS=UTC
 PROXYOPTS=none
 APKREPOSOPTS="-1 -c"
 USEROPTS="-a -u -g audio,input,video,netdev,plugdev,lpadmin tester"
-DISKOPTS="-m sys /dev/vda"
+DISKOPTS="-m atomic /dev/vda"
 LBUOPTS=none
 APKCACHEOPTS=none
 EOF
@@ -60,14 +61,18 @@ fi
 # serial console as tester and needs root without a password prompt. tester
 # is left locked by the install (setup-user -u runs shadow's passwd -u, which
 # refuses to leave an empty password), so give it an empty one, and a doas
-# rule that does not ask.
+# rule that does not ask. The installed root is a subvolume, roots/<id>, of
+# the btrfs volume.
 mnt=$(mktemp -d)
+root=
 for part in /dev/vda[0-9]*; do
 	mount "$part" "$mnt" 2>/dev/null || continue
-	[ -e "$mnt"/etc/alpine-release ] && break
+	for dir in "$mnt" "$mnt"/roots/*; do
+		[ -e "$dir"/etc/alpine-release ] && { root=$dir; break 2; }
+	done
 	umount "$mnt"
 done
-[ -e "$mnt"/etc/alpine-release ] || { echo "no installed root on /dev/vda" >&2; exit 1; }
-chroot "$mnt" passwd -d tester
-echo 'permit nopass tester' > "$mnt"/etc/doas.d/90-ci.conf
+[ -n "$root" ] || { echo "no installed root on /dev/vda" >&2; exit 1; }
+chroot "$root" passwd -d tester
+echo 'permit nopass tester' > "$root"/etc/doas.d/90-ci.conf
 umount "$mnt"

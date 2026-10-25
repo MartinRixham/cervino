@@ -257,13 +257,22 @@ builder_main() {
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium gst-libav
 		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal
 		cronie cronie-openrc earlyoom earlyoom-openrc"
+	# The installer's setup-disk shim (see genapkovl-gnomelive.sh) offers an
+	# atomic install: the system on a btrfs volume, optionally encrypted,
+	# booted from a FAT boot partition. Installed systems need the same tools
+	# to keep that partition up to date, and kernel-hooks to run
+	# cervino-desktop's hook after a kernel upgrade.
+	local atomic="btrfs-progs cryptsetup cryptsetup-openrc blkid dosfstools sfdisk kernel-hooks"
 	case $TARGET in
-	# CPU microcode updates: setup-disk's boot loader (GRUB or syslinux)
-	# finds the images in /boot and loads them before the initramfs.
-	iso) features="$features intel-media-driver libva-intel-driver amd-ucode intel-ucode" ;;
+	# CPU microcode updates: the boot loader loads the images in /boot before
+	# the initramfs. Limine boots atomic installs, on UEFI and BIOS.
+	iso) features="$features intel-media-driver libva-intel-driver amd-ucode intel-ucode
+		$atomic efibootmgr limine-tool limine-bios limine-efi-x86_64" ;;
 	# vcgencmd, pinctrl etc. raspberrypi-utils-raspinfo needs a sudo-virt
 	# other than sudo itself, which mkimage's fetch would otherwise pick.
-	rpi) features="$features raspberrypi-utils doas-sudo-shim" ;;
+	# The firmware's package, so that each version of an atomic install
+	# brings the firmware it is to start with.
+	rpi) features="$features raspberrypi-utils doas-sudo-shim $atomic raspberrypi-bootloader" ;;
 	esac
 
 	# /etc/apk/world: what setup-desktop gnome puts there, plus
@@ -429,7 +438,8 @@ builder_main() {
 	# --- apkovl generator ----------------------------------------------------
 	# genapkovl-gnomelive.sh reads the build settings from the .conf (and on
 	# the Pi, usercfg.txt from the file next to it).
-	printf '%s=%s\n' LIVE_USER "$(shquote "$LIVE_USER")" \
+	printf '%s=%s\n' TARGET "$(shquote "$TARGET")" \
+		LIVE_USER "$(shquote "$LIVE_USER")" \
 		LIVE_PASSWORD "$(shquote "$LIVE_PASSWORD")" \
 		AUTOLOGIN "$(shquote "$AUTOLOGIN")" \
 		KERNEL_OPTS "$(shquote "$kernel_opts")" \

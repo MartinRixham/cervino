@@ -70,6 +70,8 @@ profile fwupd /usr/libexec/fwupd/fwupd flags=(attach_disconnected) {
   # Firmware archives the clients hand it
   @{HOMEDIRS}/** r,
   /root/** r,
+  # Root's home on an atomic install (/root links to it).
+  /var/roothome/** r,
   /tmp/** r,
   /var/tmp/** r,
 

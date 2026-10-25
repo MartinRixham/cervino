@@ -666,6 +666,7 @@ t_cpu_microcode() {
     esac
     [[ -f /boot/$img ]] || { echo "no /boot/$img"; return 1; }
     for f in /boot/grub/grub.cfg /boot/extlinux.conf /boot/limine/limine.conf \
+        /boot/efi/limine/limine.conf /boot/efi/limine.conf \
         /media/*/boot/syslinux/syslinux.cfg /media/*/boot/grub/grub.cfg; do
         [[ -r $f ]] && grep -qF "$img" "$f" && return 0
     done
@@ -782,6 +783,12 @@ t_app_store_distro_packages() {
     # is slow, so that plugin is left out.
     have gnome-software || { echo "GNOME Software not installed"; return 2; }
     dbus_name_available --session org.gnome.SessionManager || { echo "not in a GNOME session"; return 2; }
+    # An image-based system (a read-only btrfs root) installs apps only from
+    # Flatpak, as Fedora Silverblue's GNOME Software does.
+    if have btrfs && [[ $(btrfs property get -ts / ro 2>/dev/null) == ro=true ]]; then
+        echo "the system is read-only: apps come from Flatpak"
+        return 2
+    fi
     local cmd out why
     cmd=$(first_have /usr/libexec/gnome-software-cmd /usr/lib/gnome-software/gnome-software-cmd) ||
         { echo "no gnome-software-cmd"; return 2; }

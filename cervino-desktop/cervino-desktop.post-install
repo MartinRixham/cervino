@@ -6,6 +6,9 @@
 # first.
 
 rc-update -q add apparmor sysinit
+# Switches an atomic install to an update staged for the next start (does
+# nothing elsewhere).
+rc-update -q add cervino-atomic shutdown
 rc-update -q add zram-init boot
 for svc in networkmanager chronyd earlyoom openrc-settingsd bluetooth cupsd \
 	avahi-daemon nftables spice-vdagentd apk-polkit-server local; do

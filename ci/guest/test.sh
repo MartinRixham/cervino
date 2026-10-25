@@ -142,6 +142,26 @@ t_update_launcher() {
 
 t_update_launcher || true
 
+# The install is atomic: the system's files are read-only, while /etc, /var,
+# /home and root's home can be written to.
+t_read_only_system() {
+	desc="System read-only, /etc, /var, /home and /root writable"
+	[ "$(btrfs property get -ts / ro 2>/dev/null)" = ro=true ] ||
+		{ fail "$desc" "/ is not a read-only btrfs subvolume"; return 1; }
+	if touch /usr/.ci-write 2>/dev/null; then
+		rm -f /usr/.ci-write
+		fail "$desc" "root can write to /usr"
+		return 1
+	fi
+	for d in /etc /var /home /root; do
+		touch "$d"/.ci-write 2>/dev/null && rm -f "$d"/.ci-write ||
+			{ fail "$desc" "root cannot write to $d"; return 1; }
+	done
+	pass "$desc"
+}
+
+t_read_only_system || true
+
 # A runaway app in the session has to be killed by earlyoom, before the
 # kernel's OOM killer acts and without taking GNOME Shell with it. It runs
 # before the logout check, which needs the session, and its kill is covered
@@ -193,6 +213,13 @@ t_memory_pressure() {
 	pass "$desc"
 }
 
+# On the first start after the install, the first login's background work
+# (GNOME Software fetching Flathub's catalog, and so on) is still going on
+# a minute after boot, and the runaway app then fills memory faster than the
+# swap takes it, so the kernel's OOM killer acts before earlyoom. Let it
+# settle first (until atomic installs skipped it, GNOME Software's slow
+# package search in test/features.sh did that).
+sleep 120
 t_memory_pressure || true
 
 # Logging out has to end the user's session and bring back GDM's login

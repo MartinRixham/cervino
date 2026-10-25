@@ -55,7 +55,8 @@ from a desktop distribution, and keeps it when installed to disk:
 - Alpine's packages in GNOME Software: `apk-polkit-server` runs at boot, and
   the AppStream catalog of the repositories in `/etc/apk/repositories` is
   fetched when a network connection comes up and daily (the live system's
-  only repository is the disc, so this takes effect on installed systems)
+  only repository is the disc, so this takes effect on installed systems;
+  not on atomic installs, whose system is read-only)
 - logging out without the logout dialog waiting on GNOME Shell, and back to
   GDM's login screen, and logging in through that screen without the new
   session freezing (Alpine's gnome-shell is newer than its gnome-session
@@ -124,7 +125,12 @@ was copied to the installed system, runs `test/features.sh` in the
 installed user's GNOME session and `test/apparmor.sh` as root, runs an app
 in the session that takes memory until something kills it and checks that
 earlyoom does, before the kernel's OOM killer and without touching GNOME
-Shell, then logs out and checks that GDM's login screen comes back. Both the live system and the installed one must
+Shell, then logs out and checks that GDM's login screen comes back. It
+installs as an atomic install, so it then restarts the installed system
+three more times: `update-alpine add` stages a new version with a package
+added and leaves the running one alone, the restart switches to it with
+the changes made to `/etc` meanwhile, and `update-alpine rollback` goes
+back. Both the live system and the installed one must
 get through all this without a single AppArmor denial. The build fails, and no release is
 published, unless every test passes. The Raspberry Pi image is built but not
 tested this way: QEMU can't emulate a Pi that runs GNOME. To run the same
@@ -161,7 +167,22 @@ upgrade the system to it: it moves `/etc/apk/repositories` (and
 `cervino.list`) to the new branch, upgrades `apk-tools` and then everything
 with `apk upgrade --available`, and offers to restart. The release is only
 offered once this project's repository has a package for it. The live
-system hides the launcher, since it runs from RAM.
+system hides the launcher, since it runs from RAM. `doas update-alpine add
+PACKAGE...` and `doas update-alpine del PACKAGE...` add and remove packages.
+
+On an atomic install, all of that happens to a new version of the system,
+a copy of the running one, upgraded in a chroot, while the running system
+stays as it was (apk itself cannot change it). The new version is staged:
+the system starts with it next time. At that shutdown, the changes made to
+`/etc` since the update are copied into it (where the update changed a file
+you changed meanwhile too, yours is kept and the update's is saved next to
+it as `.apk-new`), and it becomes the default in the boot menu. Further
+updates before the restart add up in the same new version. The versions
+before stay in the boot menu under **Earlier versions**, the four newest of
+them kept, so a version that doesn't work can be started from there, and
+`doas update-alpine rollback` then makes the version before the running one
+the default again (as a new copy of it, with its `/etc` as it was).
+`/var` and `/home` are shared, so data is never rolled back.
 
 Each `v*` tag publishes the release's package to the `gh-pages` branch,
 which holds nothing but that repository (written by CI alone, never merged):
@@ -231,9 +252,38 @@ puts a wrapper in front of it that:
 - skips the root password question and locks root's password on the
   installed system when you create an admin user (the default), who gets
   root with `doas` instead,
-- leaves the live session out of the installed system.
+- leaves the live session out of the installed system,
+- offers an atomic install, a system kept as versions (see below).
 
 An answer file passed with `-f` still overrides these defaults.
+
+The disk step first asks how to install the system:
+
+- **atomic** (the default; `-m atomic` in an answer file's `DISKOPTS`): the
+  system is read-only and updated as a whole, as in Fedora Silverblue. Each
+  update is a new version of the system, which it starts with next time, and
+  the four versions before stay (in the boot menu, on a PC). It asks for one
+  disk and whether to encrypt it.
+- **sys** (`-m sys`): Alpine's standard install, updated in place, with
+  Alpine's own disk questions. So does every other `setup-disk` option
+  (`data` or LVM mode, RAID, several disks).
+
+On a PC, an atomic install erases the disk and makes four partitions: a 1 MiB BIOS
+boot partition, a 1 GiB FAT boot partition (the EFI system partition,
+mounted on `/boot/efi`), swap (twice the RAM, at most 4 GiB or a quarter of
+the disk, as Alpine sizes it; encrypted with a new random key at each boot
+if the disk is) and a btrfs volume, inside LUKS2 if you chose encryption
+(its passphrase is asked for at every boot). The volume holds each version
+of the system as a read-only subvolume, `roots/<date and time>`, with a
+writable `/etc` of its own nested in it, beside `@var` and `@home`, which
+all versions share and which are mounted on `/var` and `/home` (root's
+home is `/var/roothome`). [Limine](https://limine-bootloader.org) boots the
+disk from the boot partition, on UEFI or BIOS alike, so each version's
+kernel, initramfs and CPU microcode are copied there; the
+`cervino-desktop` package's `update-boot` does that, and writes Limine's
+menu. Each version's kernel arguments are in its `/etc/kernel/cmdline`.
+GNOME Software installs apps from Flatpak only, as apk cannot write to the
+system: `update-alpine` installs packages (see [Updates](#updates)).
 
 Like any Alpine `sys` install, the disk gets a copy of the running system: the
 same packages (so GNOME, and the `cervino-desktop` package, which holds the
@@ -267,6 +317,20 @@ Installing works as from the ISO (see [Installing to disk](#installing-to-disk))
 to a USB or NVMe drive or to the SD card the Pi booted from: everything runs
 from RAM, so `setup-alpine` offers to unmount it. The installed system's boot
 partition gets the same `usercfg.txt`.
+
+An atomic install on the Pi erases the disk and makes an MBR partition
+table, as the Pi's firmware starts from its first partition: a 1 GiB FAT
+boot partition (mounted on `/boot/firmware`, as on Raspberry Pi OS), swap
+only if asked for (`-s`, as Alpine does on the Pi) and the btrfs volume,
+encrypted or not, as on a PC. The firmware starts the system itself, with
+no boot menu: each version's kernel, initramfs, device trees, overlays and
+`cmdline.txt` are copied to `cervino/<date and time>/` on the boot
+partition, and `config.txt` (written by `update-boot`; your settings go in
+`usercfg.txt`) starts the newest with `os_prefix=`, listing the earlier
+versions in comments. So going back is `doas update-alpine rollback`, or,
+if the new version does not start, putting an earlier version's directory
+in `os_prefix` on another computer. This has not been tested on a Pi yet:
+QEMU can't run the Pi's firmware.
 
 ## How it works
 

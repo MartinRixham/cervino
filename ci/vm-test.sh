@@ -11,6 +11,10 @@
 #               test/features.sh in that desktop session and
 #               test/apparmor.sh as root, then logs out and checks
 #               that GDM's login screen comes back
+#   3. upgrade: three more boots, in which ci/guest/upgrade.sh has
+#               update-alpine stage an update of the atomic install,
+#               checks that the system switched to it at the restart,
+#               and that a rollback goes back
 #
 # Exits non-zero if either stage fails or any test fails. The serial console
 # output of each boot is streamed to stdout and kept in $WORKDIR/<stage>.log.
@@ -162,3 +166,13 @@ vm_run tester "doas sh -c '$unpack_share && /tmp/ci/ci/guest/test.sh'" 1500
 vm_stop
 ((rc == 0)) || die "$rc test(s) failed"
 echo ">>> All OS feature tests passed"
+
+# Updating the atomic install: an update is staged, the shutdown switches to
+# it, and a rollback goes back.
+for step in stage check rollback; do
+	vm_start "upgrade-$step"
+	vm_run tester "doas sh -c '$unpack_share && /tmp/ci/ci/guest/upgrade.sh $step'" 1200
+	vm_stop
+	((rc == 0)) || die "updating the atomic install failed at: $step"
+done
+echo ">>> Atomic update and rollback passed"
