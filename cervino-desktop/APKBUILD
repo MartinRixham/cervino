@@ -710,6 +710,14 @@ if [ -n "$pi" ]; then
 			sync
 			mv "$dst".new "$dst"
 		fi
+		# The firmware loads overlays from os_prefix's overlays/ only if it
+		# has a README (else from the shared /overlays, which is not there),
+		# and Alpine's kernel package ships none. Also added to versions
+		# copied before it was.
+		if [ ! -f "$dst"/overlays/README ]; then
+			echo "Device tree overlays for this version of the system." > "$dst"/overlays/README.new
+			mv "$dst"/overlays/README.new "$dst"/overlays/README
+		fi
 		echo "$(cat "$top/roots/$id"/etc/kernel/cmdline) rootflags=subvol=/roots/$id" > "$top".cmdline
 		copy "$top".cmdline "$dst"/cmdline.txt
 		rm -f "$top".cmdline
