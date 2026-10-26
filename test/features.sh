@@ -963,6 +963,40 @@ t_media_decoders() {
     [[ -z $missing ]] || { echo "no decoder for $missing"; return 1; }
 }
 
+t_vlc_hevc_hardware_decoding() {
+    # VLC (Raspberry Pi OS's patches) decodes HEVC on the Pi's decoder,
+    # rpi-hevc-dec (Pi 4 and 5), through FFmpeg's V4L2 request hwaccel,
+    # handing the frames on as DRM PRIME buffers. This plays a short clip in
+    # the session's video output: VLC logs the DRM PRIME path only if the
+    # output takes those frames, FFmpeg the hwaccel only if it opened the
+    # decoder (its buffers come from /dev/dma_heap, which udev gives the
+    # seat's user), and the decoder's interrupts show it decoded frames.
+    local n dev="" irq="" before=0 after=0 log
+    for n in /sys/class/video4linux/video*/name; do
+        [[ -r $n && $(<"$n") == rpi-hevc-dec ]] || continue
+        dev=$(basename "$(readlink -f "${n%/name}/device")")
+        break
+    done
+    [[ -n $dev ]] || { echo "no HEVC decoder hardware (rpi-hevc-dec)"; return 2; }
+    have cvlc || { echo "VLC not installed"; return 2; }
+    [[ -n ${WAYLAND_DISPLAY:-}${DISPLAY:-} ]] || { echo "not in a graphical session"; return 2; }
+    # The driver names its interrupt after its device
+    for n in /sys/kernel/irq/*/actions; do
+        [[ ,$(<"$n"), == *",$dev,"* ]] && { irq=${n%/actions}/per_cpu_count; break; }
+    done
+    [[ -n $irq ]] && before=$(($(tr , + <"$irq")))
+    log=$(timeout 60 cvlc -vv --play-and-exit --no-audio --no-video-title-show \
+        "$(dirname "${BASH_SOURCE[0]}")/hevc-probe.mp4" 2>&1) ||
+        { echo "VLC could not play the HEVC clip"; return 1; }
+    [[ -n $irq ]] && after=$(($(tr , + <"$irq")))
+    grep -q 'Using DRM Video Accel for hardware decoding' <<<"$log" ||
+        { echo "VLC decoded HEVC in software"; return 1; }
+    grep -q 'Hwaccel V4L2 HEVC' <<<"$log" ||
+        { echo "FFmpeg's V4L2 request hwaccel did not start"; return 1; }
+    [[ -z $irq ]] || ((after > before)) ||
+        { echo "the HEVC decoder ($dev) decoded no frames"; return 1; }
+}
+
 t_browser_drm() {
     # Streaming services (Netflix, Spotify, Disney+, ...) need Widevine,
     # which Firefox downloads from Google the first time a page asks for it,
@@ -1077,6 +1111,7 @@ run_test "Distribution packages in GNOME Software"     t_app_store_distro_packag
 run_test "Firmware updates in GNOME Software"          t_app_store_firmware_updates
 run_test "VA-API video acceleration available"         t_video_acceleration
 run_test "Decoders for common video and audio formats" t_media_decoders
+run_test "Hardware HEVC decoding in VLC"               t_vlc_hevc_hardware_decoding
 run_test "DRM video in the browser (Widevine)"         t_browser_drm
 run_test "SPICE guest agent (VM clipboard/resize)"     t_spice_agent
 run_test "Logout not blocked by GNOME Shell"           t_logout_not_blocked_by_shell
