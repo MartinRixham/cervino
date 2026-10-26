@@ -129,8 +129,8 @@ Shell, then logs out and checks that GDM's login screen comes back. It runs twic
 in parallel on two runners: once as a sys install, and once as an atomic
 install, which it then restarts three more times: `update-alpine add` stages a new version with a package
 added and leaves the running one alone, the restart switches to it with
-the changes made to `/etc` meanwhile, and `update-alpine rollback` goes
-back. Both the live system and the installed one must
+the changes made to `/etc` meanwhile, `update-alpine rollback` goes
+back, and `update-alpine delete` removes the updated version. Both the live system and the installed one must
 get through all this without a single AppArmor denial. The build fails, and no release is
 published, unless every test passes. The Raspberry Pi image is built but not
 tested this way: QEMU can't emulate a Pi that runs GNOME. To run the same
@@ -183,6 +183,11 @@ before stay in the boot menu under **Earlier versions**, the four newest of
 them kept, so a version that doesn't work can be started from there, and
 `doas update-alpine rollback` then makes the version before the running one
 the default again (as a new copy of it, with its `/etc` as it was).
+`doas update-alpine list` lists the versions, newest first, with which one
+is running and which the system starts with next time, and `doas
+update-alpine delete ID...` deletes versions you no longer want (a staged
+update too, which cancels it) and takes them out of the boot menu; the
+running version can't be deleted.
 `/var` and `/home` are shared, so data is never rolled back.
 
 Each `v*` tag publishes the release's package to the `gh-pages` branch,

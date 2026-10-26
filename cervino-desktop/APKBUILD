@@ -994,7 +994,8 @@ EOF
 	# once that repo has it. Root's shell can run it as update-alpine, which
 	# also adds and removes packages (update-alpine add/del), as apk cannot on
 	# an atomic install's read-only system, and goes back to the version
-	# before (update-alpine rollback). On an atomic install it does all that
+	# before (update-alpine rollback), lists the versions (update-alpine list)
+	# and deletes ones (update-alpine delete). On an atomic install it does all that
 	# to a new version of the system, made from the running one and upgraded
 	# in a chroot (which shares /var), and stages it for the next start.
 	makefile root:root 0755 "$pkgdir"/usr/sbin/update-alpine <<'EOF'
@@ -1004,6 +1005,8 @@ EOF
 # update-alpine add|del PACKAGE...: adds or removes packages.
 # update-alpine rollback: goes back to the version of the system before the
 # running one (atomic installs only).
+# update-alpine list: lists the versions of the system, newest first, and
+# update-alpine delete ID...: deletes versions (atomic installs only).
 # On an atomic install, the running system is left as it is: the changes go
 # into a new version, which the system starts with next time.
 set -u
@@ -1028,10 +1031,10 @@ die() {
 [ "$(id -u)" = 0 ] || { echo "update-alpine: run it as root (doas update-alpine)" >&2; exit 1; }
 cmd=${1:-upgrade}
 case $cmd in
-upgrade|rollback) [ $# -le 1 ] ;;
-add|del) [ $# -ge 2 ] ;;
+upgrade|rollback|list) [ $# -le 1 ] ;;
+add|del|delete) [ $# -ge 2 ] ;;
 *) false ;;
-esac || die "usage: update-alpine [add PACKAGE... | del PACKAGE... | rollback]"
+esac || die "usage: update-alpine [add PACKAGE... | del PACKAGE... | rollback | list | delete ID...]"
 [ $# = 0 ] || shift
 
 # On an atomic install, $R is the new version, and run runs a command in it.
@@ -1040,7 +1043,8 @@ lib=/usr/libexec/cervino/atomic.sh
 if [ -f "$lib" ] && . "$lib" && atomic_detect; then
 	atomic=1
 fi
-[ -n "$atomic" ] || [ "$cmd" != rollback ] || die "rollback only works on an atomic install"
+[ -n "$atomic" ] || case $cmd in rollback|list|delete) false ;; esac ||
+	die "$cmd only works on an atomic install"
 run() {
 	if [ -n "$atomic" ]; then chroot "$R" "$@"; else "$@"; fi
 }
@@ -1082,8 +1086,7 @@ finish() {
 	sync
 	echo
 	if [ "$cmd" = rollback ]; then
-		echo "The system goes back to the version of $(echo "$src" |
-			sed 's/^\(....\)\(..\)\(..\)\(..\)\(..\).*/\1-\2-\3 \4:\5 UTC/') when it next starts."
+		echo "The system goes back to the version of $(made "$src") when it next starts."
 	else
 		echo "The update is ready: the system starts with it next time. The version"
 		echo "running now stays in the boot menu, under \"Earlier versions\"."
@@ -1091,6 +1094,64 @@ finish() {
 	ask "Restart now?" && reboot
 	exit 0
 }
+# made ID: when version ID was made.
+made() {
+	echo "$1" | sed -n 's/^\(....\)\(..\)\(..\)\(..\)\(..\).*/\1-\2-\3 \4:\5 UTC/p'
+}
+
+# update-alpine list: each version's id, when it was made, and which is
+# running and which the system starts with next time: the staged update, or
+# else the newest complete version (the default in the boot menu).
+if [ "$cmd" = list ]; then
+	atomic_mount || die "could not mount $atomic_dev"
+	trap atomic_umount EXIT
+	atomic_staged
+	next=
+	[ -z "$staged_id" ] || [ "$staged_from" != "$atomic_id" ] || next=$staged_id
+	for id in $(ls -r "$top"/roots); do
+		[ -n "$next" ] || ! atomic_ready "$id" || next=$id
+		note=
+		[ "$id" != "$atomic_id" ] || note="running"
+		if [ "$id" = "$staged_id" ] && [ "$id" != "$next" ]; then
+			note="update made from another version, deleted at shutdown"
+		elif [ "$id" = "$staged_id" ]; then
+			note="update"
+		elif ! atomic_ready "$id"; then
+			note="incomplete: an update being made, or one that was stopped"
+		fi
+		[ "$id" != "$next" ] || note="${note:+$note, }starts next time"
+		printf '%s  %s  %s\n' "$id" "$(made "$id")" "$note"
+	done
+	exit 0
+fi
+
+# update-alpine delete ID...: deletes those versions (the staged update with
+# what goes with it), then brings the boot partition in step. The running
+# version cannot be deleted, so there is always one left to start.
+if [ "$cmd" = delete ]; then
+	exec 9> /run/cervino-update.lock
+	flock -n 9 || die "an update is running"
+	atomic_mount || die "could not mount $atomic_dev"
+	trap atomic_umount EXIT
+	atomic_staged
+	for id; do
+		case $id in ''|*[!0-9]*) false ;; *) [ -d "$top/roots/$id" ] ;; esac ||
+			die "there is no version $id (update-alpine list shows them)"
+		[ "$id" != "$atomic_id" ] || die "$id is the running version"
+	done
+	for id; do
+		if [ "$id" = "$staged_id" ]; then
+			echo "Deleting the update $id"
+			atomic_unstage || die "could not delete $id"
+		else
+			echo "Deleting $id"
+			atomic_delete "$id" || die "could not delete $id"
+		fi
+	done
+	sync
+	/usr/libexec/cervino/update-boot || die "could not update the boot partition"
+	exit 0
+fi
 
 if [ -n "$atomic" ]; then
 	exec 9> /run/cervino-update.lock

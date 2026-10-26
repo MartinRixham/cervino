@@ -318,7 +318,8 @@ EOF
 
 # setup-disk offers an atomic install (-m atomic, and the default answer)
 # besides Alpine's standard one (-m sys, and the other modes, RAID, several
-# disks or a mounted root, which go to Alpine's setup-disk). As in Fedora
+# disks or a mounted root, which go to Alpine's setup-disk; sys chosen at its
+# question goes there too once the disk and encryption are asked). As in Fedora
 # Silverblue, an atomic install's system is read-only, and update-alpine
 # updates it as a whole (see cervino-desktop's atomic.sh). On a PC it goes
 # to one disk: GPT with a BIOS boot
@@ -349,7 +350,7 @@ makefile root:root 0755 "$tmp"/usr/local/sbin/setup-disk <<'EOF'
 
 pi=
 grep -q "Raspberry Pi" /proc/device-tree/model 2>/dev/null && pi=1
-stock= crypt= mode= modefile= disks= swap=
+stock= crypt= mode= modefile= disks= swap= kflavor= verbose=
 parse() {
 	while getopts "b:B:hek:Lm:o:qrR:s:vw:" opt; do
 		case $opt in
@@ -358,7 +359,8 @@ parse() {
 		q) QUIET=1 ;;
 		s) swap=$OPTARG ;;
 		w) modefile=$OPTARG ;;
-		k|v) ;;
+		k) kflavor=$OPTARG ;;
+		v) verbose=1 ;;
 		*) stock=1 ;;
 		esac
 	done
@@ -383,11 +385,8 @@ if [ -z "$mode" ]; then
 	until isin "$resp" atomic sys none; do
 		ask "Install as? ('atomic', 'sys' or 'none')" atomic
 	done
-	case $resp in
-	none) exit 0 ;;
-	sys) exec /usr/sbin/setup-disk "$@" ;;
-	esac
-	mode=atomic asked=1
+	[ "$resp" != none ] || exit 0
+	mode=$resp asked=1
 fi
 
 # Disks with nothing mounted or stacked on them, but optical drives.
@@ -453,6 +452,13 @@ d=${disk#/dev/}
 if [ -n "$asked" ] && [ -z "$crypt" ]; then
 	echo
 	ask_yesno "Encrypt the disk? Its passphrase will be asked for at every boot. (y/n)" n && crypt=1
+fi
+# A sys install chosen here goes to Alpine's setup-disk with the disk and
+# mode already answered, so it doesn't ask its own question of how to use
+# the disk (sys, data, crypt, lvm, ...).
+if [ "$mode" = sys ]; then
+	exec /usr/sbin/setup-disk -m sys ${crypt:+-e} ${QUIET:+-q} ${verbose:+-v} \
+		${kflavor:+-k "$kflavor"} ${swap:+-s "$swap"} ${modefile:+-w "$modefile"} "$disk"
 fi
 if [ "$ERASE_DISKS" != "$disks" ] && [ "$ERASE_DISKS" != "$disk" ]; then
 	echo

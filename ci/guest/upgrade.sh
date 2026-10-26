@@ -11,7 +11,10 @@
 #             package and the /etc changes, those made after staging too;
 #             the old version is in the boot menu; then update-alpine
 #             rollback stages a copy of the old version
-#   rollback  the system started with that copy: no package
+#   rollback  the system started with that copy: no package; then
+#             update-alpine list shows the versions, and update-alpine
+#             delete removes the updated one, from the volume and the boot
+#             partition, but not the running one
 # Exits non-zero, saying why, on the first failure. Notes between the steps
 # are kept in /var, which all versions share.
 
@@ -74,6 +77,18 @@ rollback)
 		die "the system did not start with a new version after the rollback"
 	! apk info -e "$pkg" > /dev/null || die "the rolled back version has $pkg"
 	boots_first "$atomic_id" || die "the boot menu does not start the rolled back version first"
+	list=$(update-alpine list) || die "update-alpine list failed"
+	echo "$list"
+	echo "$list" | grep -q "^$atomic_id .*running, starts next time$" ||
+		die "update-alpine list does not show the running version as the one to start"
+	echo "$list" | grep -q "^$first " && echo "$list" | grep -q "^$second " ||
+		die "update-alpine list does not show the earlier versions"
+	! update-alpine delete "$atomic_id" 2> /dev/null || die "update-alpine deleted the running version"
+	update-alpine delete "$second" || die "update-alpine delete failed"
+	! update-alpine list | grep -q "^$second " || die "$second is still listed after deleting it"
+	! grep -q "/cervino/$second/" /boot/efi/limine/limine.conf || die "$second is still in the boot menu"
+	[ ! -e /boot/efi/cervino/"$second" ] || die "$second's kernel is still on the boot partition"
+	boots_first "$atomic_id" || die "the boot menu does not start the running version first after the delete"
 	rm -rf "$notes"
 	;;
 *)

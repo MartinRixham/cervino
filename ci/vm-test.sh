@@ -16,7 +16,8 @@
 #               ci/guest/upgrade.sh has
 #               update-alpine stage an update of the atomic install,
 #               checks that the system switched to it at the restart,
-#               and that a rollback goes back
+#               that a rollback goes back, and that update-alpine
+#               list and delete work
 #
 # Exits non-zero if either stage fails or any test fails. The serial console
 # output of each boot is streamed to stdout and kept in $WORKDIR/<stage>.log.
