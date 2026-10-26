@@ -28,8 +28,10 @@
 #
 # An atomic install needs UEFI, so its VM has OVMF, with variables kept
 # across its boots in $WORKDIR/efivars.fd (the boot entries the install
-# makes, the one-time BootNext of an update); a sys install's has the
-# default BIOS.
+# makes, the one-time BootNext of an update), and is a q35 machine: on
+# QEMU's default i440fx, OVMF leaves the PIIX IDE bus so that the kernel
+# never finds the CD drive on it. A sys install's has the default machine
+# and BIOS.
 #
 # Environment overrides:
 #   INSTALL_MODE  atomic or sys, setup-disk's -m (default: atomic)
@@ -166,7 +168,7 @@ rm -f "$WORKDIR"/*.log "$WORKDIR"/disk.qcow2 "$WORKDIR"/efivars.fd
 if [[ $INSTALL_MODE == atomic ]]; then
 	cp "$OVMF_VARS" "$WORKDIR"/efivars.fd
 	chmod u+w "$WORKDIR"/efivars.fd
-	firmware=(-drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE"
+	firmware=(-machine q35 -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE"
 		-drive if=pflash,format=raw,file="$WORKDIR"/efivars.fd)
 fi
 qemu-img create -q -f qcow2 "$WORKDIR"/disk.qcow2 32G
