@@ -997,6 +997,55 @@ t_vlc_hevc_hardware_decoding() {
         { echo "the HEVC decoder ($dev) decoded no frames"; return 1; }
 }
 
+t_gstreamer_hevc_hardware_decoding() {
+    # GStreamer (Raspberry Pi OS's patches) decodes HEVC on the Pi's decoder,
+    # rpi-hevc-dec, with v4l2codecs' v4l2slh265dec, which outranks
+    # gst-libav's software decoder, so Showtime and WebKit use it. This
+    # decodes a short clip and converts it to I420 in system memory, which
+    # needs the decoder's SAND format (NV12_128C8) in both gst-plugins-bad
+    # and gst-plugins-base; the decoder's interrupts show it decoded frames.
+    local n dev="" irq="" before=0 after=0 err
+    for n in /sys/class/video4linux/video*/name; do
+        [[ -r $n && $(<"$n") == rpi-hevc-dec ]] || continue
+        dev=$(basename "$(readlink -f "${n%/name}/device")")
+        break
+    done
+    [[ -n $dev ]] || { echo "no HEVC decoder hardware (rpi-hevc-dec)"; return 2; }
+    have gjs || { echo "gjs missing"; return 2; }
+    for n in /sys/kernel/irq/*/actions; do
+        [[ ,$(<"$n"), == *",$dev,"* ]] && { irq=${n%/actions}/per_cpu_count; break; }
+    done
+    [[ -n $irq ]] && before=$(($(tr , + <"$irq")))
+    err=$(timeout 60 gjs -c '
+        imports.gi.versions.Gst = "1.0";
+        const Gst = imports.gi.Gst;
+        Gst.init(null);
+        let problem = "";
+        if (!Gst.ElementFactory.find("v4l2slh265dec")) {
+            problem = "GStreamer has no v4l2slh265dec";
+        } else {
+            const pipeline = Gst.parse_launch(`filesrc location="${ARGV[0]}" !
+                qtdemux ! h265parse ! v4l2slh265dec ! videoconvert !
+                video/x-raw,format=I420 ! fakesink`);
+            pipeline.set_state(Gst.State.PLAYING);
+            const msg = pipeline.get_bus().timed_pop_filtered(50 * Gst.SECOND,
+                Gst.MessageType.EOS | Gst.MessageType.ERROR);
+            pipeline.set_state(Gst.State.NULL);
+            if (!msg)
+                problem = "GStreamer did not finish decoding the HEVC clip";
+            else if (msg.type === Gst.MessageType.ERROR)
+                problem = "GStreamer could not decode the HEVC clip: " +
+                    msg.parse_error()[0].message;
+        }
+        print(problem);
+    ' "$(dirname "${BASH_SOURCE[0]}")/hevc-probe.mp4" 2>&1) ||
+        { echo "could not run GStreamer: $err"; return 1; }
+    [[ -z $err ]] || { echo "$err"; return 1; }
+    [[ -n $irq ]] && after=$(($(tr , + <"$irq")))
+    [[ -z $irq ]] || ((after > before)) ||
+        { echo "the HEVC decoder ($dev) decoded no frames"; return 1; }
+}
+
 t_browser_drm() {
     # Streaming services (Netflix, Spotify, Disney+, ...) need Widevine,
     # which Firefox downloads from Google the first time a page asks for it,
@@ -1112,6 +1161,7 @@ run_test "Firmware updates in GNOME Software"          t_app_store_firmware_upda
 run_test "VA-API video acceleration available"         t_video_acceleration
 run_test "Decoders for common video and audio formats" t_media_decoders
 run_test "Hardware HEVC decoding in VLC"               t_vlc_hevc_hardware_decoding
+run_test "Hardware HEVC decoding in GStreamer"         t_gstreamer_hevc_hardware_decoding
 run_test "DRM video in the browser (Widevine)"         t_browser_drm
 run_test "SPICE guest agent (VM clipboard/resize)"     t_spice_agent
 run_test "Logout not blocked by GNOME Shell"           t_logout_not_blocked_by_shell

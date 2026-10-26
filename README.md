@@ -130,7 +130,7 @@ and uploads the ISO and the Raspberry Pi image, each with its `SHA256SUMS`, as
 workflow artifacts. You can also start it by hand from the Actions tab and
 choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
-and the Pi's `ffmpeg7`, `vlc`, `wpa_supplicant` and `bluez`) to the update repo (see
+and the Pi's `ffmpeg7`, `vlc`, `gst-plugins-base`, `gst-plugins-bad`, `wpa_supplicant` and `bluez`) to the update repo (see
 [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
@@ -353,9 +353,11 @@ the hardware and shown without copying the frames. It plays through
 `ffmpeg7`'s libraries, built with Raspberry Pi OS's FFmpeg patch, which
 replace Alpine's for every program that uses them. Both are Alpine's
 packages with the patches applied ([`rpi/`](rpi)), at a version above
-Alpine's, and come from the update repo with `cervino-desktop`. Other
-players (GNOME's Showtime, Firefox) use Alpine's FFmpeg 8, and so decode
-in software on the Pi.
+Alpine's, and come from the update repo with `cervino-desktop`.
+GStreamer's base and bad plug-ins are built with Raspberry Pi OS's patches
+too, so what plays through GStreamer (GNOME's Showtime, GNOME Web, the file
+previews) decodes HEVC on the Pi 4's and 5's decoder. Firefox uses Alpine's
+FFmpeg 8, and so decodes in software on the Pi.
 
 The Pi's Wi-Fi and Bluetooth are set up as on Raspberry Pi OS too: the
 Wi-Fi driver leaves roaming and the WPA2/WPA3 handshakes to wpa_supplicant
@@ -364,7 +366,7 @@ Raspberry Pi OS's wpa_supplicant patches that go with that (so
 NetworkManager uses WPA3, and falls back to WPA2 where it must), and
 BlueZ gives Bluetooth audio priority on the radio the Pi shares between
 Wi-Fi and Bluetooth, so headphones don't stutter while Wi-Fi is busy.
-These packages come from the update repo too. The build compiles all four,
+These packages come from the update repo too. The build compiles all six,
 which takes tens of minutes on an arm64 host, and hours under QEMU
 emulation on an x86_64 one.
 
@@ -418,7 +420,8 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
 3. **Builder:** sparse-clones `aports/scripts`, resolves the package list
    that `setup-desktop gnome` would install plus the desktop features listed
    above, and generates:
-   - for the Pi, the `ffmpeg7`, `vlc`, `wpa_supplicant` and `bluez` packages, built with abuild
+   - for the Pi, the `ffmpeg7`, `vlc`, `gst-plugins-base`, `gst-plugins-bad`, `wpa_supplicant` and
+     `bluez` packages, built with abuild
      from [`rpi/`](rpi): Alpine's, with Raspberry Pi OS's patches for the
      Pi's hardware video decoders, Wi-Fi and Bluetooth (the build stops
      when Alpine's packages are no longer the versions those are based

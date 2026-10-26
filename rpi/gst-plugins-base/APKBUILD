@@ -1,0 +1,134 @@
+maintainer="team/alpine-desktop <achill@achill.org>"
+#
+# Alpine's main/gst-plugins-base (_alpine below) with Raspberry Pi OS's
+# patches for the Pi's HEVC decoder (rpi-hevc-dec, Pi 4 and 5): its SAND
+# formats, NV12 and 10-bit NV12 in 128 byte wide columns, as video formats
+# (NV12_128C8, NV12_10LE32_128C8, with their DRM formats and the column
+# tile mode), so GStreamer can map, convert and show the frames
+# rpi/gst-plugins-bad's v4l2codecs decodes, the column strides in EGL and
+# GL memory, and GstVideoDecoder's default allocation for DMA DRM caps.
+# The two format patches are ported to this version (they say what
+# changed); prepare() applies the others from the packaging of the
+# gst-plugins-base Raspberry Pi OS ships (_rpi_debian, in
+# https://archive.raspberrypi.com/debian/pool/main/g/gst-plugins-base1.0/).
+# The formats are added at the end of the enum, so the library only adds
+# to Alpine's ABI. pkgver is Alpine's, plus _p and the +rpt release, so it
+# ranks above Alpine's. Update it to Alpine's APKBUILD for the same _alpine
+# with Raspberry Pi OS's patches for that version; build-alpine-gnome-iso.sh
+# stops when Alpine's gst-plugins-base is no longer _alpine.
+_alpine=1.28.3-r0
+_rpi_debian=gst-plugins-base1.0_1.26.2-1+rpt3+deb13u2.debian.tar.xz
+pkgname=gst-plugins-base
+pkgver=1.28.3_p3
+_pkgver=${pkgver%_p*}
+pkgrel=0
+# NOTE: Upgrade together with the whole GStreamer suite &
+# only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
+pkgdesc="GStreamer streaming media framework base plug-ins"
+url="https://gstreamer.freedesktop.org"
+arch="aarch64"
+license="GPL-2.0-or-later AND LGPL-2.0-or-later"
+subpackages="$pkgname-dbg $pkgname-dev $pkgname-doc $pkgname-lang"
+replaces="gst-plugins-base1 gst-plugins-bad"
+makedepends="
+	alsa-lib-dev
+	cdparanoia-dev
+	expat-dev
+	glib-dev
+	gobject-introspection-dev
+	graphene-dev
+	gstreamer-dev
+	libice-dev
+	libogg-dev
+	libsm-dev
+	libtheora-dev
+	libvorbis-dev
+	libxv-dev
+	mesa-dev
+	meson
+	opus-dev
+	orc-compiler
+	orc-dev
+	pango-dev
+	perl
+	wayland-dev
+	wayland-protocols
+	"
+source="https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-$_pkgver.tar.xz
+	test-disable.patch
+	0001-video-Add-GST_VIDEO_FORMAT_NV12_128C8.patch
+	0002-video-Add-GST_VIDEO_FORMAT_NV12_10LE32_128C8.patch
+	https://archive.raspberrypi.com/debian/pool/main/g/gst-plugins-base1.0/$_rpi_debian
+	"
+builddir="$srcdir/gst-plugins-base-$_pkgver"
+ldpath="/usr/lib/gstreamer-1.0"
+
+case "$CARCH" in
+# FIXME too many tests fail
+aarch64|arm*|s390x|x86) options="$options !check" ;;
+esac
+
+# secfixes:
+#   1.26.2-r0:
+#     - CVE-2025-47807
+#     - CVE-2025-47808
+#     - CVE-2025-47806
+#   1.24.10-r0:
+#     - CVE-2024-47542
+#     - CVE-2024-47600
+#     - CVE-2024-47538
+#     - CVE-2024-47541
+#     - CVE-2024-47607
+#     - CVE-2024-47615
+#     - CVE-2024-47835
+#   1.18.4-r0:
+#     - CVE-2021-3522
+#   1.16.0-r0:
+#     - CVE-2019-9928
+
+prepare() {
+	default_prepare
+	local p
+	for p in gstvideodecode_dma_buf gsteglimage gstglmemory; do
+		patch -p1 -i "$srcdir"/debian/patches/$p.patch
+	done
+}
+
+build() {
+	CFLAGS="$CFLAGS -O2" \
+	CXXFLAGS="$CXXFLAGS -O2" \
+	CPPFLAGS="$CPPFLAGS -O2" \
+	abuild-meson \
+		-Db_lto=true \
+		-Dalsa=enabled \
+		-Dintrospection=enabled \
+		-Dpackage-origin="https://alpinelinux.org" \
+		-Dpackage-name="GStreamer base plug-ins (Alpine Linux)" \
+		-Dtests="$(want_check && echo enabled || echo disabled)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	XDG_RUNTIME_DIR="$tmpdir" \
+	GST_GL_WINDOW=surfaceless \
+	CK_TIMEOUT_MULTIPLIER=10 \
+	meson test -t 10 --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+doc() {
+	default_doc
+	replaces="${pkgname}1-doc"
+}
+
+sha512sums="
+768092d8c06996540bb2166051b7b2eca9329ab7f618c9086af6c133b73ac41d52d4e44cad57e79c6e65faca28cf1084765fde068930854733ac8247e85a4d24  gst-plugins-base-1.28.3.tar.xz
+0154010a02463ac1679a1946cad4a64d98e691f5b18261ae731f590030ca8716de00ffe21c8f3e8367c2a43dae54684084652619336bcc562e137187a1db59d3  test-disable.patch
+d4404705de677044557621dcacafa7b66f25ed1611fc030a00cf1dccab01e608638dc9695ccbf7625186dcef3214cbfebe708f300a5f6c088129d2453a3ebd1c  0001-video-Add-GST_VIDEO_FORMAT_NV12_128C8.patch
+d6c3299859c8234d86adcdbbb1814b6f6a57ed2abdd620cf57743c5ba559140389c72f397036cced68846dbf3ac1ad1f2d23ddeb295cfaddcf5fd264dd2eab94  0002-video-Add-GST_VIDEO_FORMAT_NV12_10LE32_128C8.patch
+ade006754357b2ab5cf313bc22f118161e82649f33a8548f616e151defa3ec2102f2e2874ecfecfbe389167975a5bc215b20dcd0d8b579a222db55a5f01d58b6  gst-plugins-base1.0_1.26.2-1+rpt3+deb13u2.debian.tar.xz
+"
