@@ -166,8 +166,12 @@ container_main() {
 		> /etc/apk/repositories
 	apk update --quiet
 	# clang and lld build cervino-desktop's freestanding tryboot for the Pi.
+	# The container runs $ARCH, and syslinux (for the ISO's boot loader)
+	# only exists for x86.
+	local syslinux=
+	[[ $TARGET == iso ]] && syslinux=syslinux
 	apk add --quiet alpine-sdk alpine-conf apk-tools busybox fakeroot \
-		syslinux xorriso squashfs-tools mtools dosfstools sfdisk grub grub-efi git \
+		$syslinux xorriso squashfs-tools mtools dosfstools sfdisk grub grub-efi git \
 		clang lld mkinitfs patch
 
 	# mkimage must run unprivileged: apk 3 rejects its --no-chown as root.
