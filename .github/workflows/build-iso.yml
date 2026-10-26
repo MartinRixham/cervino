@@ -84,13 +84,126 @@ jobs:
           echo "SIGNING_KEY=$RUNNER_TEMP/cervino.rsa" >> "$GITHUB_ENV"
           echo "APK_REPO=https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
 
+      # The Pi's packages built from rpi/ take most of its build, so each is
+      # kept in a cache of its own (CACHEDIR), keyed on the hash the build
+      # writes next to it: the newest of each is restored, and the build
+      # takes it from there while that hash still matches its sources.
+      - name: Restore ffmpeg7
+        id: restore-ffmpeg7
+        if: matrix.target == 'rpi'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/ffmpeg7
+          key: rpi-ffmpeg7-${{ github.sha }}
+          restore-keys: rpi-ffmpeg7-
+
+      - name: Restore vlc
+        id: restore-vlc
+        if: matrix.target == 'rpi'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/vlc
+          key: rpi-vlc-${{ github.sha }}
+          restore-keys: rpi-vlc-
+
+      - name: Restore gst-plugins-base
+        id: restore-gst_plugins_base
+        if: matrix.target == 'rpi'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/gst-plugins-base
+          key: rpi-gst-plugins-base-${{ github.sha }}
+          restore-keys: rpi-gst-plugins-base-
+
+      - name: Restore gst-plugins-bad
+        id: restore-gst_plugins_bad
+        if: matrix.target == 'rpi'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/gst-plugins-bad
+          key: rpi-gst-plugins-bad-${{ github.sha }}
+          restore-keys: rpi-gst-plugins-bad-
+
+      - name: Restore wpa_supplicant
+        id: restore-wpa_supplicant
+        if: matrix.target == 'rpi'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/wpa_supplicant
+          key: rpi-wpa_supplicant-${{ github.sha }}
+          restore-keys: rpi-wpa_supplicant-
+
+      - name: Restore bluez
+        id: restore-bluez
+        if: matrix.target == 'rpi'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/bluez
+          key: rpi-bluez-${{ github.sha }}
+          restore-keys: rpi-bluez-
+
       - name: Build image
         env:
           TARGET: ${{ matrix.target }}
           CONTAINER: docker
           ALPINE_BRANCH: ${{ inputs.alpine_branch }}
           OUTDIR: ${{ github.workspace }}/out
+          CACHEDIR: ${{ matrix.target == 'rpi' && format('{0}/pkgcache', runner.temp) || '' }}
         run: ./build-alpine-gnome-iso.sh
+
+      # Each package the build made (its hash is not the restored one's)
+      # goes in the cache, even if the build stopped after it.
+      - name: Cache keys
+        id: keys
+        if: always() && matrix.target == 'rpi'
+        run: |
+          for dir in "$RUNNER_TEMP"/pkgcache/*/; do
+            [ -f "$dir/key" ] || continue
+            name=$(basename "$dir")
+            echo "${name//-/_}=rpi-$name-$(cat "$dir/key")" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Save ffmpeg7
+        if: always() && steps.keys.outputs.ffmpeg7 && steps.keys.outputs.ffmpeg7 != steps.restore-ffmpeg7.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/ffmpeg7
+          key: ${{ steps.keys.outputs.ffmpeg7 }}
+
+      - name: Save vlc
+        if: always() && steps.keys.outputs.vlc && steps.keys.outputs.vlc != steps.restore-vlc.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/vlc
+          key: ${{ steps.keys.outputs.vlc }}
+
+      - name: Save gst-plugins-base
+        if: always() && steps.keys.outputs.gst_plugins_base && steps.keys.outputs.gst_plugins_base != steps.restore-gst_plugins_base.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/gst-plugins-base
+          key: ${{ steps.keys.outputs.gst_plugins_base }}
+
+      - name: Save gst-plugins-bad
+        if: always() && steps.keys.outputs.gst_plugins_bad && steps.keys.outputs.gst_plugins_bad != steps.restore-gst_plugins_bad.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/gst-plugins-bad
+          key: ${{ steps.keys.outputs.gst_plugins_bad }}
+
+      - name: Save wpa_supplicant
+        if: always() && steps.keys.outputs.wpa_supplicant && steps.keys.outputs.wpa_supplicant != steps.restore-wpa_supplicant.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/wpa_supplicant
+          key: ${{ steps.keys.outputs.wpa_supplicant }}
+
+      - name: Save bluez
+        if: always() && steps.keys.outputs.bluez && steps.keys.outputs.bluez != steps.restore-bluez.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/bluez
+          key: ${{ steps.keys.outputs.bluez }}
 
       - name: Checksum
         working-directory: out

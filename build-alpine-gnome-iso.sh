@@ -64,6 +64,10 @@
 #                   the branch; installs get updates from APK_REPO/<branch>
 #                   (default: none). Its packages must be signed with
 #                   SIGNING_KEY.
+#   CACHEDIR        where the Pi's packages built from rpi/ are kept, to be
+#                   taken from there by later builds while their sources,
+#                   Alpine's version and the release are the same
+#                   (default: none, each build builds them)
 #
 # Note: the live system runs from the root file system image on the boot
 # media, with only its changes in RAM: it boots to the desktop in 2 GB.
@@ -83,6 +87,7 @@ AUTOLOGIN=${AUTOLOGIN:-1}
 BROWSER=${BROWSER:-firefox}
 SIGNING_KEY=${SIGNING_KEY-}
 APK_REPO=${APK_REPO-}
+CACHEDIR=${CACHEDIR-}
 
 die() { echo "error: $*" >&2; exit 1; }
 # Quote $1 for sh: single quotes, with any ' inside written as '\''.
@@ -127,6 +132,11 @@ host_main() {
 			-e SIGNING_KEY_NAME="$(basename "$SIGNING_KEY")")
 	fi
 	[[ -z $APK_REPO || $APK_REPO == https://* ]] || die "APK_REPO must be an https:// URL"
+	local cacheopts=()
+	if [[ -n $CACHEDIR ]]; then
+		mkdir -p "$CACHEDIR"
+		cacheopts=(-v "$(realpath "$CACHEDIR")":/cache)
+	fi
 
 	# The container runs the target's architecture, as installing the root
 	# file system runs its packages' scripts: on another host, under QEMU.
@@ -161,6 +171,7 @@ host_main() {
 		-e PKGVER="$pkgver" \
 		-e APK_REPO="${APK_REPO%/}" \
 		"${keyopts[@]}" \
+		"${cacheopts[@]}" \
 		"docker.io/library/alpine:${ALPINE_BRANCH#v}" \
 		sh -c 'apk add --quiet bash && exec bash /build.sh --in-container'
 
@@ -209,7 +220,22 @@ container_main() {
 	fi
 	cp "$privkey".pub /etc/apk/keys/
 
-	su build -s /bin/bash -c 'bash /build.sh --as-builder'
+	# The Pi's packages it built go in the cache (owned by its owner on the
+	# host) even if the build stops later, so the next one need not build
+	# them again.
+	local rc=0
+	su build -s /bin/bash -c 'bash /build.sh --as-builder' || rc=$?
+	if [[ -d /cache ]]; then
+		local dir
+		for dir in /work/pkgcache/*/; do
+			[[ -d $dir ]] || continue
+			dir=${dir%/}
+			rm -rf /cache/"${dir##*/}"
+			cp -R "$dir" /cache/
+			chown -R "$(stat -c %u:%g /cache)" /cache/"${dir##*/}"
+		done
+	fi
+	(( rc == 0 )) || exit "$rc"
 	build_rootfs
 	su build -s /bin/bash -c 'bash /build.sh --mkimage'
 	# The live system loads the root file system's modules for the image's
@@ -399,9 +425,17 @@ builder_main() {
 	# build with (abuild-apk, which the abuild group may run) and adds the
 	# packages it built before to the repos, so vlc builds with ffmpeg7-dev
 	# and gst-plugins-bad with gst-plugins-base-dev from here.
+	# With CACHEDIR (mounted on /cache), a package built before is taken
+	# from there when its key matches: a hash of the release, the
+	# architecture, Alpine's version, rpi/<package>/ and the key of the
+	# package it builds with. Its files keep the signature of the build that
+	# made them, so they are signed again with this build's key. Packages
+	# built here are left in /work/pkgcache for container_main to keep.
 	if [[ $TARGET == rpi ]]; then
-		local name base alpine
-		mkdir -p /work/cervino
+		local name base alpine dep key file tmp files
+		local -A keys after=([vlc]=ffmpeg7 [gst-plugins-bad]=gst-plugins-base)
+		local repodir=/work/packages/cervino/$ARCH
+		mkdir -p /work/cervino /work/pkgcache
 		for name in ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez; do
 			base=$(sed -n 's/^_alpine=//p' /rpi/"$name"/APKBUILD)
 			alpine=$(apk --root "$apkroot" search --exact "$name") ||
@@ -409,8 +443,37 @@ builder_main() {
 			[[ $alpine == "$name-$base" ]] ||
 				die "Alpine's $name is $alpine, rpi/$name/APKBUILD is based on $name-$base: update it"
 			cp -R /rpi/"$name" /work/cervino/
-			(cd /work/cervino/"$name" && abuild -r -P /work/packages) ||
-				die "could not build $name"
+			cd /work/cervino/"$name"
+			dep=${after[$name]:-}
+			key=$({
+				echo "$ALPINE_BRANCH $ARCH $alpine ${dep:+${keys[$dep]}}"
+				find . -type f -exec sha256sum {} + | LC_ALL=C sort -k 2
+			} | sha256sum | cut -d ' ' -f 1)
+			keys[$name]=$key
+			mapfile -t files < <(abuild listpkg)
+			if [[ $(cat /cache/"$name"/key 2>/dev/null) == "$key" ]] &&
+				(cd /cache/"$name" && ls "${files[@]}" > /dev/null 2>&1); then
+				echo ">>> $name: taking ${files[*]} from the cache"
+				mkdir -p "$repodir"
+				for file in "${files[@]}"; do
+					tmp=$(mktemp -d)
+					(cd "$tmp" && abuild-gzsplit < /cache/"$name"/"$file" &&
+						abuild-sign -q control.tar.gz &&
+						cat control.tar.gz data.tar.gz > "$repodir"/"$file") ||
+						die "could not sign $file again"
+					rm -rf "$tmp"
+				done
+				# The repo abuild -r installs vlc's and gst-plugins-bad's
+				# makedepends from.
+				abuild -P /work/packages index || die "could not index $name"
+			else
+				abuild -r -P /work/packages || die "could not build $name"
+				mkdir -p /work/pkgcache/"$name"
+				(cd "$repodir" && cp "${files[@]}" /work/pkgcache/"$name"/) ||
+					die "abuild built other packages than abuild listpkg names for $name"
+				echo "$key" > /work/pkgcache/"$name"/key
+			fi
+			cd /work
 		done
 	fi
 

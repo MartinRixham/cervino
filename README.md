@@ -121,6 +121,7 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 | `MIRROR`        | `https://dl-cdn.alpinelinux.org/alpine`    | Alpine package mirror                                               |
 | `SIGNING_KEY`   | a new key each build                       | abuild private key to sign the packages built here and the image's repo |
 | `APK_REPO`      | none                                       | URL (without the branch) of the repo installs get updates of the packages built here from; its packages must be signed with `SIGNING_KEY` |
+| `CACHEDIR`      | none                                       | Where the Raspberry Pi's packages built from `rpi/` are kept; later builds take them from there (signed again with their own key) while their sources, Alpine's version of them and the release are the same |
 
 ### Prebuilt ISOs
 
