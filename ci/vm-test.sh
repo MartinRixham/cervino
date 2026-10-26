@@ -98,6 +98,9 @@ vm_start() {
 vm_stop() {
 	echo ">>> [$vm] powering off"
 	# The test boot is logged in as tester, who needs doas.
+	# From ~, which localmount kills processes in: the console is hung up
+	# before the shutdown runlevel, which must still switch to an update
+	# (its output is lost).
 	if [[ $vm_user == root ]]; then send poweroff; else send "doas poweroff"; fi
 	local end=$((SECONDS + 300))
 	while kill -0 "$qemu_pid" 2>/dev/null; do

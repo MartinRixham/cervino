@@ -1054,8 +1054,15 @@ depend() {
 }
 
 start() {
-	/usr/libexec/cervino/atomic-finalize
-	/usr/libexec/cervino/boot-trial shutdown
+	# Not on the console: it may have been hung up (localmount kills a
+	# console login's shell in /home), and then writing to it fails, and
+	# with it ukify or update-boot. Shown there afterwards, if it can be.
+	(
+		trap '' HUP
+		/usr/libexec/cervino/atomic-finalize
+		/usr/libexec/cervino/boot-trial shutdown
+	) > /run/cervino-atomic.log 2>&1 < /dev/null
+	cat /run/cervino-atomic.log 2>/dev/null
 	return 0
 }
 EOF
