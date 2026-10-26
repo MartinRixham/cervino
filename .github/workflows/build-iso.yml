@@ -11,6 +11,7 @@ on:
       - mkimg.gnomelive.sh
       - cervino-desktop/**
       - apparmor.d/**
+      - rpi/**
       - test/**
       - ci/**
       - .github/workflows/build-iso.yml
@@ -22,6 +23,7 @@ on:
       - mkimg.gnomelive.sh
       - cervino-desktop/**
       - apparmor.d/**
+      - rpi/**
       - test/**
       - ci/**
       - .github/workflows/build-iso.yml
@@ -103,8 +105,8 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-      # cervino-desktop, laid out as in the published repo
-      # (<branch>/<arch>/), for the repo job.
+      # cervino-desktop (and for rpi, its ffmpeg7 and vlc), laid out as in
+      # the published repo (<branch>/<arch>/), for the repo job.
       - uses: actions/upload-artifact@v7
         with:
           name: cervino-repo-${{ matrix.target }}
@@ -193,8 +195,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" out/alpine-gnomelive-* out/SHA256SUMS \
             --title "$GITHUB_REF_NAME" --generate-notes
 
-  # Adds the release's cervino-desktop packages to the apk repo on the
-  # gh-pages branch, which GitHub Pages serves and installs get updates from.
+  # Adds the release's packages (cervino-desktop, the Pi's ffmpeg7 and vlc)
+  # to the apk repo on the gh-pages branch, which GitHub Pages serves and installs get updates from.
   # The branch holds only the repo, written by this job alone.
   repo:
     needs: [build, vm-test]
@@ -245,5 +247,5 @@ jobs:
           git add -A
           git -c user.name='github-actions[bot]' \
             -c user.email='41898333+github-actions[bot]@users.noreply.github.com' \
-            commit -q -m "cervino-desktop from $GITHUB_REF_NAME"
+            commit -q -m "Packages from $GITHUB_REF_NAME"
           git push origin HEAD:gh-pages

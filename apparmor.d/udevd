@@ -64,6 +64,9 @@ profile udevd /sbin/udevd flags=(attach_disconnected) {
   /usr/libexec/cervino/wifi-region r,
   /etc/timezone r,
   /{usr/,}{s,}bin/* ix,
+  # The Pi's dma_heap rule looks for an IOMMU (see cervino-desktop's
+  # 60-cervino-dma-heap.rules)
+  @{PROC}/iomem r,
 
   include if exists <local/udevd>
 }

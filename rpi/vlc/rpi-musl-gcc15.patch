@@ -1,0 +1,85 @@
+Raspberry Pi OS builds its patches with glibc and GCC 14; for musl and
+GCC 15 (which builds C23 by default):
+- ATOMIC_VAR_INIT, which C23 removed: a plain initializer does the same;
+- glibc's error.h, included but not used;
+- glibc's internal __O_CLOEXEC for O_CLOEXEC;
+- mallopt's M_MMAP_THRESHOLD, which musl's malloc has no setting for.
+
+--- a/bin/vlc.c
++++ b/bin/vlc.c
+@@ -128,8 +128,10 @@
+      *
+      * Do not override a user threshold
+      */
++#ifdef M_MMAP_THRESHOLD
+     if (!getenv("MALLOC_MMAP_THRESHOLD_"))
+         mallopt(M_MMAP_THRESHOLD, 128 * 1024);
++#endif
+ 
+     /* The so-called POSIX-compliant MacOS X reportedly processes SIGPIPE even
+      * if it is blocked in all thread.
+--- a/modules/hw/mmal/mmal_cma.c
++++ b/modules/hw/mmal/mmal_cma.c
+@@ -405,7 +405,7 @@
+         return NULL;
+ 
+     *cb = (cma_buf_t){
+-        .ref_count = ATOMIC_VAR_INIT(0),
++        .ref_count = 0,
+         .cbp = cbp,
+         .in_flight = 0,
+         .size = size,
+--- a/modules/hw/mmal/mmal_cma_drmprime.c
++++ b/modules/hw/mmal/mmal_cma_drmprime.c
+@@ -36,7 +36,7 @@
+ 
+     *cdb = (cma_drmprime_buf_t){
+         .cb = {
+-            .ref_count = ATOMIC_VAR_INIT(0),
++            .ref_count = 0,
+             .cbp = cbp,
+             .in_flight = 0,
+             .size = size,
+--- a/modules/video_output/drmu/drmu_poll.c
++++ b/modules/video_output/drmu/drmu_poll.c
+@@ -334,7 +334,7 @@
+ {
+     drmu_queue_t * const aq = calloc(1, sizeof(*aq));
+     pthread_condattr_t condattr;
+-    static atomic_int qcount = ATOMIC_VAR_INIT(0);
++    static atomic_int qcount = 0;
+ 
+     if (aq == NULL)
+         return NULL;
+--- a/modules/video_output/drmu/drmu_util.c
++++ b/modules/video_output/drmu/drmu_util.c
+@@ -3,7 +3,6 @@
+ #include "drmu.h"
+ 
+ #include <ctype.h>
+-#include <error.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+--- a/modules/video_output/drmu/pollqueue.c
++++ b/modules/video_output/drmu/pollqueue.c
+@@ -468,7 +468,7 @@
+     if (!pq)
+         return NULL;
+     *pq = (struct pollqueue){
+-        .ref_count = ATOMIC_VAR_INIT(0),
++        .ref_count = 0,
+         .lock = PTHREAD_MUTEX_INITIALIZER,
+         .cond = PTHREAD_COND_INITIALIZER,
+         .head = NULL,
+--- a/modules/video_output/wayland/dmabuf_alloc.c
++++ b/modules/video_output/wayland/dmabuf_alloc.c
+@@ -359,7 +359,7 @@
+ {
+     for (; *names != NULL; ++names)
+     {
+-        while ((dbsc->fd = open(*names, O_RDWR | __O_CLOEXEC)) == -1 &&
++        while ((dbsc->fd = open(*names, O_RDWR | O_CLOEXEC)) == -1 &&
+                errno == EINTR)
+             /* Loop */;
+         if (dbsc->fd != -1)

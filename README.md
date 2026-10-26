@@ -110,8 +110,8 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 | `BROWSER`       | `firefox`                                  | Browser package to install, as in `setup-desktop`                   |
 | `CONTAINER`     | `podman`, else `docker`                    | Container runtime to use                                            |
 | `MIRROR`        | `https://dl-cdn.alpinelinux.org/alpine`    | Alpine package mirror                                               |
-| `SIGNING_KEY`   | a new key each build                       | abuild private key to sign `cervino-desktop` and the image's repo   |
-| `APK_REPO`      | none                                       | URL (without the branch) of the repo installs get `cervino-desktop` updates from; its packages must be signed with `SIGNING_KEY` |
+| `SIGNING_KEY`   | a new key each build                       | abuild private key to sign the packages built here and the image's repo |
+| `APK_REPO`      | none                                       | URL (without the branch) of the repo installs get updates of the packages built here from; its packages must be signed with `SIGNING_KEY` |
 
 ### Prebuilt ISOs
 
@@ -120,8 +120,9 @@ the script on every push and pull request that touches it, for both targets,
 and uploads the ISO and the Raspberry Pi image, each with its `SHA256SUMS`, as
 workflow artifacts. You can also start it by hand from the Actions tab and
 choose an Alpine branch there. Pushing a `v*` tag also publishes both images
-as a GitHub release, and the `cervino-desktop` package to the update repo
-(see [Updates](#updates)).
+as a GitHub release, and the packages built for them (`cervino-desktop`,
+and the Pi's `ffmpeg7` and `vlc`) to the update repo (see
+[Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -198,9 +199,10 @@ update-alpine delete ID...` deletes versions you no longer want (a staged
 update too, which cancels it); the running version can't be deleted.
 `/var` and `/home` are shared, so data is never rolled back.
 
-Each `v*` tag publishes the release's package to the `gh-pages` branch,
+Each `v*` tag publishes the release's packages to the `gh-pages` branch,
 which holds nothing but that repository (written by CI alone, never merged):
-`<branch>/<arch>/APKINDEX.tar.gz` with the newest five packages, and the
+`<branch>/<arch>/APKINDEX.tar.gz` with the newest five versions of each
+package (a version already there stays as it was), and the
 public key, `cervino.rsa.pub`. Release builds and the repo are signed with
 the `APK_SIGNING_KEY` secret of the `release` environment, which only `v*`
 tags can use. To set this up for a fork:
@@ -330,9 +332,21 @@ the Raspberry Pi 4, 400, 5 and 500. Like the ISO's, the live system runs
 from a read-only image on the card, so a Pi with **2 GB of RAM** should do
 (4 GB or more to do much in it; not yet measured on a Pi). The image is built from
 Alpine's own Pi image, with the same packages, settings and features as the
-ISO (except the Intel VA-API drivers and the CPU microcode), so it doesn't
-need an ARM host or emulation. It also turns on the GPU's KMS driver
+ISO (except the Intel VA-API drivers and the CPU microcode). It also turns on the GPU's KMS driver
 (`dtoverlay=vc4-kms-v3d` in `usercfg.txt`), which GNOME needs.
+
+The Pi image also has VLC, built with Raspberry Pi OS's patches for the
+Pi's video decoders, as Raspberry Pi OS ships it: HEVC (H.265) on the Pi 4
+and 5, and H.264 on the Pi 4 (the Pi 5 has no H.264 decoder), decoded by
+the hardware and shown without copying the frames. It plays through
+`ffmpeg7`'s libraries, built with Raspberry Pi OS's FFmpeg patch, which
+replace Alpine's for every program that uses them. Both are Alpine's
+packages with the patches applied ([`rpi/`](rpi)), at a version above
+Alpine's, and come from the update repo with `cervino-desktop`. Other
+players (GNOME's Showtime, Firefox) use Alpine's FFmpeg 8, and so decode
+in software on the Pi. The build compiles both packages, which takes tens
+of minutes on an arm64 host, and hours under QEMU emulation on an x86_64
+one.
 
 Write it to an SD card or USB drive with Raspberry Pi Imager ("Use custom"),
 or with:
@@ -384,6 +398,10 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
 3. **Builder:** sparse-clones `aports/scripts`, resolves the package list
    that `setup-desktop gnome` would install plus the desktop features listed
    above, and generates:
+   - for the Pi, the `ffmpeg7` and `vlc` packages, built with abuild from
+     [`rpi/`](rpi): Alpine's, with Raspberry Pi OS's patches for the Pi's
+     hardware video decoders (the build stops when Alpine's packages are
+     no longer the versions those are based on);
    - the `cervino-desktop` package, built with abuild from
      [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
      features' configuration and the AppArmor profiles from

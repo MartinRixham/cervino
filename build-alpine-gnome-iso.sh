@@ -27,7 +27,9 @@
 # udev, dbus, gdm etc. exactly as setup-desktop would have configured them.
 # Installs copy the system from the squashfs too; the image's on-disc apk
 # repository only has the disk tools and boot loaders Alpine's setup-disk
-# adds.
+# adds. The Pi's image also has VLC and the ffmpeg7 libraries it plays
+# through, built from rpi/: Alpine's packages with Raspberry Pi OS's patches
+# for the Pi's hardware video decoders, published with cervino-desktop.
 #
 # The container runs the target's architecture, so the packages' scripts
 # run when the root file system is installed: building for another
@@ -51,9 +53,11 @@
 #   MIRROR          Alpine package mirror
 #                   (default: https://dl-cdn.alpinelinux.org/alpine)
 #   SIGNING_KEY     abuild private key (its public key is derived from it,
-#                   named after the file plus .pub) to sign cervino-desktop
-#                   and the image's repo with (default: a new key each build)
-#   APK_REPO        URL of the repo cervino-desktop is published in, without
+#                   named after the file plus .pub) to sign the packages
+#                   built here (cervino-desktop, and the Pi's ffmpeg7 and
+#                   vlc) and the image's repo with (default: a new key each
+#                   build)
+#   APK_REPO        URL of the repo those packages are published in, without
 #                   the branch; installs get updates from APK_REPO/<branch>
 #                   (default: none). Its packages must be signed with
 #                   SIGNING_KEY.
@@ -142,6 +146,7 @@ host_main() {
 		-v "$here"/initramfs-live.patch:/initramfs-live.patch:ro \
 		-v "$here"/cervino-desktop:/cervino-desktop:ro \
 		-v "$here"/apparmor.d:/apparmor.d:ro \
+		-v "$here"/rpi:/rpi:ro \
 		-v "$OUTDIR":/out \
 		-e TARGET="$TARGET" \
 		-e ALPINE_BRANCH="$ALPINE_BRANCH" \
@@ -350,6 +355,11 @@ builder_main() {
 	rpi) features="$features raspberrypi-utils doas-sudo-shim $atomic raspberrypi-bootloader" ;;
 	esac
 
+	# The Pi's video player: VLC, with Raspberry Pi OS's patches for the
+	# Pi's hardware decoders (built below from rpi/), an app like GNOME's.
+	local apps=
+	[[ $TARGET == rpi ]] && apps=vlc-qt
+
 	# /etc/apk/world: what setup-desktop gnome puts there, plus
 	# cervino-desktop, which brings in the features. So a feature added to
 	# the package later reaches installed systems with it, while GNOME's
@@ -358,7 +368,7 @@ builder_main() {
 	world=$(printf '%s\n' alpine-base doas \
 		elogind polkit-elogind "$BROWSER" \
 		eudev udev-init-scripts udev-init-scripts-openrc \
-		$gnome_deps cervino-desktop | sort -u)
+		$gnome_deps $apps cervino-desktop | sort -u)
 
 	# The image's on-disc apk repo, for Alpine's setup-disk (sys installs,
 	# see genapkovl-gnomelive.sh): the disk tools it installs on the live
@@ -373,13 +383,37 @@ builder_main() {
 	rpi) disc_apks="$disc_apks raspberrypi-bootloader" ;;
 	esac
 
+	# --- The Pi's ffmpeg7 and vlc ---------------------------------------------
+	# Alpine's, with Raspberry Pi OS's patches for the Pi's hardware video
+	# decoders (rpi/), which rank above Alpine's and so replace them. Each is
+	# Alpine's APKBUILD of one version (its _alpine) with the patches: stop
+	# if Alpine's has moved on, as its changes (security fixes, rebuilds for
+	# libraries' new sonames) would be missing. abuild -r installs what they
+	# build with (abuild-apk, which the abuild group may run) and adds the
+	# packages it built before to the repos, so vlc builds with ffmpeg7-dev
+	# from here.
+	if [[ $TARGET == rpi ]]; then
+		local name base alpine
+		mkdir -p /work/cervino
+		for name in ffmpeg7 vlc; do
+			base=$(sed -n 's/^_alpine=//p' /rpi/"$name"/APKBUILD)
+			alpine=$(apk --root "$apkroot" search --exact "$name") ||
+				die "Alpine $ALPINE_BRANCH has no $name"
+			[[ $alpine == "$name-$base" ]] ||
+				die "Alpine's $name is $alpine, rpi/$name/APKBUILD is based on $name-$base: update it"
+			cp -R /rpi/"$name" /work/cervino/
+			(cd /work/cervino/"$name" && abuild -r -P /work/packages) ||
+				die "could not build $name"
+		done
+	fi
+
 	# --- cervino-desktop package ---------------------------------------------
 	# Built from cervino-desktop/APKBUILD, with the AppArmor profiles and
 	# Flathub's remote (Flatpak adds the remotes in /etc/flatpak/remotes.d)
 	# next to it, and signed with the build's key, which mkimage puts in the
-	# image. It goes in a repo of its own for mkimage, indexed under $ARCH as
-	# a package for $ARCH: abuild files the noarch package under the
-	# container's architecture, and apk 3 looks for a package in the
+	# image. It goes in a repo of its own for mkimage, with the Pi's
+	# packages, indexed under $ARCH: abuild files the noarch package under
+	# the container's architecture, and apk 3 looks for a package in the
 	# directory of the architecture its index gives. Its dependencies are in
 	# Alpine's repos, which the index doesn't cover.
 	local pkgsrc=/work/cervino/cervino-desktop pkgrepo=/work/pkgrepo
@@ -397,12 +431,12 @@ builder_main() {
 		REPO "$(shquote "${APK_REPO:+$APK_REPO/$ALPINE_BRANCH}")" \
 		TARGET_ARCH "$(shquote "$ARCH")" > "$pkgsrc"/cervino-desktop.conf
 	(cd "$pkgsrc" && abuild -d -P /work/packages) || die "could not build cervino-desktop"
-	cp /work/packages/cervino/*/cervino-desktop-*.apk "$pkgrepo/$ARCH"/
+	cp /work/packages/cervino/*/*.apk "$pkgrepo/$ARCH"/
 	mkdir -p /work/pkgout/"$ALPINE_BRANCH/$ARCH"
-	cp "$pkgrepo/$ARCH"/cervino-desktop-*.apk /work/pkgout/"$ALPINE_BRANCH/$ARCH"/
+	cp "$pkgrepo/$ARCH"/*.apk /work/pkgout/"$ALPINE_BRANCH/$ARCH"/
 	apk index --quiet --no-warnings --rewrite-arch "$ARCH" \
 		-o "$pkgrepo/$ARCH"/APKINDEX.tar.gz "$pkgrepo/$ARCH"/*.apk ||
-		die "could not index cervino-desktop"
+		die "could not index the packages"
 	abuild-sign -q "$pkgrepo/$ARCH"/APKINDEX.tar.gz
 
 	# --- Root file system -----------------------------------------------------

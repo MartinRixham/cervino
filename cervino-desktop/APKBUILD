@@ -149,6 +149,21 @@ EOF
 	makefile root:root 0644 "$pkgdir"/usr/lib/udev/rules.d/60-cervino-wifi-region.rules <<'EOF'
 ACTION=="add", SUBSYSTEM=="ieee80211", RUN+="/usr/libexec/cervino/wifi-region"
 EOF
+
+	# The Pi's hardware video decoding (ffmpeg7 and vlc, built from rpi/)
+	# allocates the decoders' buffers from /dev/dma_heap, which only root may
+	# open: Raspberry Pi OS's rules (raspberrypi-sys-mods) give it to the
+	# video group, and here also to the user at the seat, as elogind does
+	# the decoders themselves (video4linux, media). dma_heap/vidbuf_cached is
+	# the heap they look for first: where the decoder is behind an IOMMU (Pi
+	# 5) the system heap, else CMA. grep runs under udevd's AppArmor profile.
+	if [ "$TARGET_ARCH" = aarch64 ]; then
+		makefile root:root 0644 "$pkgdir"/usr/lib/udev/rules.d/60-cervino-dma-heap.rules <<'EOF'
+SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="dma_heap", KERNEL=="system", PROGRAM="/bin/grep -q iommu /proc/iomem", SYMLINK+="dma_heap/vidbuf_cached"
+SUBSYSTEM=="dma_heap", KERNEL=="linux,cma", SYMLINK+="dma_heap/vidbuf_cached", OPTIONS+="link_priority=-50"
+EOF
+	fi
 	makefile root:root 0755 "$pkgdir"/etc/init.d/wifi-region <<'EOF'
 #!/sbin/openrc-run
 description="Sets the Wi-Fi region when the time zone changes"

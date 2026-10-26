@@ -1,0 +1,371 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+#
+# Alpine's community/vlc (_alpine below) with Raspberry Pi OS's patches
+# (_rpi_patches, from
+# https://github.com/RPi-Distro/vlc/tree/pios/<release>/debian/patches at
+# _rpi_commit; Debian's own patches, listed before them, are left out),
+# built as Raspberry Pi OS builds it for ARM: decoding through ffmpeg7's
+# V4L2 hardware decoders (rpi/ffmpeg7), shown through DRM, EGL dmabuf
+# import or Wayland's dmabuf protocol without copying the frames, and no
+# VA-API, VDPAU or OpenMAX, which the Pi has none of. pkgver is Alpine's,
+# plus _p and the patch set's number, so it ranks above Alpine's. Update it
+# to Alpine's APKBUILD for the same _alpine with Raspberry Pi OS's patch set
+# for that version; build-alpine-gnome-iso.sh stops when Alpine's vlc is no
+# longer _alpine.
+_alpine=3.0.23-r4
+_rpi_commit=88272ce2fbf0ef1671ea64bda9eb6b44fdc4391f
+_rpi_patches="
+	0001-pi-util-Add-useful-scripts.patch
+	0002-vlc-Upgrade-exit-timeout-to-exit-rather-than-signal.patch
+	0003-vlc-Set-malloc-mmap-threshold-to-avoid-fragmentation.patch
+	0004-alsa-Add-HDMI-passthrough-for-TrueHD-DTS-etc.patch
+	0005-tospdif-Fix-DTS-rate-calculation-when-we-have-8-1920.patch
+	0006-avcodec-Add-AllocContextHw-to-try-v4l2m2-decoders-au.patch
+	0007-vlc_fourcc-Add-MMAL-picture-types.patch
+	0008-vlc_fourcc-Add-DRM_PRIME-picture-types.patch
+	0009-avcodec-va-Add-DRM_PRIME-swfmt-VLC-format-cases.patch
+	0010-avcodec-Fake-an-initial-timestamp-if-none-received.patch
+	0011-egl-add-queryDmaBufModifiersEXT-to-interface.patch
+	0012-configure.ac-Add-DRM-enable-option-test.patch
+	0013-configure.ac-Add-Wayland-single-pixel-capability-tes.patch
+	0014-configure.ac-Fix-lib-ordering-for-MMAL-libs.patch
+	0015-configure.ac-Add-mmal_avcodec-option.patch
+	0016-configure-If-with-qtconf-is-given-then-do-not-look-f.patch
+	0017-video_output-window-Add-lock-and-seq-for-wayland-sur.patch
+	0018-qt-interface_widgets-Use-window-locks-when-handle-mi.patch
+	0019-vlc_vout_window-Add-a-scaling-fraction-from-VLC-to-n.patch
+	0020-qt-interface-Set-scale-factor-in-vout_window.patch
+	0021-qt-wayland-Add-a-bool-if-viewports-can-be-used-on-vi.patch
+	0022-avcommon-Add-ffmpeg-trace-output-for-vvvv.patch
+	0023-qt-controller-Make-fullscreen-controller-a-popup-und.patch
+	0024-qt-Disable-1st-run-dialog.patch
+	0025-audio_output-When-padding-with-silence-add-zeros-in-.patch
+	0026-drm_pic-Add-DRM_PRIME-picture-type-code.patch
+	0027-mmal-Add-all-the-mmal-bits.patch
+	0028-caca-Set-driver-to-ncurses-avoiding-segfault.patch
+	0029-qt-Disable-HiDPIScaling-if-ratio-is-implausible.patch
+	0030-decoder-Add-a-vout_flush-to-decoder-shutdown.patch
+	0031-video_chroma-chain-Fix-chroma-resize-then-transform.patch
+	0032-video_output-Prioritise-GLES-over-GL.patch
+	0033-egl-Add-avcodec-DRM_PRIME-decode-path.patch
+	0034-egl-Require-dma_buf_import-support-if-using-egl-out.patch
+	0035-video_output-drmu-Add-DRM-video-output.patch
+	0036-video_output-wayland-Add-dmabuf-output.patch
+	0037-wayland-shm-Set-priority-to-0-to-use-wl-dmabuf-inste.patch
+	0038-xdg-shell-Rename-old-xdg-shall-include-files.patch
+	0039-wl_xdg_shell-Create-an-updated-version-of-xdg-shell.patch
+	0040-avcodec-Add-J420-formats-as-equivalent-to-YUV420-for.patch
+	0041-RPICHANGES-Add-change-log.patch
+	"
+pkgname=vlc
+pkgver=3.0.23_p52
+_pkgver=${pkgver%_p*}
+pkgrel=0
+pkgdesc="Multi-platform MPEG, VCD/DVD, and DivX player"
+triggers="vlc-libs.trigger=/usr/lib/vlc/plugins"
+pkgusers="vlc"
+pkggroups="vlc"
+url="https://www.videolan.org/vlc/"
+arch="aarch64"
+license="GPL-2.0-or-later"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-qt
+	$pkgname-daemon::noarch
+	$pkgname-libs
+	$pkgname-nftrules
+	"
+install="vlc-daemon.pre-install vlc-libs.pre-deinstall"
+makedepends="
+	a52dec-dev
+	abseil-cpp-dev
+	alsa-lib-dev
+	autoconf
+	automake
+	avahi-dev
+	bison
+	dav1d-dev
+	dbus-dev
+	eudev-dev
+	faad2-dev
+	ffmpeg7-dev
+	flac-dev
+	flex
+	fluidsynth-dev
+	freetype-dev
+	gnutls-dev
+	gtk+3.0-dev
+	gst-plugins-base-dev
+	libarchive-dev
+	libass-dev
+	libavc1394-dev
+	libbluray-dev
+	libcddb-dev
+	libdrm-dev
+	libdc1394-dev
+	libdvbpsi-dev
+	libdvdnav-dev
+	libdvdread-dev
+	libgcrypt-dev
+	libice-dev
+	libmad-dev
+	libmatroska-dev
+	libmicrodns-dev
+	libmpeg2-dev
+	libnotify-dev
+	libogg-dev
+	libplacebo5-dev
+	libraw1394-dev
+	librsvg-dev
+	libsamplerate-dev
+	libsecret-dev
+	libshout-dev
+	libsm-dev
+	libsrt-dev
+	libtheora-dev
+	libtool
+	libupnp-dev
+	libvorbis-dev
+	libvpx-dev
+	libx11-dev
+	libxext-dev
+	libxinerama-dev
+	libxml2-dev
+	libxpm-dev
+	libxv-dev
+	live-media-dev
+	lua5.2-dev
+	mesa-dev
+	ncurses-dev
+	opus-dev
+	protobuf-dev
+	pulseaudio-dev
+	qt5-qtbase-dev
+	qt5-qtsvg-dev
+	qt5-qtx11extras-dev
+	samba-dev
+	sdl2-dev
+	speex-dev
+	speexdsp-dev
+	sysfsutils-dev
+	taglib-dev
+	v4l-utils-dev
+	wayland-dev
+	wayland-protocols
+	x264-dev
+	x265-dev
+	xcb-util-keysyms-dev
+	xcb-util-renderutil-dev
+	xdg-utils
+	"
+source="https://download.videolan.org/vlc/$_pkgver/vlc-$_pkgver.tar.xz
+	omxil-rpi-codecs.patch
+	check-headless.patch
+	disable-sub-autodetect-fuzzy-1-test.patch
+	fribidi_allow_deprecated.patch
+	gstreamer-header.patch
+	musl-ioctl.patch
+	vlc.initd
+	vlc.confd
+	big-endian.patch
+	upnp-fix-typedef.patch
+	vlc_chromecast.nft
+	"
+for _p in $_rpi_patches; do
+	source="$source $_p::https://raw.githubusercontent.com/RPi-Distro/vlc/$_rpi_commit/debian/patches/$_p"
+done
+# Ours, after Raspberry Pi OS's, which are made for glibc and GCC 14.
+source="$source rpi-musl-gcc15.patch"
+builddir="$srcdir/vlc-$_pkgver"
+
+# secfixes:
+#   3.0.18-r0:
+#     - CVE-2022-41325
+#   3.0.12-r0:
+#     - CVE-2020-26664
+#   3.0.11-r0:
+#     - CVE-2020-13428
+#   3.0.9.2-r0:
+#     - CVE-2019-19721
+#     - CVE-2020-6071
+#     - CVE-2020-6072
+#     - CVE-2020-6073
+#     - CVE-2020-6077
+#     - CVE-2020-6078
+#     - CVE-2020-6079
+#   3.0.7.1-r2:
+#     - CVE-2019-13602
+
+prepare() {
+	default_prepare
+	NOCONFIGURE=1 ./bootstrap
+}
+
+build() {
+	CFLAGS="$CFLAGS -fcommon -O2 -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -flto=auto -O2" \
+	LUA=lua5.2 \
+	LUAC=luac5.2 \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-nls \
+		--disable-rpath \
+		--disable-static \
+		--enable-a52 \
+		--enable-avcodec \
+		--enable-avformat \
+		--enable-bluray \
+		--enable-dav1d \
+		--enable-dbus \
+		--enable-dc1394 \
+		--enable-drm \
+		--enable-dvbpsi \
+		--enable-dvdnav \
+		--enable-dvdread \
+		--enable-faad \
+		--enable-flac \
+		--enable-fluidsynth \
+		--enable-gles2 \
+		--enable-gnutls \
+		--enable-libcddb \
+		--enable-libplacebo \
+		--enable-live555 \
+		--enable-merge-ffmpeg \
+		--enable-ncurses \
+		--enable-realrtsp \
+		--enable-shout \
+		--enable-skins2 \
+		--enable-sout \
+		--enable-speex \
+		--enable-srt \
+		--enable-taglib \
+		--enable-theora \
+		--enable-upnp \
+		--enable-v4l2 \
+		--enable-vlm \
+		--enable-vorbis \
+		--enable-wayland \
+		--enable-wma-fixed \
+		--enable-x264 \
+		--enable-xvideo \
+		--disable-libva \
+		--disable-mmal \
+		--disable-vdpau
+
+	make
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install
+	# delete cache as it's autocreated by trigger
+	rm -rf "$pkgdir"/usr/lib/vlc/plugins/plugins.dat
+	# delete unneeded mozilla and kde support files
+	rm -rf "$pkgdir"/usr/lib/mozilla
+	rm -rf "$pkgdir"/usr/share/kde4
+
+	install -D -m755 "$srcdir"/vlc.initd "$pkgdir"/etc/init.d/vlc
+	install -D -m664 "$srcdir"/vlc.confd "$pkgdir"/etc/conf.d/vlc
+	install -d -o vlc -g vlc "$pkgdir"/var/log/vlc
+
+	install -Dm644 "$srcdir"/vlc_chromecast.nft \
+		"$pkgdir"/usr/share/nftables.avail/60_vlc_chromecast.nft
+}
+
+check() {
+	make check || { cat ./*/test-suite.log; false; }
+}
+
+qt() {
+	pkgdesc="Qt frontend for VLC"
+	depends="vlc=$pkgver-r$pkgrel"
+	cd "$pkgdir"
+	# scan for elf files that directly or indirectly depends on
+	# libQt* libraries
+	find . -type f \
+	| while read -r file; do
+		if ldd "$file" 2>/dev/null | grep -q "libQt"; then
+			amove "$file"
+		fi
+	done
+	amove usr/share/icons \
+		usr/share/applications \
+		usr/share/metainfo \
+		usr/bin/qvlc
+}
+
+daemon() {
+	pkgdesc="Support for running VLC as a daemon"
+	depends="vlc=$pkgver-r$pkgrel"
+
+	amove etc/init.d
+	amove etc/conf.d
+	amove var/log/vlc
+}
+
+libs() {
+	depends=""
+	default_libs
+
+	amove usr/lib/vlc/vlc-cache-gen
+}
+
+sha512sums="
+557e4ac76a17158877a4a86f27c9a5bc189b7ac559687552117dc8b44961d1172cf93bf8e1eb70fecb05999bdfc3f69ab79b55126c71486fe3a8cdfbf92e6df6  vlc-3.0.23.tar.xz
+e13e398b7bfd977f6e099bcb6cf8dc5cd5bad6dea3eff715881826246dc4329468846084aff2576de2b7fd28d3f06e7c327a6e4511a28d22e5cd198a81146c89  omxil-rpi-codecs.patch
+22d80df599b8b65a5439cefbb7140af8e9530f326d54945da3769af65f37518b99ec2cc8647aafd2763324a0698280915afe043cc87e5720c4694881ed35bffa  check-headless.patch
+e214b407235cb3afb8bec93f20c9b42957b57e6fd3960679d3d4235e77762e03e64d03c01f00ef63d589e7c85aaad02ce6abbeeccd66b1867bc92451a5b5e9b0  disable-sub-autodetect-fuzzy-1-test.patch
+8230a83306905cdda07fecdb6cb2b791196034775cc5c8986ab63e97cd3476317544011cbce92948059ac9f7b57ef450cd71820f0f134bc3ab3bed38463a67c3  fribidi_allow_deprecated.patch
+c186bbe6247e192c6f66bb8800e1ea3d501ec5cb00d91e8540f0595ad7bd6632fa4ecde13be21016e0370aa45498c106f885cb4dc1a0471542865f932c4fcab8  gstreamer-header.patch
+a819e270ab4bc54e865057ae3656b710b2ff51e4f4c60c67c7fb296118ba0c83c1be62f1864d0cb9349db1718c44366fc28c6836eb0bc84f3154e18df9609134  musl-ioctl.patch
+55e245190b443dde9c7215ea5210612fcca164900a9a4b025ccf0d1e3fc5206d00b52355b256974421e37c609875627f1db19f0f5a084511aec0daf677ecc9d6  vlc.initd
+d89190dca1b8b2c3faca5863dc6c7e6eb24e05178e6f75ed752fd3c6a73cb8a42d2625b6e56453296b7096ea868be642ecd42745dac20e7f13fc67dd3c3c7c49  vlc.confd
+89b29868524679474fbd4bb1618169814b8e31910eea78da1c3778ad6da3ab0fdc524903eb8507a443278b345de70684987900ff94380300fa876c975641dceb  big-endian.patch
+216ff722905a48e8536b6182fef12c3afc7431f68edcb0d65b2c2142da4be63a7b955d700d459ba460d51167a2a4639dfda51dd3727f09c8b7a1b129953d79ba  upnp-fix-typedef.patch
+0a54fef90f735a0ea81d995653a185172a672d5d64cd5802ed94014dfe7a859ab2cbec9db12ecbcdb0d2a48270bf0365301c77e00b408d3a3c8f9a0a5ffd3051  vlc_chromecast.nft
+3a2bdf5b6e12746fdc6e445fa32b31ce3ac41c672817e34e08b39bd9c69fa9cb78811df2fc799f77ee45b800d16dd3ea8fb63776133539b640f559f423beb249  0001-pi-util-Add-useful-scripts.patch
+86c7ee7fd87343c9e5530b5db2a28c4124c0001db571e64262895c28a4d8bf86474e5501342561ad45a35d6ca86202a03e331633124f00954ff599302ecc85c6  0002-vlc-Upgrade-exit-timeout-to-exit-rather-than-signal.patch
+b739ab4fe1340476c19d88806972f2c51566136004b54c3a2d7081ee2ea20304ad7d55b38f16e56e881e6881fcbe01c80ee1a12c361fb39fcf81bd4364d4d6ad  0003-vlc-Set-malloc-mmap-threshold-to-avoid-fragmentation.patch
+c0b35feb2d0cc5b15665856d448f8112a6aeab751278eba13f8c67c345c666bef8314bebdb9aa47fc550f0ef3a5a01c22e3e02b30f328ef6f1ecafb2c9ccd187  0004-alsa-Add-HDMI-passthrough-for-TrueHD-DTS-etc.patch
+d0fdc4d6cfdc39a8b971787eff1b4931caac98a411c6d694661f84feb5ea017fb6e4103d91feea21b8ab8a1471cc0b549a18f5dd5ba4c8fbba2879aa0f4fa082  0005-tospdif-Fix-DTS-rate-calculation-when-we-have-8-1920.patch
+29c23ad2b5434896892446ff7b58b00fec111abf75a455f1ccbf7017101ede8886498328be27f544492669774f64a65240a2ccb1ae2795b0f10179a64921e0cc  0006-avcodec-Add-AllocContextHw-to-try-v4l2m2-decoders-au.patch
+29f1753211b42a372d8a7cd2c23780c8d1653c0144eb4a8ee3de559641edc820ecb883bf71fec879b64a7fea8a99047a929405a351c0a4308a487238123227e3  0007-vlc_fourcc-Add-MMAL-picture-types.patch
+ff6cb26e30f5bd18874073301bdf20a77008648241a9cf30f8de180a6d83a7f28c2a5effd8453ce3365e1009342375486ca91d2e800fabe4e3fb535bd0fe5b07  0008-vlc_fourcc-Add-DRM_PRIME-picture-types.patch
+aa93e9b9f685b5d2245006a44202ba0c128916f167194f0653dba39d771a1ebdc2c15da6183a1b977d46f07df01e483dec90b97703e58e5de0cf297117a7226a  0009-avcodec-va-Add-DRM_PRIME-swfmt-VLC-format-cases.patch
+cf4a937488391775c54e49cfde8d9a913281f03e15feae9a4d73b598f5f86ed1eb3336b12283593d182bb81ba36e1b18a45c8b4d6693263050c5537a879dc00e  0010-avcodec-Fake-an-initial-timestamp-if-none-received.patch
+3f2acb894820cf92823eeb1cad9ecab9550f7da1e7b909bb82ab14339c6e12ed5a6f3bd7a0ac787627531ef5d95c3add029b281c258721fa7b041f83100f265b  0011-egl-add-queryDmaBufModifiersEXT-to-interface.patch
+df07ee229087376c7cc916072eba028afd1628231b6f76933b963e06dd226e6a6e9d5ac786ec46b8b6a8f3a00eb44577807b48fc7701df4ec2f3a62d034bbe86  0012-configure.ac-Add-DRM-enable-option-test.patch
+125a75d0f55a1bc90ae02bb45b63691fde003460efa2c5ef10dbed270ffbdc7943e3bc2a71c01b86f80bc446d0596efc36e3a47892ed7cf370c97bfdd9bf3b1e  0013-configure.ac-Add-Wayland-single-pixel-capability-tes.patch
+5be8d011adf4b33179957cbbce7ed981f388c9d10713343ea9b60ee6b636c4ce213c233dd3643e9ae62c5adea655291a2b799e7311a38c5562eabfb3a464b7d3  0014-configure.ac-Fix-lib-ordering-for-MMAL-libs.patch
+e56401a8a0ce13ed35f0a6aade3b5f03ff42179f20f76b7be64482cdabe2a37c988934d2a4a54d2b853d6fc014c9c722451ecb35163b9ed1279597c7df12755b  0015-configure.ac-Add-mmal_avcodec-option.patch
+dcf432d0f99acb3e4ad7659c18ff6a7220f239b09fac4829db00c5cae81895849b780ef951af42e828a3d4e30dd3e2b7cce55547ff626492e0161addf6e494e3  0016-configure-If-with-qtconf-is-given-then-do-not-look-f.patch
+a0834aea40284cbfbd1751354109e772d6a4946da9a0eb469927401f90613d43fc689318636ffd36b30e48cdab840db8f288c514865f0059afd0b24b9f7a6c93  0017-video_output-window-Add-lock-and-seq-for-wayland-sur.patch
+79efc77447ce08eb5832e5f468fbd106887a478735427ac3f8429101f81a3600b52edd4f55a1fe5a35c5234d84ca1dfab0bd5fa5ed70087bd9400d4e40ae784d  0018-qt-interface_widgets-Use-window-locks-when-handle-mi.patch
+1524f3d02a4f3d78059b92753b617370bc3fb371cbcb043e66043bcafd075115cdca5f1ea9377b5ad56336a4a61bdaee5d407ea45803279eb058c8d0c846fbed  0019-vlc_vout_window-Add-a-scaling-fraction-from-VLC-to-n.patch
+4aaeb0b44c2262a1caeb4a3a6a4459f5348175c6fce14e9cccf6e5f955d65b26cf9ddb24f4fde29134c529a3148a39bde0d67936d7c4034d0672285cf75c750b  0020-qt-interface-Set-scale-factor-in-vout_window.patch
+a9f55775b30f9706d26c54b76e5ea65a075602713781c64f970d3d6d71150c4f3417603d1ce5f863512e4fe6224a9938d17e8c9d68df0ed122698ebf63147b69  0021-qt-wayland-Add-a-bool-if-viewports-can-be-used-on-vi.patch
+89b6daffa5f34719f49f688cbfd1bb930083abcf94152bbfcc63b7d330166deabc550f476e2945229107e0ad74b9fcc29eb202749e07409a845489f42cd5dc03  0022-avcommon-Add-ffmpeg-trace-output-for-vvvv.patch
+3239a53a6b36a41eb9f679517d7464ca76b185c5b380a9c24939c575045c74794d98a9a513c7788f426a2b1bc95cf1ee32e9de4609bf38e54afff27766dc3189  0023-qt-controller-Make-fullscreen-controller-a-popup-und.patch
+679d7d101b7d4334942d38eba7746412cc9eaa6689ffa6a33aca05353add8a7668201e8e664145f87689bbf70e1f656d09c259253c9bde676217a942891ffebd  0024-qt-Disable-1st-run-dialog.patch
+d3083b434a89d50ebfa11daea8ad876f8e7dd25f661ebf85a9cba258310dc4dccbc73b00ef0ae16b7f74f2ff6ed6200a5eaf711b3decf89aab455c265eec1667  0025-audio_output-When-padding-with-silence-add-zeros-in-.patch
+0a8d61436ec978b1f541d8e2c66edb0029ba5e08b87728bcc95b53197a058cddd9b30f2db1883945fd4e3f9b2f278f4103bbaad17f2e982a06e77fe7c0069aa9  0026-drm_pic-Add-DRM_PRIME-picture-type-code.patch
+5cd8066b025a81eff031ffd868c357d2e3b3e39aafda699231439afd20287d62b6fca2c083ef029a5f803df6d870d23b5b5ff4a5930d302af00aeb8aae276a56  0027-mmal-Add-all-the-mmal-bits.patch
+a591bb7c56f5af42fe76044ac1b4c6ebfd978ce6e26ce2ead4bcbc5d0525081f831bf4757b2d15836324d5949ab4c4c246709fcbe3db922a466cb8043647c537  0028-caca-Set-driver-to-ncurses-avoiding-segfault.patch
+8fa36e55b6bf2c1e79d90532508202791c92c046460808f46dad1f09dd0ab03952e2a050f2ca1acd7c9f8ac36dd31519c65789b3641ddda8438d0b8189a65cde  0029-qt-Disable-HiDPIScaling-if-ratio-is-implausible.patch
+a4d92f81943ad18e237046cd7f9731ed54c964d63b250ded7492dc57f51fe1e93208c2a175744db318b96f1b542ac4aabb2c1fe5b10c0daa6e868f490d7dcefb  0030-decoder-Add-a-vout_flush-to-decoder-shutdown.patch
+d20a536b037e9911346680b801f3d054c032e3ebee5ff410a8ab301fed4704e8287c9179c76ef17df97ecb8112f9c38abc9b1510cf5a237612f0a50a322b7b1c  0031-video_chroma-chain-Fix-chroma-resize-then-transform.patch
+4e29f4f56697c5b768d14d53fe2f1475b26fa5fa9cb7b07e8d980b1ce481d20d8a7d871276f6de3a1d36608237ea1f3e6c9b2bf6f0f4005bcfaa482d275f51d8  0032-video_output-Prioritise-GLES-over-GL.patch
+8d73412540e026b182e4708d975b214c0f37674913a3980e5319c5e475945172cf2c64f007f3eacb2bc99f5c1f1d7e54a58816250f3f28ba42ccdf0188d7bc24  0033-egl-Add-avcodec-DRM_PRIME-decode-path.patch
+5d2c30363180e32d423147b0c96762b437a8ebce16607bbbaefbb51d436340ca5471762249e4bda666f50fc105007c59bf72a74a72bf44dafda456891633c807  0034-egl-Require-dma_buf_import-support-if-using-egl-out.patch
+7652223ee9dac5c79ca182527ad17085bea0bad1cb0e5078fd24d8c56099ed8e70e91ac2213047b58c41def4af10c415d8a2bc812e0d422194be15b15cde6dd4  0035-video_output-drmu-Add-DRM-video-output.patch
+4760f5361447e4eeec3184e27dc3d7fb9a2c90ca9c0e310e17f8f06bb31521cd480b66d070e26cef311e54e9644a0592a3bf024acbf36dda30e2ab61531b3af0  0036-video_output-wayland-Add-dmabuf-output.patch
+e7b2a49a14e8c1b48593001885522e20e13fbdedee5bac8f75c3649b95ba176a3e909bb8bf9394445d582576ac50418d219b6b09ca0bc183bc7c8cc20b1c0447  0037-wayland-shm-Set-priority-to-0-to-use-wl-dmabuf-inste.patch
+e1162e44f46f0197d4ed935eb2106839cfbeb7998d96f1b5c1fda85e5f0f53ed68ca8b0d923b27e64f701541c637f0388fc580409b16ea760a017ac97bad6b52  0038-xdg-shell-Rename-old-xdg-shall-include-files.patch
+77894140f03e34ec428a736f8cf4d036cc8ccb0a957d982aa7d28ebe21d6bbe7ddedee73bee56ae40cd6a6f4adff443b3b235d5e711bea16cb576bd1cbc00826  0039-wl_xdg_shell-Create-an-updated-version-of-xdg-shell.patch
+24be37e6c10c7dcfc7f3233388ca25cadb2ba03361043e31c61c90dd1cd6b962d91bd1e8d4ff7849b74688dd26647f9dc0af9238c1d8d8b85e2662b1abe105f9  0040-avcodec-Add-J420-formats-as-equivalent-to-YUV420-for.patch
+21fd3a178f55dacf2f79d7e479d1c5a872dcc1366bc5b96aa3327aa26aa7d989a8eecf753eae0fac89e179d593048bdf5095ba60d35f805a6005736d6bdb82c4  0041-RPICHANGES-Add-change-log.patch
+7c52cea536258e8a3189e0ff6628fb05a721898b9072b0eff249a90d2188c4b323a7f0286a1abef2b26a346c5a29893a28ba39c4c09a64e68e1ff5a87882257b  rpi-musl-gcc15.patch
+"
