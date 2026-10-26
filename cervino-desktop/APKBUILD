@@ -721,7 +721,11 @@ if ! mountpoint -q "$esp"; then
 		{ echo "update-boot: the boot partition is not mounted on $esp" >&2; exit 1; }
 fi
 atomic_mount
-trap 'atomic_umount; rm -f "$top".cmdline' EXIT
+# ukify's temporary files: at shutdown /tmp and /var are unmounted and / is
+# read-only, so in /run.
+TMPDIR=$(mktemp -d /run/cervino-boot.XXXXXX)
+export TMPDIR
+trap 'atomic_umount; rm -rf "$top".cmdline "$TMPDIR"' EXIT
 atomic_staged
 
 # copy FROM TO: replaces TO with FROM unless they are the same already. The
