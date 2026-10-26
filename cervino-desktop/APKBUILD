@@ -195,14 +195,32 @@ EOF
 	# gcompat it fails with an unhelpful error. The features install gcompat,
 	# so show it again. Firefox reads this directory in reverse alphabetical
 	# order, the last setting winning, so the file must sort before vendor.js.
-	# Mozilla offers no Widevine for Linux on aarch64, so not on the Pi.
-	if [ "$TARGET_ARCH" = x86_64 ]; then
-		for _firefox in firefox firefox-esr; do
-			makefile root:root 0644 "$pkgdir"/usr/lib/$_firefox/browser/defaults/preferences/cervino.js <<'EOF'
+	for _firefox in firefox firefox-esr; do
+		makefile root:root 0644 "$pkgdir"/usr/lib/$_firefox/browser/defaults/preferences/cervino.js <<'EOF'
 pref("media.gmp-widevinecdm.visible", true);
 pref("media.gmp-widevinecdm.enabled", true);
 EOF
-		done
+	done
+	# Mozilla offers no Widevine for Linux on aarch64, so Firefox cannot
+	# download it on the Pi: the widevine script gets it from Google, into
+	# /var (shared by an atomic install's versions), for the installer's
+	# setup-disk and weekly, and login shells, which start the GNOME session,
+	# point Firefox at it. The image does not have it, so as not to pass on
+	# Google's CDM.
+	if [ "$TARGET_ARCH" = aarch64 ]; then
+		makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/widevine < "$startdir"/widevine
+		makefile root:root 0755 "$pkgdir"/etc/periodic/weekly/widevine <<'EOF'
+#!/bin/sh
+exec /usr/libexec/cervino/widevine
+EOF
+		makefile root:root 0644 "$pkgdir"/etc/profile.d/50-widevine.sh <<'EOF'
+_d=/var/lib/widevine/gmp-widevinecdm/system
+case ":${MOZ_GMP_PATH:-}:" in
+*":$_d:"*) ;;
+*) [ ! -f "$_d"/manifest.json ] || export MOZ_GMP_PATH="$_d${MOZ_GMP_PATH:+:$MOZ_GMP_PATH}" ;;
+esac
+unset _d
+EOF
 	fi
 
 	# The default nftables ruleset drops incoming connections; allow SSH,

@@ -59,8 +59,13 @@ from a desktop distribution, and keeps it when installed to disk:
   dav1d's AV1 decoder (`gst-plugins-rs-dav1d`)
 - DRM video (Netflix, Spotify, ...) in Firefox: Alpine hides Firefox's
   Widevine, which needs `gcompat`; the ISO shows it again, and Firefox
-  downloads it from Google when a page first asks and you turn DRM on
-  (x86_64 only: Mozilla has no Widevine for Linux on aarch64)
+  downloads it from Google when a page first asks and you turn DRM on. On
+  the Pi, where Mozilla offers no Widevine, the installer downloads Google's
+  arm64 build to `/var/lib/widevine` (it is not in the image, so the live
+  system has none) and a weekly job keeps it up to date;
+  `doas /usr/libexec/cervino/widevine` fetches it by hand. Firefox finds
+  it through `MOZ_GMP_PATH`, set by login shells, so after the first
+  download it needs a new login
 - Alpine's packages in GNOME Software: `apk-polkit-server` runs at boot, and
   the AppStream catalog of the repositories in `/etc/apk/repositories` is
   fetched when a network connection comes up and daily (the live system's

@@ -21,6 +21,14 @@ for a; do
 	[ "$a" = --initdb ] || set -- "$@" "$a"
 done
 /usr/sbin/apk "$@" || exit
+# Firefox's Widevine where Firefox cannot download it (the Pi): see
+# cervino-desktop's widevine. Its weekly job tries again, first soon after
+# the system starts.
+if [ -x /usr/libexec/cervino/widevine ]; then
+	echo "Downloading Widevine, for DRM video in Firefox..."
+	/usr/libexec/cervino/widevine "$root" ||
+		echo "Widevine could not be downloaded: the installed system tries again after it starts." >&2
+fi
 if [ -f "$root"/etc/update-extlinux.conf ] && [ -x "$root"/sbin/update-extlinux ]; then
 	chroot "$root" update-extlinux --warn-only || exit
 fi

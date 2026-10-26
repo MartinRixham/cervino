@@ -1,0 +1,58 @@
+#!/bin/sh
+#
+# widevine [ROOT]: installs Google's Widevine CDM, with which Firefox plays
+# DRM video (Netflix, Spotify, ...), in ROOT (default /), or replaces it
+# with a newer one. It goes in /var/lib/widevine/gmp-widevinecdm/system,
+# where /etc/profile.d/50-widevine.sh points Firefox (MOZ_GMP_PATH; the
+# directory names are the ones Firefox gives its own copy). Firefox
+# downloads the CDM itself only where Mozilla offers it, which it does not
+# for Linux on aarch64: this gets it from Google's component update
+# service, as Chrome does, over HTTPS (the CRX3 signature is not checked).
+# The CDM is built for glibc; Alpine's Firefox loads gcompat with it.
+# The installer's setup-disk runs this for the system it installs, and
+# anacron weekly, so that a newer CDM (services turn old ones down) or one
+# the install could not download arrives. Prints nothing on success.
+
+set -eu
+dir=${1:-}/var/lib/widevine/gmp-widevinecdm
+case $(uname -m) in
+aarch64) arch=arm64 ;;
+x86_64) arch=x64 ;;
+*) echo "widevine: Google has no Widevine for $(uname -m)" >&2; exit 1 ;;
+esac
+url="https://update.googleapis.com/service/update2/crx?response=redirect&x=id%3Doimompecagnajdejgnnjijobebaeigek%26uc&acceptformat=crx3&updaterversion=999&os=Linux&arch=$arch&os_arch=$arch"
+
+# The service redirects to the newest version's file, named with it.
+loc=$(wget -S --spider -T 30 "$url" 2>&1 | sed -n 's/^ *[Ll]ocation: *//p' | tr -d '\r' | tail -n 1)
+version=$(echo "$loc" | sed -n 's|^https://.*_\([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*\)/.*|\1|p')
+[ -n "$version" ] || { echo "widevine: Google's update service did not answer" >&2; exit 1; }
+installed=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$dir"/system/manifest.json 2>/dev/null) || :
+[ "$installed" != "$version" ] || exit 0
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+wget -q -T 60 -O "$tmp"/cdm.crx3 "$loc" || { echo "widevine: could not download $loc" >&2; exit 1; }
+# A CRX3 file: "Cr24", the format version, the header's length and the
+# header (the signatures), then a zip archive.
+[ "$(head -c 4 "$tmp"/cdm.crx3)" = Cr24 ] || { echo "widevine: $loc is no CRX file" >&2; exit 1; }
+n=$(od -A n -t u4 -j 8 -N 4 "$tmp"/cdm.crx3 | tr -d ' ')
+tail -c +$((13 + n)) "$tmp"/cdm.crx3 > "$tmp"/cdm.zip
+mkdir "$tmp"/cdm
+unzip -q "$tmp"/cdm.zip -d "$tmp"/cdm
+lib=$tmp/cdm/_platform_specific/linux_$arch/libwidevinecdm.so
+if [ ! -f "$lib" ] || ! grep -q "\"version\": *\"$version\"" "$tmp"/cdm/manifest.json; then
+	echo "widevine: $loc does not hold Widevine $version" >&2
+	exit 1
+fi
+
+# The new version takes the old one's place with two renames: Firefox,
+# which may be running, reads it whenever it starts the CDM.
+mkdir -p "$dir"
+rm -rf "$dir"/system.new "$dir"/system.old
+mkdir "$dir"/system.new
+cp "$lib" "$tmp"/cdm/manifest.json "$tmp"/cdm/LICENSE "$dir"/system.new/
+chmod 0755 "$dir"/system.new
+chmod 0644 "$dir"/system.new/*
+[ ! -d "$dir"/system ] || mv "$dir"/system "$dir"/system.old
+mv "$dir"/system.new "$dir"/system
+rm -rf "$dir"/system.old

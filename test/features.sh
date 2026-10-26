@@ -965,10 +965,11 @@ t_media_decoders() {
 
 t_browser_drm() {
     # Streaming services (Netflix, Spotify, Disney+, ...) need Widevine,
-    # which Firefox downloads from Google the first time a page asks for it.
-    # The CDM is built for glibc: on musl it needs gcompat. This opens the
-    # probe page in a headless Firefox with a new profile, which downloads
-    # the CDM and has it make a license request.
+    # which Firefox downloads from Google the first time a page asks for it,
+    # where Mozilla offers it (not Linux on aarch64: there the system has to
+    # provide it, through MOZ_GMP_PATH). The CDM is built for glibc: on musl
+    # it needs gcompat. This opens the probe page in a headless Firefox with
+    # a new profile, which gets the CDM and has it make a license request.
     local ff dir i result
     ff=$(first_have firefox firefox-esr) || { echo "Firefox not installed"; return 2; }
     have pkill || { echo "pkill missing"; return 2; }
@@ -995,12 +996,14 @@ t_browser_drm() {
         rm -rf "$dir"
         return 0
     fi
-    if [[ $result == *NotSupportedError* ]]; then
+    # Firefox answers NotSupportedError both when Widevine is turned off in
+    # its preferences and when it has none
+    if [[ ! -d $dir/profile/gmp-widevinecdm && -z ${MOZ_GMP_PATH:-} ]]; then
+        echo "Firefox has no Widevine: turned off in its preferences, or not downloaded and MOZ_GMP_PATH not set (${result:-no result})"
+    elif [[ $result == *NotSupportedError* ]]; then
         echo "Firefox does not offer Widevine (turned off in its preferences?)"
-    elif [[ -d $dir/profile/gmp-widevinecdm ]]; then
-        echo "Firefox downloaded Widevine but it does not run (gcompat on musl?): ${result:-no result}"
     else
-        echo "Firefox did not download Widevine: ${result:-no result}"
+        echo "Firefox has Widevine but it does not run (gcompat on musl?): ${result:-no result}"
     fi
     rm -rf "$dir"
     return 1

@@ -337,6 +337,14 @@ if mount --bind /proc "$mnt"/proc && mount --bind /dev "$mnt"/dev; then
 	umount "$mnt"/dev "$mnt"/proc
 fi
 rm -f "$mnt"/etc/runlevels/default/apk-polkit-server
+# Firefox's Widevine where Firefox cannot download it (the Pi): see
+# cervino-desktop's widevine. Its weekly job tries again, first soon after
+# the system starts.
+if [ -x /usr/libexec/cervino/widevine ]; then
+	echo "Downloading Widevine, for DRM video in Firefox..."
+	/usr/libexec/cervino/widevine "$mnt" ||
+		echo "Widevine could not be downloaded: the installed system tries again after it starts." >&2
+fi
 # Root's home, where root's shell keeps its history, is writable.
 mkdir -p "$mnt"/var/roothome &&
 	cp -a "$mnt"/root/. "$mnt"/var/roothome/ && chmod 700 "$mnt"/var/roothome &&
