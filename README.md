@@ -177,17 +177,20 @@ stays as it was (apk itself cannot change it). The new version is staged:
 the system starts with it next time. At that shutdown, the changes made to
 `/etc` since the update are copied into it (where the update changed a file
 you changed meanwhile too, yours is kept and the update's is saved next to
-it as `.apk-new`), and it becomes the default in the boot menu. Further
-updates before the restart add up in the same new version. The versions
-before stay in the boot menu under **Earlier versions**, the four newest of
-them kept, so a version that doesn't work can be started from there, and
-`doas update-alpine rollback` then makes the version before the running one
-the default again (as a new copy of it, with its `/etc` as it was).
+it as `.apk-new`). Further updates before the restart add up in the same
+new version. There is no boot menu: the new version starts once on trial,
+with the version before to fall back on. Once it has started, it is the one
+that starts from then on. If it doesn't start, switch the computer off and
+on: the version before starts again, and the new one is not tried again
+(`update-alpine list` shows it as "did not start when tried"). On a PC the
+firmware does that (UEFI's `BootNext`), on a Raspberry Pi its tryboot (see
+[Raspberry Pi](#raspberry-pi)). The four newest versions before are kept,
+and `doas update-alpine rollback` makes the version before the running one
+the one that starts again (as a new copy of it, with its `/etc` as it was).
 `doas update-alpine list` lists the versions, newest first, with which one
 is running and which the system starts with next time, and `doas
 update-alpine delete ID...` deletes versions you no longer want (a staged
-update too, which cancels it) and takes them out of the boot menu; the
-running version can't be deleted.
+update too, which cancels it); the running version can't be deleted.
 `/var` and `/home` are shared, so data is never rolled back.
 
 Each `v*` tag publishes the release's package to the `gh-pages` branch,
@@ -267,27 +270,33 @@ The disk step first asks how to install the system:
 
 - **atomic** (the default; `-m atomic` in an answer file's `DISKOPTS`): the
   system is read-only and updated as a whole, as in Fedora Silverblue. Each
-  update is a new version of the system, which it starts with next time, and
-  the four versions before stay (in the boot menu, on a PC). It asks for one
-  disk and whether to encrypt it.
+  update is a new version of the system, which it starts with next time
+  (once on trial first), and the four versions before stay. It asks for one
+  disk and whether to encrypt it. On a PC it needs UEFI: a PC started
+  without it (legacy BIOS) gets a sys install.
 - **sys** (`-m sys`): Alpine's standard install, updated in place, with
   Alpine's own disk questions. So does every other `setup-disk` option
   (`data` or LVM mode, RAID, several disks).
 
-On a PC, an atomic install erases the disk and makes four partitions: a 1 MiB BIOS
-boot partition, a 1 GiB FAT boot partition (the EFI system partition,
-mounted on `/boot/efi`), swap (twice the RAM, at most 4 GiB or a quarter of
+On a PC, an atomic install erases the disk and makes three partitions: a
+1 GiB FAT boot partition (the EFI system partition, mounted on
+`/boot/efi`), swap (twice the RAM, at most 4 GiB or a quarter of
 the disk, as Alpine sizes it; encrypted with a new random key at each boot
 if the disk is) and a btrfs volume, inside LUKS2 if you chose encryption
 (its passphrase is asked for at every boot). The volume holds each version
 of the system as a read-only subvolume, `roots/<date and time>`, with a
 writable `/etc` of its own nested in it, beside `@var` and `@home`, which
 all versions share and which are mounted on `/var` and `/home` (root's
-home is `/var/roothome`). [Limine](https://limine-bootloader.org) boots the
-disk from the boot partition, on UEFI or BIOS alike, so each version's
-kernel, initramfs and CPU microcode are copied there; the
-`cervino-desktop` package's `update-boot` does that, and writes Limine's
-menu. Each version's kernel arguments are in its `/etc/kernel/cmdline`.
+home is `/var/roothome`). UEFI starts the system with no boot loader: each
+version is a unified kernel image (its kernel, CPU microcode, initramfs and
+kernel arguments in one file, made by `ukify`) on the boot partition,
+`cervino/<date and time>/linux.efi`, with a UEFI boot entry of its own,
+"Alpine Linux" and its date and time, so the firmware's boot menu can start
+any of them too. The `cervino-desktop` package's `update-boot` makes them
+and the entries, puts the version that starts first in `BootOrder` and sets
+`BootNext` to a version on trial. It also copies the version that starts to
+`EFI/BOOT/BOOTX64.EFI`, which the firmware starts if it loses the boot
+entries. Each version's kernel arguments are in its `/etc/kernel/cmdline`.
 GNOME Software installs apps from Flatpak only, as apk cannot write to the
 system: `update-alpine` installs packages (see [Updates](#updates)), and
 `doas apk add`, `del` and `upgrade` hand over to it.
@@ -333,11 +342,21 @@ encrypted or not, as on a PC. The firmware starts the system itself, with
 no boot menu: each version's kernel, initramfs, device trees, overlays and
 `cmdline.txt` are copied to `cervino/<date and time>/` on the boot
 partition, and `config.txt` (written by `update-boot`; your settings go in
-`usercfg.txt`) starts the newest with `os_prefix=`, listing the earlier
-versions in comments. So going back is `doas update-alpine rollback`, or,
-if the new version does not start, putting an earlier version's directory
-in `os_prefix` on another computer. This has not been tested on a Pi yet:
-QEMU can't run the Pi's firmware.
+`usercfg.txt`) starts one with `os_prefix=`, listing the others in
+comments. A Pi whose firmware has tryboot (the Pi 4 and 5 families with a
+current bootloader) tries a new version once:
+`config.txt` stays on the version that last started, `tryboot.txt` names
+the new one, and restarting (from GNOME, `doas reboot` or
+`update-alpine`'s offer) restarts with the firmware's tryboot flag, so
+the new version starts that one time. Once it has started, `config.txt`
+names it. If it doesn't start, switching the Pi off and on starts the
+version before again, and the new one is not tried again (`update-alpine
+list` shows it as "did not start when tried"). Switching off instead of
+restarting can't use tryboot, so the next start goes straight to the new
+version, with nothing to fall back on, as on older firmware. Going back
+from a version that starts is `doas update-alpine rollback`, or, from one
+that doesn't, putting an earlier version's directory in `os_prefix` on
+another computer.
 
 ## How it works
 

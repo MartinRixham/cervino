@@ -4,8 +4,8 @@
 # without a reboot, and unloads those that are gone. Only where the apparmor
 # service has loaded them: not in the initramfs, nor in setup-disk's chroot
 # of a new system, which load them when they boot.
-# Also runs when a package changes /boot (CPU microcode, a kernel) or Limine's
-# files: update-boot copies them to the boot partition, on systems that boot
+# Also runs when a package changes /boot (CPU microcode, a kernel):
+# update-boot copies them to the boot partition, on systems that boot
 # that way (it does nothing on others). A new kernel's initramfs is built
 # after this may run; the kernel hook runs update-boot again once it is.
 

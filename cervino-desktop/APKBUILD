@@ -5,8 +5,8 @@
 # cervino-desktop.conf (PKGVER, the version; DEPENDS, the packages of the
 # desktop features; PUBKEY, the file name of the public key it is signed with,
 # which is copied next to it; REPO, the URL of the repo it is published in,
-# or empty), flathub.flatpakrepo and the repo's AppArmor profiles
-# (apparmor.d/) next to it.
+# or empty; TARGET_ARCH, the architecture it is for), flathub.flatpakrepo and
+# the repo's AppArmor profiles (apparmor.d/) next to it.
 #
 # Some of the files belong to other packages (alpine-baselayout's inittab and
 # root crontab, shadow's login.defs, the daemons' conf.d files): replaces=
@@ -33,11 +33,21 @@ depends="/bin/sh doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc ava
 replaces="alpine-baselayout alpine-baselayout-data busybox-openrc dbus-openrc
 	earlyoom-openrc openrc shadow zram-init-openrc"
 install="$pkgname.post-install"
-triggers="$pkgname.trigger=/etc/apparmor.d:/etc/apparmor.d/*:/boot:/usr/share/limine"
+triggers="$pkgname.trigger=/etc/apparmor.d:/etc/apparmor.d/*:/boot"
 # abuild would make the package provide a cmd: for each of its commands,
 # and cmd:apk, for the apk wrapper, conflicts with apk-tools' own; so no
 # tracing, and the /bin/sh the install scripts need is listed by hand.
-options="!check !tracedeps"
+# The Pi's package has one program, tryboot, built for aarch64: abuild
+# would refuse that in a noarch package, but the build makes one package per
+# architecture anyway (its dependencies differ), indexed as that one's.
+options="!check !tracedeps !archcheck"
+
+build() {
+	[ "$TARGET_ARCH" = aarch64 ] || return 0
+	clang --target=aarch64-linux-musl -O2 -Wall -Wextra -Werror -ffreestanding \
+		-fno-stack-protector -nostdlib -static -fuse-ld=lld -Wl,--build-id=none -s \
+		-o "$srcdir"/tryboot "$startdir"/tryboot.c
+}
 
 makefile() {
 	mkdir -p "$(dirname "$3")"
@@ -400,6 +410,8 @@ EOF
 ::sysinit:/sbin/openrc sysinit
 ::sysinit:/sbin/openrc boot
 ::wait:/sbin/openrc default
+# A new version of an atomic install, on trial, has started.
+::once:/usr/libexec/cervino/boot-trial boot
 
 # Set up a couple of getty's
 tty1::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty 38400 tty1
@@ -413,10 +425,11 @@ tty6::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty 38400
 #ttyS0::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty -L 115200 ttyS0 vt100
 
 # Stuff to do for the 3-finger salute
-::ctrlaltdel:/sbin/reboot
+::ctrlaltdel:/usr/sbin/reboot
 
 # Stuff to do before rebooting
 ::shutdown:/sbin/openrc shutdown
+::shutdown:/usr/libexec/cervino/boot-trial reboot
 EOF
 
 	# Alpine's gnome-shell (50) is newer than its gnome-session and GDM (48), and
@@ -550,15 +563,16 @@ EOF
 	# /var/roothome). update-alpine makes a new version from a snapshot of the
 	# running one and upgrades that, then stages it; at shutdown the
 	# cervino-atomic service brings the /etc changes made since into it and
-	# makes it the one to boot. Limine boots the versions from the FAT boot
-	# partition, mounted on /boot/efi, which holds a copy of each one's kernel,
-	# initramfs and CPU microcode, since Limine cannot read an encrypted
-	# volume. update-boot keeps that partition in step with the volume: the
-	# kernel hook below runs it after building an initramfs, the package
-	# trigger when a package changes /boot (microcode) or Limine, and the
-	# service after switching. Each version's kernel command line, but for the
-	# subvolume to mount, is its /etc/kernel/cmdline, which only atomic
-	# installs have. These all share atomic.sh.
+	# makes it the one to boot, once on trial first. The firmware starts the
+	# versions from the FAT boot partition (on a PC, UEFI's, mounted on
+	# /boot/efi), which holds each one's kernel, initramfs and CPU microcode,
+	# as the firmware cannot read an encrypted volume. update-boot keeps that
+	# partition in step with the volume: the kernel hook below runs it after
+	# building an initramfs, the package trigger when a package changes /boot
+	# (microcode), and the service after switching. Each version's kernel
+	# command line, but for the subvolume to mount, is its
+	# /etc/kernel/cmdline, which only atomic installs have. These all share
+	# atomic.sh.
 	makefile root:root 0644 "$pkgdir"/usr/libexec/cervino/atomic.sh <<'EOF'
 # Sourced by update-boot, update-alpine and the cervino-atomic service.
 # The volume's top level holds roots/<id> and, while an update is staged,
@@ -608,6 +622,29 @@ atomic_ready() {
 		[ "$(btrfs property get -ts "$top/roots/$1" ro 2>/dev/null)" = ro=true ]
 }
 
+# atomic_pi [ROOT]: whether ROOT (default /) is a Raspberry Pi's system (the
+# firmware's files are in its /boot).
+atomic_pi() {
+	[ -f "${1%/}"/boot/start4.elf ] || [ -f "${1%/}"/boot/bootcode.bin ]
+}
+
+# atomic_trial [ROOT]: whether a new version of ROOT's system starts once
+# on trial, with the running one to fall back on (see
+# /usr/libexec/cervino/boot-trial): on a PC, which UEFI starts, and on a Pi
+# whose firmware has tryboot.
+atomic_trial() {
+	if atomic_pi "$1"; then
+		[ -e /proc/device-tree/chosen/bootloader/tryboot ]
+	else
+		[ -d /sys/firmware/efi ]
+	fi
+}
+
+# atomic_failed ID: whether version ID did not start when it was tried.
+atomic_failed() {
+	grep -qx "$1" "$top"/boot-failed 2>/dev/null
+}
+
 # atomic_delete ID: deletes version ID.
 atomic_delete() {
 	local r=$top/roots/$1
@@ -644,16 +681,26 @@ EOF
 	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/update-boot <<'EOF'
 #!/bin/sh
 # update-boot [ROOT]: brings the boot partition in step with the complete
-# versions of the system on ROOT's volume (ROOT defaults to /): copies each
-# one's kernel and initramfs (and CPU microcode, or on a Raspberry Pi device
-# trees and overlays) to it, removes those of versions that are gone, and
-# makes the newest version the one that starts. On a PC the boot partition
-# is mounted on ROOT/boot/efi and Limine boots it: it writes Limine's menu
-# (the newest version first, then the earlier ones) and updates Limine's own
-# files. On a Pi it is mounted on ROOT/boot/firmware and the firmware boots
-# it: it writes config.txt (os_prefix names the version's directory; the
-# earlier ones are listed in it) and updates the firmware. Does nothing but
-# on an atomic install.
+# versions of the system on ROOT's volume (ROOT defaults to /): puts each
+# one's kernel, initramfs, CPU microcode and command line on it, removes
+# those of versions that are gone, and chooses the version that starts.
+# That is the version on ROOT, which has started, and a newer one, if there
+# is one that did not fail to start before, is started once on trial (see
+# /usr/libexec/cervino/boot-trial); with UPDATE_BOOT_COMMIT=1 that one
+# starts from now on instead.
+# On a PC (UEFI only) the boot partition is the EFI system partition,
+# mounted on ROOT/boot/efi: each version is a unified kernel image (UKI)
+# there, cervino/<id>/linux.efi, with a UEFI boot entry of its own. The
+# version that starts is first in BootOrder, and also the firmware's
+# fallback, EFI/BOOT/BOOTX64.EFI, for when the boot entries are lost; the one
+# on trial is BootNext.
+# On a Raspberry Pi it is the firmware's, mounted on ROOT/boot/firmware: each
+# version's kernel, initramfs, device trees and overlays are in
+# cervino/<id>/, config.txt starts one (os_prefix) and lists the others, and
+# tryboot.txt, which the firmware reads instead for a restart with the
+# tryboot flag, starts the one on trial. A Pi whose firmware has no tryboot
+# starts the newest version.
+# Does nothing but on an atomic install.
 set -eu
 . /usr/libexec/cervino/atomic.sh
 root=${1:-/}
@@ -661,15 +708,18 @@ root=${root%/}
 atomic_detect "$root" || exit 0
 
 pi= esp=$root/boot/efi
-if [ -f "$root"/boot/start4.elf ] || [ -f "$root"/boot/bootcode.bin ]; then
+if atomic_pi "$root"; then
 	pi=1 esp=$root/boot/firmware
+elif [ ! -d /sys/firmware/efi ]; then
+	echo "update-boot: an atomic install starts only with UEFI, and this PC started without it" >&2
+	exit 1
 fi
 if ! mountpoint -q "$esp"; then
 	[ -z "$root" ] && mount "${esp#"$root"}" ||
 		{ echo "update-boot: the boot partition is not mounted on $esp" >&2; exit 1; }
 fi
 atomic_mount
-trap atomic_umount EXIT
+trap 'atomic_umount; rm -f "$top".cmdline' EXIT
 atomic_staged
 
 # copy FROM TO: replaces TO with FROM unless they are the same already. The
@@ -680,28 +730,42 @@ copy() {
 	cp "$1" "$2".new
 	mv "$2".new "$2"
 }
-
-# The complete versions, newest first, and their date.
-ids=
-for id in $(ls -r "$top"/roots); do
-	atomic_ready "$id" && [ -f "$top/roots/$id"/etc/kernel/cmdline ] && ids="$ids $id"
-done
+# replace NEW FILE: renames NEW to FILE, unless they are the same.
+replace() {
+	if cmp -s "$1" "$2"; then rm -f "$1"; else mv "$1" "$2"; fi
+}
 made() {
 	echo "$1" | sed -n 's/^\(....\)\(..\)\(..\)\(..\)\(..\).*/\1-\2-\3 \4:\5 UTC/p'
 }
+# pick_kernel ID: sets kernel to the kernel version ID starts with, empty if
+# it has none: on a Pi as Alpine's config.txt would pick it, a variant
+# (vmlinuz-rpi16k) over vmlinuz-rpi; on a PC lts over the others.
+pick_kernel() {
+	local k src=$top/roots/$1/boot
+	kernel=
+	if [ -n "$pi" ]; then
+		set -- "$src"/vmlinuz-rpi "$src"/vmlinuz-rpi*
+	else
+		set -- "$src"/vmlinuz-* "$src"/vmlinuz-lts
+	fi
+	for k; do
+		[ -f "$k" ] && [ -f "$src/initramfs-${k##*/vmlinuz-}" ] && kernel=${k##*/}
+	done
+	return 0
+}
 
+# Each complete version's boot files, newest first. They never change, but
+# for the command line (the version's /etc/kernel/cmdline and the subvolume
+# to mount), so they are made once.
 keep=
-if [ -n "$pi" ]; then
-	# A version's kernel as Alpine's config.txt would pick it: a variant
-	# (vmlinuz-rpi16k) over vmlinuz-rpi. Its boot files never change, so
-	# they are copied once, into a directory renamed into place.
-	conf=$esp/config.txt newest= earlier=
-	for id in $ids; do
-		src=$top/roots/$id/boot dst=$esp/cervino/$id kernel=
-		for k in "$src"/vmlinuz-rpi "$src"/vmlinuz-rpi*; do
-			[ -f "$k" ] && [ -f "$src/initramfs-${k##*/vmlinuz-}" ] && kernel=${k##*/}
-		done
-		[ -n "$kernel" ] || continue
+for id in $(ls -r "$top"/roots); do
+	atomic_ready "$id" && [ -f "$top/roots/$id"/etc/kernel/cmdline ] || continue
+	pick_kernel "$id"
+	[ -n "$kernel" ] || continue
+	src=$top/roots/$id/boot dst=$esp/cervino/$id
+	echo "$(cat "$top/roots/$id"/etc/kernel/cmdline) rootflags=subvol=/roots/$id" > "$top".cmdline
+	if [ -n "$pi" ]; then
+		# Into a directory renamed into place.
 		if [ ! -d "$dst" ]; then
 			rm -rf "$dst".new
 			mkdir -p "$dst".new
@@ -718,114 +782,177 @@ if [ -n "$pi" ]; then
 			echo "Device tree overlays for this version of the system." > "$dst"/overlays/README.new
 			mv "$dst"/overlays/README.new "$dst"/overlays/README
 		fi
-		echo "$(cat "$top/roots/$id"/etc/kernel/cmdline) rootflags=subvol=/roots/$id" > "$top".cmdline
 		copy "$top".cmdline "$dst"/cmdline.txt
-		rm -f "$top".cmdline
-		if [ -z "$newest" ]; then
-			newest=$id
-			{
-				echo "# Written by /usr/libexec/cervino/update-boot, which replaces any changes:"
-				echo "# put your own settings in usercfg.txt."
-				echo "# This version of the system, made $(made "$id"):"
-				echo "os_prefix=cervino/$id/"
-				echo "kernel=$kernel"
-				echo "initramfs initramfs-${kernel#vmlinuz-}"
-				echo "arm_64bit=1"
-				echo "include usercfg.txt"
-			} > "$conf".new
-		else
-			[ -n "$earlier" ] || {
-				echo "# Earlier versions: to start one, put it in os_prefix above (on another"
-				echo "# computer if this one does not start), or run update-alpine rollback."
-			} >> "$conf".new
-			earlier=1
-			echo "#os_prefix=cervino/$id/  (made $(made "$id"))" >> "$conf".new
-		fi
-		keep="$keep $id"
+	elif [ ! -f "$dst"/linux.efi ] || ! cmp -s "$top".cmdline "$dst"/cmdline; then
+		# The microcode goes first, uncompressed, as the kernel looks for it
+		# at the start of the initramfs.
+		set --
+		for ucode in amd-ucode.img intel-ucode.img; do
+			[ ! -f "$src/$ucode" ] || set -- "$@" --initrd="$src/$ucode"
+		done
+		mkdir -p "$dst"
+		ukify build --linux="$src/$kernel" "$@" --initrd="$src/initramfs-${kernel#vmlinuz-}" \
+			--cmdline=@"$top".cmdline --os-release=@"$top/roots/$id"/usr/lib/os-release \
+			--output="$dst"/linux.efi.new >/dev/null
+		sync
+		mv "$dst"/linux.efi.new "$dst"/linux.efi
+		copy "$top".cmdline "$dst"/cmdline
+	fi
+	keep="$keep $id"
+done
+rm -f "$top".cmdline
+[ -n "$keep" ] || { echo "update-boot: no kernel to boot on $atomic_dev" >&2; exit 1; }
+
+# Which version starts, and which one is on trial. Failed versions that are
+# gone are forgotten.
+if [ -f "$top"/boot-failed ]; then
+	ls "$top"/roots | grep -Fx -f "$top"/boot-failed > "$top"/boot-failed.new || :
+	if [ -s "$top"/boot-failed.new ]; then
+		mv "$top"/boot-failed.new "$top"/boot-failed
+	else
+		rm -f "$top"/boot-failed.new "$top"/boot-failed
+	fi
+fi
+set -- $keep
+start=$1 try=
+case " $keep " in *" $atomic_id "*)
+	if atomic_trial "$root"; then
+		start=$atomic_id
+		for id in $keep; do
+			[ "$id" -gt "$start" ] || break
+			atomic_failed "$id" || { try=$id; break; }
+		done
+		[ "${UPDATE_BOOT_COMMIT:-}" != 1 ] || [ -z "$try" ] || start=$try try=
+	fi
+esac
+
+if [ -n "$pi" ]; then
+	# config FILE ID: writes the config.txt that starts version ID to FILE.
+	config() {
+		pick_kernel "$2"
+		{
+			echo "# Written by /usr/libexec/cervino/update-boot, which replaces any changes:"
+			echo "# put your own settings in usercfg.txt."
+			echo "# This version of the system, made $(made "$2"):"
+			echo "os_prefix=cervino/$2/"
+			echo "kernel=$kernel"
+			echo "initramfs initramfs-${kernel#vmlinuz-}"
+			echo "arm_64bit=1"
+			echo "include usercfg.txt"
+		} > "$1"
+	}
+	conf=$esp/config.txt
+	config "$conf".new "$start"
+	others=
+	for id in $keep; do
+		[ "$id" != "$start" ] || continue
+		[ -n "$others" ] || {
+			echo "# Other versions: to start one, put it in os_prefix above (on another"
+			echo "# computer if this one does not start), or run update-alpine rollback."
+		} >> "$conf".new
+		others=1
+		note=
+		[ "$id" != "$try" ] || note=", tried once with tryboot.txt at the next restart"
+		! atomic_failed "$id" || note=", did not start"
+		echo "#os_prefix=cervino/$id/  (made $(made "$id")$note)" >> "$conf".new
 	done
-	[ -n "$keep" ] || { echo "update-boot: no kernel to boot on $atomic_dev" >&2; rm -f "$conf".new; exit 1; }
-	# The firmware, from the newest version.
-	for f in "$top/roots/$newest"/boot/bootcode.bin "$top/roots/$newest"/boot/start*.elf \
-		"$top/roots/$newest"/boot/fixup*.dat; do
+	if [ -n "$try" ]; then
+		config "$esp"/tryboot.txt.new "$try"
+		{
+			echo "# The firmware reads this file instead of config.txt when the machine is"
+			echo "# restarted to try this version (see /usr/libexec/cervino/boot-trial)."
+		} >> "$esp"/tryboot.txt.new
+	fi
+	# The firmware, from the version that starts.
+	for f in "$top/roots/$start"/boot/bootcode.bin "$top/roots/$start"/boot/start*.elf \
+		"$top/roots/$start"/boot/fixup*.dat; do
 		[ ! -f "$f" ] || copy "$f" "$esp/${f##*/}"
 	done
 	sync
-	mv "$conf".new "$conf"
-	for dir in "$esp"/cervino/*; do
-		case " $keep " in *" ${dir##*/} "*) ;; *) rm -rf "$dir" ;; esac
-	done
+	replace "$conf".new "$conf"
+	if [ -n "$try" ]; then
+		replace "$esp"/tryboot.txt.new "$esp"/tryboot.txt
+	else
+		rm -f "$esp"/tryboot.txt
+	fi
+else
+	copy "$esp/cervino/$start"/linux.efi "$esp"/EFI/BOOT/BOOTX64.EFI
 	sync
-	exit 0
+	# The boot entries, "Alpine Linux" and the date and time the version was
+	# made, on this partition (other disks' are left alone). entries prints
+	# each one's number and version, or "-" for the one that started Limine,
+	# which atomic installs used before.
+	part=$(awk -v m="$esp" '$2 == m { print $1 }' /proc/mounts)
+	part=$(basename "$(readlink -f "$part")")
+	disk=/dev/$(basename "$(readlink -f /sys/class/block/"$part"/..)")
+	partuuid=$(blkid -s PARTUUID -o value /dev/"$part" | tr 'A-F' 'a-f')
+	[ -n "$partuuid" ] || { echo "update-boot: no PARTUUID for /dev/$part" >&2; exit 1; }
+	entries() {
+		efibootmgr -v | awk -v uuid="$partuuid" '
+			/^Boot[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]/ && index(tolower($0), uuid) {
+				label = $0
+				sub(/^Boot[0-9A-Fa-f]+\*? /, "", label)
+				sub(/\t.*/, "", label)
+				if (label ~ /^Alpine Linux [0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+:[0-9]+$/) {
+					gsub(/[^0-9]/, "", label)
+					print substr($1, 5, 4), label
+				} else if (label == "Alpine Linux")
+					print substr($1, 5, 4), "-"
+			}'
+	}
+	efi() {
+		efibootmgr -q "$@" >/dev/null || { echo "update-boot: efibootmgr $* failed" >&2; exit 1; }
+	}
+	ents=$(entries)
+	for n in $(echo "$ents" | awk -v keep=" $keep " 'NF && !index(keep, " " $2 " ") { print $1 }'); do
+		efi -b "$n" -B
+	done
+	for id in $keep; do
+		echo "$ents" | grep -q " $id$" && continue
+		efi --create --disk "$disk" --part "$(cat /sys/class/block/"$part"/partition)" \
+			--loader "\\cervino\\$id\\linux.efi" \
+			--label "Alpine Linux $(echo "$id" | sed 's/^\(....\)\(..\)\(..\)\(..\)\(..\)\(..\)$/\1-\2-\3 \4:\5:\6/')"
+	done
+	ents=$(entries)
+	num() {
+		echo "$ents" | awk -v id="$1" '$2 == id { print $1; exit }'
+	}
+	# BootOrder: the version that starts, the others, newest first, then
+	# whatever else was there.
+	order=$(num "$start")
+	for id in $keep; do
+		[ "$id" = "$start" ] || order="$order,$(num "$id")"
+	done
+	for n in $(efibootmgr | sed -n 's/^BootOrder: //p' | tr , ' '); do
+		echo "$ents" | grep -qi "^$n " || order="$order,$n"
+	done
+	efi -o "$order"
+	next=$(efibootmgr | sed -n 's/^BootNext: //p')
+	if [ -n "$try" ]; then
+		efi -n "$(num "$try")"
+	elif [ -n "$next" ] && echo "$ents" | grep -qi "^$next "; then
+		efi -N
+	fi
+	# Limine's files and the kernels it started, from before.
+	rm -rf "$esp"/limine
+	for dir in "$esp"/cervino/*; do
+		rm -f "$dir"/vmlinuz-* "$dir"/initramfs-* "$dir"/*-ucode.img
+	done
 fi
 
-conf=$esp/limine/limine.conf
-mkdir -p "$esp"/limine
-# Serial output too where the kernel's console is a serial port.
-{
-	echo "# Written by /usr/libexec/cervino/update-boot, which replaces any changes."
-	echo "timeout: 3"
-	case " $(cat "$root"/etc/kernel/cmdline) " in *" console=ttyS"*) echo "serial: yes" ;; esac
-} > "$conf".new
-newest= earlier=
-for id in $ids; do
-	src=$top/roots/$id
-	cmdline="$(cat "$src"/etc/kernel/cmdline) rootflags=subvol=/roots/$id"
-	for kernel in "$src"/boot/vmlinuz-*; do
-		flavor=${kernel##*/vmlinuz-}
-		[ -f "$kernel" ] && [ -f "$src/boot/initramfs-$flavor" ] || continue
-		if [ -z "$newest" ] || [ "$newest" = "$id" ]; then
-			newest=$id
-			title="/Alpine Linux"
-		else
-			[ -n "$earlier" ] || printf '\n/Earlier versions\n' >> "$conf".new
-			earlier=1
-			title="//Alpine Linux, $(made "$id")"
-		fi
-		[ "$flavor" = lts ] || title="$title ($flavor)"
-		copy "$kernel" "$esp/cervino/$id/vmlinuz-$flavor"
-		{
-			case $title in //*) ;; *) echo ;; esac
-			echo "$title"
-			echo "    comment: Made $(made "$id")"
-			echo "    protocol: linux"
-			echo "    path: boot():/cervino/$id/vmlinuz-$flavor"
-			echo "    cmdline: $cmdline"
-		} >> "$conf".new
-		# The microcode goes first, uncompressed, as the kernel looks for it
-		# at the start of the initramfs.
-		for ucode in amd-ucode.img intel-ucode.img; do
-			[ -f "$src/boot/$ucode" ] || continue
-			copy "$src/boot/$ucode" "$esp/cervino/$id/$ucode"
-			echo "    module_path: boot():/cervino/$id/$ucode" >> "$conf".new
-		done
-		copy "$src/boot/initramfs-$flavor" "$esp/cervino/$id/initramfs-$flavor"
-		echo "    module_path: boot():/cervino/$id/initramfs-$flavor" >> "$conf".new
-		keep="$keep $id"
-	done
-done
-[ -n "$keep" ] || { echo "update-boot: no kernel to boot on $atomic_dev" >&2; rm -f "$conf".new; exit 1; }
-sync
-mv "$conf".new "$conf"
+# For the next start: the version on trial, on the volume to tell whether it
+# started, and in /run for update-alpine list and the shutdown.
+if [ -z "$root" ]; then
+	if [ -n "$try" ]; then
+		echo "$try" > "$top"/boot-trying
+		echo "$try" > /run/cervino-trial
+	else
+		rm -f "$top"/boot-trying /run/cervino-trial
+	fi
+fi
 for dir in "$esp"/cervino/*; do
 	case " $keep " in *" ${dir##*/} "*) ;; *) rm -rf "$dir" ;; esac
 done
-
-# Limine: the UEFI program, where firmware looks for a removable disk's, and
-# the BIOS one, whose first stages limine bios-install writes to the disk's
-# boot sector and BIOS boot partition; they must match the copy here.
-share=$root/usr/share/limine
-[ ! -f "$share"/BOOTX64.EFI ] || copy "$share"/BOOTX64.EFI "$esp"/EFI/BOOT/BOOTX64.EFI
-if [ -f "$share"/limine-bios.sys ] && ! cmp -s "$share"/limine-bios.sys "$esp"/limine/limine-bios.sys; then
-	part=$(awk -v m="$esp" '$2 == m { print $1 }' /proc/mounts)
-	part=$(basename "$(readlink -f "$part")")
-	disk=$(basename "$(readlink -f /sys/class/block/"$part"/..)")
-	bios=$(sfdisk -d /dev/"$disk" | awk -F'[ :]' '/type=21686148-6449-6E6F-744E-656564454649/ { print $1 }')
-	if [ -n "$bios" ]; then
-		copy "$share"/limine-bios.sys "$esp"/limine/limine-bios.sys
-		sync
-		limine bios-install --quiet /dev/"$disk" "$(cat /sys/class/block/"${bios#/dev/}"/partition)"
-	fi
-fi
 sync
 EOF
 	# kernel-hooks runs this when a kernel, or a package with modules for one,
@@ -922,8 +1049,91 @@ depend() {
 
 start() {
 	/usr/libexec/cervino/atomic-finalize
+	/usr/libexec/cervino/boot-trial shutdown
 	return 0
 }
+EOF
+
+	# A new version starts once on trial, with the running one to fall back
+	# on, in place of a boot menu.
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/boot-trial <<'EOF'
+#!/bin/sh
+# boot-trial boot|shutdown|reboot: a new version of an atomic install starts
+# once on trial, with the version that last started to fall back on.
+# update-boot keeps the firmware starting the running version (it started),
+# and starting the newest one once, if it is newer and did not fail to start
+# before: on a PC as UEFI's BootNext, which the firmware clears as it starts
+# it, on a Raspberry Pi as tryboot.txt, which the firmware reads instead of
+# config.txt at a restart with the tryboot flag. It notes that version in
+# boot-trying on the volume and in /run/cervino-trial. Once the default
+# runlevel has started (boot, run by init), a version on trial that is
+# running has started, and update-boot makes it the one that starts; one
+# that is not has failed (the machine was switched off and on, and started
+# the version before), and is noted in boot-failed on the volume, and not
+# tried again.
+# The Pi's kernel passes the tryboot flag to the firmware only with a
+# restart's argument (reboot "0 tryboot"), which busybox init cannot give:
+# after the shutdown runlevel, with the file systems read-only, init runs
+# reboot, which restarts so. Init does not tell it whether it is to restart
+# or power off, so elogind's shutdown hook and the reboot wrapper note a
+# restart in /run/cervino-reboot. The firmware cannot try a version after a
+# power off, so then (shutdown, run by the cervino-atomic service) the new
+# version is made the one that starts, with nothing to fall back on.
+. /usr/libexec/cervino/atomic.sh
+case $1 in
+boot)
+	atomic_detect && atomic_trial || exit 0
+	exec 9> /run/cervino-update.lock
+	flock 9
+	atomic_mount || exit 1
+	if [ -f "$top"/boot-trying ]; then
+		read -r trying < "$top"/boot-trying
+		if [ "$trying" != "$atomic_id" ]; then
+			echo "$trying" >> "$top"/boot-failed
+			logger -t cervino "The updated system ($trying) did not start: $atomic_id started instead"
+		fi
+		rm -f "$top"/boot-trying
+		sync
+	fi
+	atomic_umount
+	/usr/libexec/cervino/update-boot 2>&1 | logger -t update-boot
+	;;
+shutdown)
+	[ -f /run/cervino-trial ] && atomic_detect && atomic_pi && atomic_trial || exit 0
+	# Restarting (and /etc/inittab, unless changed and kept from before,
+	# has reboot): tried.
+	[ -f /run/cervino-reboot ] &&
+		grep -q '^::shutdown:/usr/libexec/cervino/boot-trial reboot$' /etc/inittab && exit 0
+	exec 9> /run/cervino-update.lock
+	flock 9
+	UPDATE_BOOT_COMMIT=1 /usr/libexec/cervino/update-boot
+	;;
+reboot)
+	[ -f /run/cervino-reboot ] && [ -f /run/cervino-trial ] && atomic_pi || exit 0
+	echo "Restarting to try the updated system"
+	sync
+	/usr/libexec/cervino/tryboot
+	;;
+esac
+exit 0
+EOF
+	# The Pi's restart with the tryboot flag, for boot-trial reboot.
+	if [ "$TARGET_ARCH" = aarch64 ]; then
+		install -Dm755 "$srcdir"/tryboot "$pkgdir"/usr/libexec/cervino/tryboot
+	fi
+	# elogind runs this before it restarts or switches off the machine, with
+	# which as its argument.
+	makefile root:root 0755 "$pkgdir"/usr/libexec/elogind/system-shutdown/cervino-reboot <<'EOF'
+#!/bin/sh
+# Notes a restart for /usr/libexec/cervino/boot-trial.
+[ "$1" != reboot ] || : > /run/cervino-reboot
+EOF
+	# reboot, found before busybox's /sbin/reboot in PATH: the same, noting
+	# the restart for /usr/libexec/cervino/boot-trial.
+	makefile root:root 0755 "$pkgdir"/usr/sbin/reboot <<'EOF'
+#!/bin/sh
+: > /run/cervino-reboot 2>/dev/null
+exec /sbin/reboot "$@"
 EOF
 
 	# apk on an atomic install: apk cannot change the read-only system, so
@@ -1097,7 +1307,16 @@ finish() {
 		echo "The system goes back to the version of $(made "$src") when it next starts."
 	else
 		echo "The update is ready: the system starts with it next time. The version"
-		echo "running now stays in the boot menu, under \"Earlier versions\"."
+		if ! atomic_trial; then
+			echo "running now is kept: update-alpine rollback goes back to it."
+		elif atomic_pi; then
+			echo "running now is kept, and starts again if the update does not (switch the"
+			echo "Pi off and on then). Switching the Pi off, rather than restarting it,"
+			echo "starts the update with nothing to fall back on."
+		else
+			echo "running now is kept, and starts again if the update does not (switch the"
+			echo "computer off and on then)."
+		fi
 	fi
 	ask "Restart now?" && reboot
 	exit 0
@@ -1109,13 +1328,18 @@ made() {
 
 # update-alpine list: each version's id, when it was made, and which is
 # running and which the system starts with next time: the staged update, or
-# else the newest complete version (the default in the boot menu).
+# else the version on trial, else the running one (or where there are no
+# trials, a Pi without tryboot, the newest complete version).
 if [ "$cmd" = list ]; then
 	atomic_mount || die "could not mount $atomic_dev"
 	trap atomic_umount EXIT
 	atomic_staged
 	next=
 	[ -z "$staged_id" ] || [ "$staged_from" != "$atomic_id" ] || next=$staged_id
+	if [ -z "$next" ] && atomic_trial; then
+		next=$atomic_id
+		[ ! -f /run/cervino-trial ] || read -r next < /run/cervino-trial
+	fi
 	for id in $(ls -r "$top"/roots); do
 		[ -n "$next" ] || ! atomic_ready "$id" || next=$id
 		note=
@@ -1126,6 +1350,8 @@ if [ "$cmd" = list ]; then
 			note="update"
 		elif ! atomic_ready "$id"; then
 			note="incomplete: an update being made, or one that was stopped"
+		elif atomic_failed "$id"; then
+			note="${note:+$note, }did not start when tried"
 		fi
 		[ "$id" != "$next" ] || note="${note:+$note, }starts next time"
 		printf '%s  %s  %s\n' "$id" "$(made "$id")" "$note"

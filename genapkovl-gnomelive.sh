@@ -340,10 +340,9 @@ EOF
 # disks or a mounted root, which go to Alpine's setup-disk; sys chosen at its
 # question goes there too once the disk and encryption are asked). As in Fedora
 # Silverblue, an atomic install's system is read-only, and update-alpine
-# updates it as a whole (see cervino-desktop's atomic.sh). On a PC it goes
-# to one disk: GPT with a BIOS boot
-# partition, a FAT boot partition (the EFI system partition, and Limine's for
-# BIOS too, so the disk boots either way), swap sized as Alpine's setup-disk
+# updates it as a whole (see cervino-desktop's atomic.sh). On a PC, only one
+# started with UEFI, it goes to one disk: GPT with the EFI system partition,
+# swap sized as Alpine's setup-disk
 # sizes it (or by -s; on an encrypted disk, dmcrypt opens it with a random
 # key at each boot) and a btrfs volume, on LUKS if the disk is to be
 # encrypted. The volume holds the system in roots/<id> (the install's date
@@ -354,13 +353,14 @@ EOF
 # subvolume), turns mkinitfs's trigger off (the kernel hook builds the
 # initramfs instead, before copying it), removes GNOME Software's apk
 # plugin, moves /root to /var/roothome, makes the system read-only and runs
-# cervino-desktop's update-boot, which puts the kernel on the boot partition
-# with Limine and its menu. On UEFI it also adds a boot entry for Limine.
+# cervino-desktop's update-boot, which puts the kernel, initramfs and
+# command line on the boot partition as a unified kernel image, with a UEFI
+# boot entry.
 # On a Raspberry Pi the disk is MBR (the firmware starts from its first
 # partition), with the firmware's FAT partition first, mounted on
 # /boot/firmware, swap only with -s, as Alpine's setup-disk does on the Pi,
 # and then the btrfs volume; update-boot puts each version's boot files in
-# its own directory there, and config.txt starts the newest (os_prefix). The
+# its own directory there, and config.txt starts one (os_prefix). The
 # disk the live system started from can be installed to once its modloop is
 # copied to RAM, as Alpine's setup-disk offers.
 makefile root:root 0755 "$tmp"/usr/local/sbin/setup-disk <<'EOF'
@@ -393,6 +393,17 @@ case $disks in *" "*) stock=1 ;; esac
 [ -z "$stock" ] || exec /usr/sbin/setup-disk "$@"
 [ "$mode" != none ] && [ "$disks" != none ] || exit 0
 asked=
+# An atomic install on a PC is started by UEFI, as a boot entry for each
+# version (see cervino-desktop's update-boot); without it, a sys install.
+if [ -z "$pi" ] && [ ! -d /sys/firmware/efi ]; then
+	[ "$mode" != atomic ] || die "an atomic install needs a PC started with UEFI"
+	if [ -z "$mode" ]; then
+		echo
+		echo "This PC started without UEFI, which the atomic install needs, so this is"
+		echo "Alpine's standard install (sys), updated in place."
+		mode=sys asked=1
+	fi
+fi
 if [ -z "$mode" ]; then
 	echo
 	echo "How would you like to install the system?"
@@ -502,9 +513,8 @@ if [ -n "$crypt" ]; then
 fi
 [ -z "$modefile" ] || echo sys > "$modefile"
 
-# The boot partition: the EFI system partition, which Limine boots from on
-# UEFI and BIOS alike, or on the Pi the firmware's, mounted on /boot/firmware
-# as on Raspberry Pi OS.
+# The boot partition: the EFI system partition, or on the Pi the firmware's,
+# mounted on /boot/firmware as on Raspberry Pi OS.
 bootdir=/boot/efi
 [ -z "$pi" ] || bootdir=/boot/firmware
 mnt=/mnt
@@ -540,7 +550,6 @@ if [ -n "$pi" ]; then
 else
 	{
 		echo 'label: gpt'
-		echo 'size=1MiB, type=21686148-6449-6E6F-744E-656564454649, name="BIOS boot"'
 		echo 'size=1GiB, type=U, name="EFI system"'
 		[ "$swap" = 0 ] || echo "size=${swap}MiB, type=S, name=\"Swap\""
 		echo 'type=L, name="Alpine Linux"'
@@ -560,8 +569,7 @@ part() {
 	return 1
 }
 n=2
-[ -n "$pi" ] || n=3
-espn=$((n - 1))
+espn=1
 if [ "$swap" != 0 ]; then
 	swappart=$(part $n) || die "the partitions of $disk did not show up"
 	n=$((n + 1))
@@ -655,14 +663,14 @@ btrfs property set -ts "$mnt" ro true || die "could not make the system read-onl
 # The Pi's own settings (the lbu shim put them in the system's /boot).
 [ -z "$pi" ] || [ ! -f "$mnt"/boot/usercfg.txt ] || cp "$mnt"/boot/usercfg.txt "$mnt$bootdir"/ ||
 	die "could not write usercfg.txt"
-/usr/libexec/cervino/update-boot "$mnt" || die "could not install the boot loader"
-
-if [ -z "$pi" ] && [ -d /sys/firmware/efi ]; then
-	efibootmgr | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\{0,1\} Alpine Linux\(	.*\)\{0,1\}$/\1/p' |
-		while read -r n; do efibootmgr -q -b "$n" -B; done
-	efibootmgr -q --create --disk "$disk" --part 2 --loader '\EFI\BOOT\BOOTX64.EFI' --label 'Alpine Linux' ||
-		echo "No UEFI boot entry was added; the firmware should still find Limine on $disk." >&2
-fi
+# Boot entries of an install that was on a partition gone now (this disk's,
+# before it was erased).
+[ -n "$pi" ] || efibootmgr -v |
+	sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\{0,1\} Alpine Linux[ 0-9:-]*	HD([0-9]*,GPT,\([0-9A-Fa-f-]*\),.*/\1 \2/p' |
+	while read -r n uuid; do
+		blkid -t PARTUUID="$uuid" >/dev/null 2>&1 || efibootmgr -q -b "$n" -B
+	done
+/usr/libexec/cervino/update-boot "$mnt" || die "could not make the system bootable"
 EOF
 
 rc_add devfs sysinit

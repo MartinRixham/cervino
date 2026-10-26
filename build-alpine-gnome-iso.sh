@@ -148,8 +148,10 @@ container_main() {
 	printf '%s\n' "$MIRROR/$ALPINE_BRANCH/main" "$MIRROR/$ALPINE_BRANCH/community" \
 		> /etc/apk/repositories
 	apk update --quiet
+	# clang and lld cross-compile cervino-desktop's tryboot for the Pi.
 	apk add --quiet alpine-sdk alpine-conf apk-tools busybox fakeroot \
-		syslinux xorriso squashfs-tools mtools dosfstools sfdisk grub grub-efi git
+		syslinux xorriso squashfs-tools mtools dosfstools sfdisk grub grub-efi git \
+		clang lld
 
 	# mkimage must run unprivileged: apk 3 rejects its --no-chown as root.
 	adduser -D build
@@ -264,10 +266,12 @@ builder_main() {
 	# cervino-desktop's hook after a kernel upgrade.
 	local atomic="btrfs-progs cryptsetup cryptsetup-openrc blkid dosfstools sfdisk kernel-hooks"
 	case $TARGET in
-	# CPU microcode updates: the boot loader loads the images in /boot before
-	# the initramfs. Limine boots atomic installs, on UEFI and BIOS.
+	# CPU microcode updates: the images in /boot go before the initramfs (in
+	# a sys install's boot loader, an atomic install's UKI). UEFI starts
+	# atomic installs, each version a unified kernel image (made by ukify)
+	# with a boot entry of its own.
 	iso) features="$features intel-media-driver libva-intel-driver amd-ucode intel-ucode
-		$atomic efibootmgr limine-tool limine-bios limine-efi-x86_64" ;;
+		$atomic efibootmgr ukify" ;;
 	# vcgencmd, pinctrl etc. raspberrypi-utils-raspinfo needs a sudo-virt
 	# other than sudo itself, which mkimage's fetch would otherwise pick.
 	# The firmware's package, so that each version of an atomic install
@@ -324,7 +328,8 @@ builder_main() {
 	printf '%s=%s\n' PKGVER "$(shquote "$PKGVER")" \
 		DEPENDS "$(shquote "$(echo $features)")" \
 		PUBKEY "$(shquote "$(basename "$pubkey")")" \
-		REPO "$(shquote "${APK_REPO:+$APK_REPO/$ALPINE_BRANCH}")" > "$pkgsrc"/cervino-desktop.conf
+		REPO "$(shquote "${APK_REPO:+$APK_REPO/$ALPINE_BRANCH}")" \
+		TARGET_ARCH "$(shquote "$ARCH")" > "$pkgsrc"/cervino-desktop.conf
 	(cd "$pkgsrc" && abuild -d -P /work/packages) || die "could not build cervino-desktop"
 	cp /work/packages/cervino/*/cervino-desktop-*.apk "$pkgrepo/$ARCH"/
 	mkdir -p /work/pkgout/"$ALPINE_BRANCH/$ARCH"

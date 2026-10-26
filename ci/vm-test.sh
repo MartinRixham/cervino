@@ -12,12 +12,13 @@
 #               test/features.sh in that desktop session and
 #               test/apparmor.sh as root, then logs out and checks
 #               that GDM's login screen comes back
-#   3. upgrade: (atomic installs only) three more boots, in which
+#   3. upgrade: (atomic installs only) four more boots, in which
 #               ci/guest/upgrade.sh has
 #               update-alpine stage an update of the atomic install,
 #               checks that the system switched to it at the restart,
-#               that a rollback goes back, and that update-alpine
-#               list and delete work
+#               that a rollback goes back, that update-alpine
+#               list and delete work, and that an update that does
+#               not start falls back to the version before
 #
 # Exits non-zero if either stage fails or any test fails. The serial console
 # output of each boot is streamed to stdout and kept in $WORKDIR/<stage>.log.
@@ -25,11 +26,18 @@
 # The guest gets test/ and ci/guest/ as a tar archive on a
 # second virtual disk, /dev/vdb.
 #
+# An atomic install needs UEFI, so its VM has OVMF, with variables kept
+# across its boots in $WORKDIR/efivars.fd (the boot entries the install
+# makes, the one-time BootNext of an update); a sys install's has the
+# default BIOS.
+#
 # Environment overrides:
 #   INSTALL_MODE  atomic or sys, setup-disk's -m (default: atomic)
 #   WORKDIR     disk image, logs etc. (default: ./vm-test)
 #   VM_MEMORY   guest RAM; the live system runs from RAM (default: 8G)
 #   VM_CPUS     guest CPUs (default: all host CPUs)
+#   OVMF_CODE, OVMF_VARS  OVMF's firmware and variable store templates
+#               (default: found in /usr/share)
 
 set -euo pipefail
 export LC_ALL=C
@@ -77,7 +85,7 @@ vm_start() {
 		-audiodev none,id=snd0 -device intel-hda -device hda-output,audiodev=snd0 \
 		-device virtio-serial -chardev null,id=vdagent \
 		-device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
-		"$@" &
+		"${firmware[@]}" "$@" &
 	qemu_pid=$!
 	tee "$log" < "$WORKDIR"/serial.out &
 	tee_pid=$!
@@ -141,15 +149,34 @@ command -v qemu-system-x86_64 >/dev/null || die "need qemu-system-x86_64"
 command -v xorriso >/dev/null || die "need xorriso"
 [[ -r /dev/kvm && -w /dev/kvm ]] || die "need access to /dev/kvm"
 
+firmware=()
+if [[ $INSTALL_MODE == atomic ]]; then
+	for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd \
+		/usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/qemu/ovmf-x86_64-code.bin; do
+		[[ -n ${OVMF_CODE:-} ]] || [[ ! -f $f ]] || OVMF_CODE=$f
+	done
+	[[ -f ${OVMF_CODE:-} ]] || die "need OVMF (the ovmf package), or OVMF_CODE and OVMF_VARS"
+	OVMF_VARS=${OVMF_VARS:-${OVMF_CODE/CODE/VARS}}
+	OVMF_VARS=${OVMF_VARS/-code./-vars.}
+	[[ -f $OVMF_VARS ]] || die "no OVMF variable store next to $OVMF_CODE; set OVMF_VARS"
+fi
+
 mkdir -p "$WORKDIR"
-rm -f "$WORKDIR"/*.log "$WORKDIR"/disk.qcow2
+rm -f "$WORKDIR"/*.log "$WORKDIR"/disk.qcow2 "$WORKDIR"/efivars.fd
+if [[ $INSTALL_MODE == atomic ]]; then
+	cp "$OVMF_VARS" "$WORKDIR"/efivars.fd
+	chmod u+w "$WORKDIR"/efivars.fd
+	firmware=(-drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE"
+		-drive if=pflash,format=raw,file="$WORKDIR"/efivars.fd)
+fi
 qemu-img create -q -f qcow2 "$WORKDIR"/disk.qcow2 32G
 tar -C "$REPO" -cf "$WORKDIR"/share.tar --owner=0 --group=0 \
 	test ci/guest
 
 # The ISO's boot loaders have no serial console, so boot its kernel and
-# initramfs directly, with its own command line plus a serial console; the
-# initramfs still finds and boots from the ISO in the CD drive as usual.
+# initramfs directly (through OVMF, as UEFI would, for an atomic install),
+# with its own command line plus a serial console; the initramfs still finds
+# and boots from the ISO in the CD drive as usual.
 xorriso -osirrox on -indev "$ISO" \
 	-extract /boot/vmlinuz-lts "$WORKDIR"/vmlinuz-lts \
 	-extract /boot/initramfs-lts "$WORKDIR"/initramfs-lts \
@@ -177,8 +204,8 @@ echo ">>> All OS feature tests passed"
 [[ $INSTALL_MODE == atomic ]] || exit 0
 
 # Updating the atomic install: an update is staged, the shutdown switches to
-# it, and a rollback goes back.
-for step in stage check rollback; do
+# it, a rollback goes back, and an update that does not start is dropped.
+for step in stage check rollback fallback; do
 	vm_start "upgrade-$step"
 	vm_run tester "doas sh -c '$unpack_share && /tmp/ci/ci/guest/upgrade.sh $step'" 1200
 	vm_stop

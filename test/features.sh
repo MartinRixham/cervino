@@ -654,10 +654,12 @@ t_firmware() {
 
 t_cpu_microcode() {
     # The boot loader loads the CPU vendor's microcode image before the
-    # initramfs. (A VM's CPU takes no updates, so check the configuration
-    # rather than the kernel log.) The live ISO's boot configuration is on
-    # its boot medium.
-    local vendor img f
+    # initramfs, or on an atomic install it is in the version's unified
+    # kernel image, before the initramfs, as an uncompressed cpio archive.
+    # (A VM's CPU takes no updates, so check the configuration rather than
+    # the kernel log.) The live ISO's boot configuration is on its boot
+    # medium.
+    local vendor img f id
     vendor=$(awk -F': ' '$1 ~ /^vendor_id/ { print $2; exit }' /proc/cpuinfo)
     case $vendor in
         GenuineIntel) img=intel-ucode.img ;;
@@ -665,8 +667,14 @@ t_cpu_microcode() {
         *) echo "no microcode updates for ${vendor:-this} CPU ($(uname -m))"; return 2 ;;
     esac
     [[ -f /boot/$img ]] || { echo "no /boot/$img"; return 1; }
-    for f in /boot/grub/grub.cfg /boot/extlinux.conf /boot/limine/limine.conf \
-        /boot/efi/limine/limine.conf /boot/efi/limine.conf \
+    id=$(sed -n 's|.*rootflags=subvol=/roots/\([0-9]*\).*|\1|p' /proc/cmdline)
+    f=/boot/efi/cervino/$id/linux.efi
+    if [[ -n $id && -r $f ]]; then
+        grep -qaF "kernel/x86/microcode/$vendor" "$f" && return 0
+        echo "$f has no $img"
+        return 1
+    fi
+    for f in /boot/grub/grub.cfg /boot/extlinux.conf \
         /media/*/boot/syslinux/syslinux.cfg /media/*/boot/grub/grub.cfg; do
         [[ -r $f ]] && grep -qF "$img" "$f" && return 0
     done
