@@ -500,14 +500,17 @@ t_wifi_region() {
     have iw || { echo "iw is not installed"; return 1; }
     out=$(as_root bash -c "$(declare -f regdom_probe); regdom_probe" 2>/dev/null) ||
         { echo "cannot set up a simulated radio (mac80211_hwsim) or set the time zone (timedate1)"; return 1; }
-    local hotplug changed reset
+    local hotplug changed reset why=()
     read -r hotplug changed reset <<<"$out"
     [[ $hotplug == NO ]] ||
-        { echo "a radio appeared with the time zone Europe/Oslo, but the region is $hotplug, not NO"; return 1; }
+        why+=("a radio appeared with the time zone Europe/Oslo, but the region is $hotplug, not NO")
     [[ $changed == DE ]] ||
-        { echo "the time zone changed to Europe/Berlin, but the region is $changed, not DE"; return 1; }
+        why+=("the time zone changed to Europe/Berlin, but the region is $changed, not DE")
     [[ $reset == 00 ]] ||
-        { echo "the time zone changed to UTC, but the region is $reset, not 00 (world)"; return 1; }
+        why+=("the time zone changed to UTC, but the region is $reset, not 00 (world)")
+    ((${#why[@]} == 0)) && return 0
+    (IFS=';'; echo "${why[*]}")
+    return 1
 }
 
 # A network service nobody asked for is something more to attack: sshd is

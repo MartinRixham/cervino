@@ -38,8 +38,6 @@ profile udevd /sbin/udevd flags=(attach_disconnected) {
   /etc/udev/{,**} r,
   /usr/lib/udev/{,**} r,
   /etc/modprobe.d/{,**} r,
-  # The time zone, for /usr/libexec/cervino/wifi-region (see wifi-region)
-  /etc/timezone r,
   /usr/lib/modprobe.d/{,**} r,
   # On the live system /lib/modules is a symlink into the modloop.
   /{usr/,}lib/modules/** r,
@@ -61,6 +59,10 @@ profile udevd /sbin/udevd flags=(attach_disconnected) {
   # under this profile.
   /usr/lib/udev/** ix,
   /usr/libexec/** ix,
+  # The Wi-Fi region's helper (see wifi-region), a script its shell reads,
+  # and the time zone it reads
+  /usr/libexec/cervino/wifi-region r,
+  /etc/timezone r,
   /{usr/,}{s,}bin/* ix,
 
   include if exists <local/udevd>

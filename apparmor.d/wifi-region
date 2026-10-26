@@ -11,6 +11,7 @@ include <tunables/global>
 
 profile wifi-region flags=(attach_disconnected) {
   include <abstractions/base>
+  include <abstractions/nameservice>
 
   # Signals from root's shells and what they run (kill, rc-service, ...),
   # which Alpine's busybox profile, in unconfined mode, labels busybox
@@ -19,6 +20,9 @@ profile wifi-region flags=(attach_disconnected) {
   # Setting the region (nl80211, a generic netlink family)
   capability net_admin,
   network netlink raw,
+  # iw looks its first argument (reg) up as a network interface, and the
+  # kernel would load a module of that name
+  deny capability sys_module,
 
   /bin/busybox mrix,
   /usr/libexec/cervino/wifi-region rix,
