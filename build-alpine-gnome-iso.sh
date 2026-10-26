@@ -137,6 +137,8 @@ host_main() {
 		--security-opt label=disable \
 		-v "$(realpath "$0")":/build.sh:ro \
 		-v "$here"/genapkovl-gnomelive.sh:/genapkovl-gnomelive.sh:ro \
+		-v "$here"/live:/live:ro \
+		-v "$here"/mkimg.gnomelive.sh:/mkimg.gnomelive.sh:ro \
 		-v "$here"/initramfs-live.patch:/initramfs-live.patch:ro \
 		-v "$here"/cervino-desktop:/cervino-desktop:ro \
 		-v "$here"/apparmor.d:/apparmor.d:ro \
@@ -328,7 +330,7 @@ builder_main() {
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium gst-libav
 		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal
 		cronie cronie-openrc earlyoom earlyoom-openrc iw wireless-regdb"
-	# The installer's setup-disk shim (see genapkovl-gnomelive.sh) offers an
+	# The installer's setup-disk shim (see live/setup-disk) offers an
 	# atomic install: the system on a btrfs volume, optionally encrypted,
 	# booted from a FAT boot partition. Installed systems need the same tools
 	# to keep that partition up to date, and kernel-hooks to run
@@ -463,91 +465,23 @@ builder_main() {
 	fi
 
 	# --- mkimage profile -----------------------------------------------------
-	if [[ $TARGET == iso ]]; then
-		cat > aports/scripts/mkimg.gnomelive.sh <<-EOF
-		profile_gnomelive() {
-			profile_standard
-			profile_abbrev="gnome"
-			title="GNOME Live"
-			desc="Alpine standard plus GNOME, booting straight into GDM."
-			arch="x86_64"
-			kernel_cmdline="\$kernel_cmdline $kernel_opts"
-			# CPU microcode, loaded by the ISO's boot loaders (as in
-			# profile_extended)
-			boot_addons="amd-ucode intel-ucode"
-			initrd_ucode="/boot/amd-ucode.img /boot/intel-ucode.img"
-			apks="$(echo $disc_apks)"
-			apkovl="aports/scripts/genapkovl-gnomelive.sh"
-			hostname="alpine"
-		}
-		EOF
-	else
+	# mkimg.gnomelive.sh reads the build settings from the .conf next to it.
+	printf '%s=%s\n' gnomelive_target "$(shquote "$TARGET")" \
+		gnomelive_kernel_opts "$(shquote "$kernel_opts")" \
+		gnomelive_apks "$(shquote "$(echo $disc_apks)")" > aports/scripts/mkimg.gnomelive.conf
+	install -m 0644 /mkimg.gnomelive.sh aports/scripts/mkimg.gnomelive.sh
+	if [[ $TARGET == rpi ]]; then
 		# The Pi's config.txt includes usercfg.txt, for settings of our own:
 		# GNOME needs the GPU's KMS driver, which the firmware leaves off.
 		# The apkovl takes it along for the lbu shim to put on installs.
 		printf '%s\n' "# Load the GPU's KMS driver, which GNOME needs." \
 			dtoverlay=vc4-kms-v3d > aports/scripts/usercfg.txt
-		# Alpine's Pi image: one FAT partition with the firmware, kernel,
-		# apks and apkovl. section_rpi_config only builds the Pi's boot
-		# files (config.txt, cmdline.txt, firmware) for hostname rpi.
-		cat > aports/scripts/mkimg.gnomelive.sh <<-EOF
-		profile_gnomelive() {
-			profile_rpiimg
-			image_name="alpine-gnomelive"
-			title="GNOME Live"
-			desc="Alpine for the Raspberry Pi plus GNOME, booting straight into GDM."
-			arch="aarch64"
-			kernel_cmdline="\$kernel_cmdline $kernel_opts"
-			apks="$(echo $disc_apks)"
-			output_format="gnomelive"
-			apkovl="aports/scripts/genapkovl-gnomelive.sh"
-			hostname="rpi"
-		}
-
-		section_gnomelive_usercfg() {
-			[ "\$PROFILE" = gnomelive ] || return 0
-			build_section gnomelive_usercfg \$(checksum < /work/aports/scripts/usercfg.txt)
-		}
-
-		build_gnomelive_usercfg() {
-			cp /work/aports/scripts/usercfg.txt "\$DESTDIR"/
-		}
-
-		# rpiimg's create_image_imggz makes a FAT16 partition only 8 MB bigger
-		# than the files, which the slack in its 32 KB clusters fills with this
-		# many files. FAT32 with 4 KB clusters (which the Pi boots from too),
-		# a tenth and 64 MB bigger, leaves room for the FAT and some free space.
-		create_image_gnomelive() {
-			sync "\$DESTDIR"
-			local imgfile="\$OUTDIR/\${output_filename%.gz}"
-			local size=\$(du -L -k -s "\$DESTDIR" | awk '{ print int(\$1 * 1.1 / 1024) + 64 }')
-			rm -f "\$imgfile"
-			truncate -s \$((size + 1))M "\$imgfile"
-			echo 'start=2048, type=c, bootable' | sfdisk "\$imgfile"
-			mkfs.vfat -n PIBOOT -F 32 -s 8 --offset 2048 "\$imgfile"
-			mcopy -s -i "\$imgfile"@@2048s "\$DESTDIR"/* "\$DESTDIR"/.alpine-release ::
-			echo "Compressing \$imgfile..."
-			pigz -f -9 "\$imgfile" || gzip -f -9 "\$imgfile"
-		}
-		EOF
 	fi
-	# The root file system image (built by then), the live system's root.
-	cat >> aports/scripts/mkimg.gnomelive.sh <<-'EOF'
-
-	section_gnomelive_rootfs() {
-		[ "$PROFILE" = gnomelive ] || return 0
-		build_section gnomelive_rootfs $(checksum < /work/rootfs.squashfs)
-	}
-
-	build_gnomelive_rootfs() {
-		mkdir -p "$DESTDIR"/cervino
-		cp /work/rootfs.squashfs "$DESTDIR"/cervino/
-	}
-	EOF
 
 	# --- apkovl generator ----------------------------------------------------
-	# genapkovl-gnomelive.sh reads the build settings from the .conf (and on
-	# the Pi, usercfg.txt from the file next to it).
+	# genapkovl-gnomelive.sh reads the build settings from the .conf, the
+	# live system's scripts from live/ (and on the Pi, usercfg.txt), all next
+	# to it.
 	printf '%s=%s\n' TARGET "$(shquote "$TARGET")" \
 		LIVE_USER "$(shquote "$LIVE_USER")" \
 		LIVE_PASSWORD "$(shquote "$LIVE_PASSWORD")" \
@@ -555,6 +489,7 @@ builder_main() {
 		KERNEL_OPTS "$(shquote "$kernel_opts")" \
 		WORLD "$(shquote "$image_world")" > aports/scripts/genapkovl-gnomelive.conf
 	install -m 0755 /genapkovl-gnomelive.sh aports/scripts/genapkovl-gnomelive.sh
+	cp -R /live aports/scripts/live
 
 	# --- initramfs -----------------------------------------------------------
 	# The live system's root is the root file system image on the boot media

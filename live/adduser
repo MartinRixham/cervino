@@ -1,0 +1,31 @@
+#!/bin/sh
+shell=/bin/bash home=yes user= names=0 value= gecos= next=
+list=/run/gnomelive-setup-users
+for a; do
+	if [ -n "$value" ]; then
+		[ "$next" != g ] || gecos=$a
+		value= next=
+		continue
+	fi
+	case $a in
+	-S|-[!-]*S*) exec /usr/sbin/adduser "$@" ;;
+	-s) shell= value=1 ;;
+	-g) value=1 next=g ;;
+	-[hGuk]) value=1 ;;
+	-H|-[!-]*H*) home= ;;
+	-*) ;;
+	*) user=$a names=$((names + 1)) ;;
+	esac
+done
+if [ -n "$GNOMELIVE_SETUP" ] && [ "$names" = 1 ] && getent passwd "$user" >/dev/null &&
+	grep -qxF "$user" "$list" 2>/dev/null; then
+	echo "adduser: using user '$user', made by an earlier setup-alpine run"
+	[ -z "$gecos" ] || usermod -c "$gecos" "$user"
+	exit
+fi
+[ -z "$shell" ] || set -- -s "$shell" "$@"
+/usr/sbin/adduser "$@" || exit
+[ -z "$GNOMELIVE_SETUP" ] || [ "$names" != 1 ] || echo "$user" >> "$list"
+[ "$names" = 1 ] && [ -n "$home" ] || exit 0
+dir=$(getent passwd "$user" | cut -d: -f6)
+[ ! -d "$dir" ] || chmod 700 "$dir"

@@ -1,0 +1,29 @@
+#!/bin/sh
+[ -n "$CERVINO_COPY_ROOT" ] && [ "$1" = add ] || exec /usr/sbin/apk "$@"
+root= initdb= overlay= prev=
+for a; do
+	[ "$prev" != --root ] || root=$a
+	case $a in --initdb) initdb=1 ;; --overlay-from-stdin) overlay=1 ;; esac
+	prev=$a
+done
+[ -n "$root" ] && [ -n "$initdb" ] && [ -n "$overlay" ] && [ -d /.cervino/ro/etc ] ||
+	exec /usr/sbin/apk "$@"
+echo "Copying the system to $root..."
+rsync -aHX --ignore-existing /.cervino/ro/ "$root"/ || exit
+for k in "$root"/lib/modules/*; do
+	k=${k##*/}
+	mkinitfs -b "$root"/ -c "$root"/etc/mkinitfs/mkinitfs.conf -o "$root"/boot/initramfs-"${k##*-}" "$k" ||
+		exit
+done
+first=1
+for a; do
+	[ -z "$first" ] || { set --; first=; }
+	[ "$a" = --initdb ] || set -- "$@" "$a"
+done
+/usr/sbin/apk "$@" || exit
+if [ -f "$root"/etc/update-extlinux.conf ] && [ -x "$root"/sbin/update-extlinux ]; then
+	chroot "$root" update-extlinux --warn-only || exit
+fi
+if [ -f "$root"/etc/default/grub ] && [ -x "$root"/usr/sbin/grub-mkconfig ]; then
+	chroot "$root" grub-mkconfig -o /boot/grub/grub.cfg || exit
+fi

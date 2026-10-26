@@ -1,0 +1,24 @@
+table inet filter {
+	chain rpfilter {
+		type filter hook prerouting priority filter + 10; policy accept;
+		icmpv6 type { nd-router-advert, nd-neighbor-solicit } accept
+		meta nfproto ipv6 fib saddr . mark oif missing drop comment "IPv6 reverse path filter"
+	}
+	chain input {
+		tcp dport 22 accept comment "SSH"
+		udp dport 5353 accept comment "mDNS"
+		udp dport 6001-6010 accept comment "AirPlay (PipeWire RAOP) timing and control"
+	}
+	chain forward {
+		ct state { established, related } accept comment "Replies"
+		ct state invalid drop comment "Drop invalid connections"
+		iifname "virbr*" accept comment "libvirt"
+		iifname "docker*" accept comment "Docker"
+		iifname "br-*" accept comment "Docker networks"
+		iifname "podman*" accept comment "Podman"
+		iifname "cni-*" accept comment "CNI"
+		iifname "lxcbr*" accept comment "LXC"
+		iifname "lxdbr*" accept comment "LXD"
+		iifname "incusbr*" accept comment "Incus"
+	}
+}

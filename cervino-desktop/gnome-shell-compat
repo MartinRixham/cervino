@@ -1,0 +1,40 @@
+#!/usr/bin/gjs
+// Registers the session with GDM and answers gnome-session's end-of-session
+// queries on behalf of GNOME Shell
+const {Gio, GLib} = imports.gi;
+const bus = Gio.DBus.session;
+const SM = 'org.gnome.SessionManager';
+const SHELL_APP_ID = 'org.gnome.Shell.desktop';
+
+function call(path, iface, method, args = null, ret = null) {
+    return bus.call_sync(SM, path, iface, method, args,
+        ret ? new GLib.VariantType(ret) : null, Gio.DBusCallFlags.NONE, 5000, null).deepUnpack();
+}
+
+// GDM finds the display from the caller's login session, which is this one.
+Gio.DBus.system.call('org.gnome.DisplayManager', '/org/gnome/DisplayManager/Manager',
+    'org.gnome.DisplayManager.Manager', 'RegisterSession', new GLib.Variant('(a{sv})', [{}]),
+    null, Gio.DBusCallFlags.NONE, -1, null, (conn, res) => {
+        try {
+            conn.call_finish(res);
+        } catch (e) {
+            logError(e, 'registering the session with GDM');
+        }
+    });
+
+bus.signal_subscribe(SM, `${SM}.ClientPrivate`, null, null, null, Gio.DBusSignalFlags.NONE,
+    (_c, _sender, path, _iface, signal) => {
+        if (signal !== 'QueryEndSession' && signal !== 'EndSession')
+            return;
+        try {
+            const [appId] = call(path, `${SM}.Client`, 'GetAppId', null, '(s)');
+            if (appId === SHELL_APP_ID) {
+                call(path, `${SM}.ClientPrivate`, 'EndSessionResponse',
+                    new GLib.Variant('(bs)', [true, '']));
+            }
+        } catch (e) {
+            logError(e, `answering ${signal} for ${path}`);
+        }
+    });
+
+new GLib.MainLoop(null, false).run();

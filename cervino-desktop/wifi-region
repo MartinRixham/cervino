@@ -1,0 +1,23 @@
+#!/bin/sh
+# wifi-region [EVENTS DIR NAME]: sets the Wi-Fi region to the time zone's
+# country. With arguments (from inotifyd watching /etc), only when NAME is
+# the time zone's file.
+case ${3-localtime} in localtime|timezone) ;; *) exit 0 ;; esac
+# Without cfg80211 there is no radio, and iw would load it.
+[ -d /sys/module/cfg80211 ] || exit 0
+# /etc/localtime is a link into a zoneinfo directory (setup-timezone's in
+# /etc, openrc-settingsd's in /usr/share), whose path is the zone's name;
+# else /etc/timezone names it.
+zone=
+if [ -L /etc/localtime ]; then
+	zone=$(readlink /etc/localtime)
+	zone=${zone#*/zoneinfo/}
+elif [ -f /etc/localtime ] && [ -f /etc/timezone ]; then
+	read -r zone < /etc/timezone
+fi
+country=$(awk -v z="$zone" '!/^#/ && $3 == z { print $1; exit }' /usr/share/zoneinfo/zone.tab 2>/dev/null)
+country=${country:-00}
+current=$(iw reg get 2>/dev/null | awk '/^global/ { g = 1 } g && /^country/ { sub(/:$/, "", $2); print $2; exit }')
+[ "$current" != "$country" ] || exit 0
+iw reg set "$country" && logger -t wifi-region "Wi-Fi region $country (time zone ${zone:-none})"
+exit 0

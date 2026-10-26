@@ -388,18 +388,19 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
      features' configuration and the AppArmor profiles from
      [`apparmor.d/`](apparmor.d), depending on the features' packages;
-   - the mkimage profile, which puts the root file system on the image,
+   - the mkimage profile, [`mkimg.gnomelive.sh`](mkimg.gnomelive.sh), which puts the root file system on the image,
      with an on-disc apk repository of only the disk tools and boot loaders
      Alpine's `setup-disk` adds, and no modloop (for the Pi it extends
      Alpine's `rpiimg` profile instead, and adds `usercfg.txt`);
    - the initramfs's init: Alpine's, with
      [`initramfs-live.patch`](initramfs-live.patch);
-   - an apkovl generator. The apkovl is the same overlay mechanism `lbu` uses;
+   - an apkovl generator, [`genapkovl-gnomelive.sh`](genapkovl-gnomelive.sh). The apkovl is the same overlay mechanism `lbu` uses;
      it contains what only the live system needs: `/etc/apk/world`, the GDM
      config, OpenRC runlevels (udev in place of mdev, plus `cgroups`,
      `dbus`, `gdm` and the desktop features' services, and AppArmor in
      `sysinit`, before udev), a `live-user` init script, and the
-     `setup-alpine` wrapper with its `lbu` and `adduser` shims.
+     `setup-alpine` wrapper with its `lbu`, `adduser`, `setup-disk` and `apk`
+     shims (the scripts are in [`live/`](live)).
 4. **Root file system:** the same packages, plus the kernel and firmware,
    installed once, with their scripts run, and packed into a squashfs,
    `cervino/rootfs.squashfs` on the image. Then `mkimage.sh` builds the

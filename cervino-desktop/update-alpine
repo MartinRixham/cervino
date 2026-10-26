@@ -1,0 +1,301 @@
+#!/bin/sh
+# update-alpine: upgrades the installed packages, then offers to upgrade the
+# system to a newer stable Alpine release when one is out.
+# update-alpine add|del PACKAGE...: adds or removes packages.
+# update-alpine rollback: goes back to the version of the system before the
+# running one (atomic installs only).
+# update-alpine list: lists the versions of the system, newest first, and
+# update-alpine delete ID...: deletes versions (atomic installs only).
+# On an atomic install, the running system is left as it is: the changes go
+# into a new version, which the system starts with next time.
+set -u
+# Neither Ctrl-C nor closing the terminal stops apk halfway through; a
+# question then reads end of file, which answers no.
+trap '' HUP INT
+
+repos=/etc/apk/repositories
+list=/etc/apk/repositories.d/cervino.list
+
+ask() {
+	printf '\n%s [y/N] ' "$1"
+	read -r answer || return 1
+	case $answer in [Yy]*) return 0 ;; esac
+	return 1
+}
+die() {
+	echo "update-alpine: $*" >&2
+	exit 1
+}
+
+[ "$(id -u)" = 0 ] || { echo "update-alpine: run it as root (doas update-alpine)" >&2; exit 1; }
+cmd=${1:-upgrade}
+case $cmd in
+upgrade|rollback|list) [ $# -le 1 ] ;;
+add|del|delete) [ $# -ge 2 ] ;;
+*) false ;;
+esac || die "usage: update-alpine [add PACKAGE... | del PACKAGE... | rollback | list | delete ID...]"
+[ $# = 0 ] || shift
+
+# On an atomic install, $R is the new version, and run runs a command in it.
+atomic= R= new= made_base= mounts=
+lib=/usr/libexec/cervino/atomic.sh
+if [ -f "$lib" ] && . "$lib" && atomic_detect; then
+	atomic=1
+fi
+[ -n "$atomic" ] || case $cmd in rollback|list|delete) false ;; esac ||
+	die "$cmd only works on an atomic install"
+run() {
+	if [ -n "$atomic" ]; then chroot "$R" "$@"; else "$@"; fi
+}
+# Takes the new version's mounts down, and unless it was staged, deletes it.
+cleanup() {
+	for m in $mounts; do umount "$m"; done
+	mounts=
+	[ -z "$new" ] || atomic_delete "$new"
+	[ -z "$made_base" ] || btrfs -q subvolume delete "$top"/etc-base
+	atomic_umount
+}
+# The packages and lists that make the system, to tell whether it changed.
+state() {
+	cat "$R"/lib/apk/db/installed "$R"/etc/apk/world "$R$repos" 2>/dev/null | md5sum
+}
+# finish: the end. On an atomic install, stages the new version, if it
+# differs from the one it was made from.
+finish() {
+	[ -n "$atomic" ] || exit 0
+	for m in $mounts; do umount "$m"; done
+	mounts=
+	sync
+	if [ "$cmd" != rollback ] && [ "$(state)" = "$before" ]; then
+		echo
+		if [ -n "$staged_id" ]; then
+			echo "An update is waiting already: the system starts with it next time."
+		else
+			echo "There are no updates."
+		fi
+		exit 0
+	fi
+	btrfs property set -ts "$R" ro true || die "could not make the new version read-only"
+	printf '%s %s %s\n' "$new" "$atomic_id" "$merge" > "$top"/staged.new &&
+		mv "$top"/staged.new "$top"/staged || die "could not stage the new version"
+	if [ -n "$staged_id" ] && [ "$staged_id" = "$src" ]; then
+		atomic_delete "$staged_id"
+	fi
+	new= made_base=
+	sync
+	echo
+	if [ "$cmd" = rollback ]; then
+		echo "The system goes back to the version of $(made "$src") when it next starts."
+	else
+		echo "The update is ready: the system starts with it next time. The version"
+		if ! atomic_trial; then
+			echo "running now is kept: update-alpine rollback goes back to it."
+		elif atomic_pi; then
+			echo "running now is kept, and starts again if the update does not (switch the"
+			echo "Pi off and on then). Switching the Pi off, rather than restarting it,"
+			echo "starts the update with nothing to fall back on."
+		else
+			echo "running now is kept, and starts again if the update does not (switch the"
+			echo "computer off and on then)."
+		fi
+	fi
+	ask "Restart now?" && reboot
+	exit 0
+}
+# made ID: when version ID was made.
+made() {
+	echo "$1" | sed -n 's/^\(....\)\(..\)\(..\)\(..\)\(..\).*/\1-\2-\3 \4:\5 UTC/p'
+}
+
+# update-alpine list: each version's id, when it was made, and which is
+# running and which the system starts with next time: the staged update, or
+# else the version on trial, else the running one (or where there are no
+# trials, a Pi without tryboot, the newest complete version).
+if [ "$cmd" = list ]; then
+	atomic_mount || die "could not mount $atomic_dev"
+	trap atomic_umount EXIT
+	atomic_staged
+	next=
+	[ -z "$staged_id" ] || [ "$staged_from" != "$atomic_id" ] || next=$staged_id
+	if [ -z "$next" ] && atomic_trial; then
+		next=$atomic_id
+		[ ! -f /run/cervino-trial ] || read -r next < /run/cervino-trial
+	fi
+	for id in $(ls -r "$top"/roots); do
+		[ -n "$next" ] || ! atomic_ready "$id" || next=$id
+		note=
+		[ "$id" != "$atomic_id" ] || note="running"
+		if [ "$id" = "$staged_id" ] && [ "$id" != "$next" ]; then
+			note="update made from another version, deleted at shutdown"
+		elif [ "$id" = "$staged_id" ]; then
+			note="update"
+		elif ! atomic_ready "$id"; then
+			note="incomplete: an update being made, or one that was stopped"
+		elif atomic_failed "$id"; then
+			note="${note:+$note, }did not start when tried"
+		fi
+		[ "$id" != "$next" ] || note="${note:+$note, }starts next time"
+		printf '%s  %s  %s\n' "$id" "$(made "$id")" "$note"
+	done
+	exit 0
+fi
+
+# update-alpine delete ID...: deletes those versions (the staged update with
+# what goes with it), then brings the boot partition in step. The running
+# version cannot be deleted, so there is always one left to start.
+if [ "$cmd" = delete ]; then
+	exec 9> /run/cervino-update.lock
+	flock -n 9 || die "an update is running"
+	atomic_mount || die "could not mount $atomic_dev"
+	trap atomic_umount EXIT
+	atomic_staged
+	for id; do
+		case $id in ''|*[!0-9]*) false ;; *) [ -d "$top/roots/$id" ] ;; esac ||
+			die "there is no version $id (update-alpine list shows them)"
+		[ "$id" != "$atomic_id" ] || die "$id is the running version"
+	done
+	for id; do
+		if [ "$id" = "$staged_id" ]; then
+			echo "Deleting the update $id"
+			atomic_unstage || die "could not delete $id"
+		else
+			echo "Deleting $id"
+			atomic_delete "$id" || die "could not delete $id"
+		fi
+	done
+	sync
+	/usr/libexec/cervino/update-boot || die "could not update the boot partition"
+	exit 0
+fi
+
+if [ -n "$atomic" ]; then
+	exec 9> /run/cervino-update.lock
+	flock -n 9 || die "another update is running"
+	atomic_mount || die "could not mount $atomic_dev"
+	trap cleanup EXIT
+	atomic_staged
+	# Staged from another version (which the machine started with since,
+	# before that one's shutdown could switch to it), or replaced by a
+	# rollback: deleted.
+	if [ -n "$staged_id" ] && { [ "$staged_from" != "$atomic_id" ] || [ "$cmd" = rollback ]; }; then
+		atomic_unstage
+	fi
+	atomic_gc
+	# The new version is a copy of the staged one, if any (so updates add
+	# up until the next start), else of the running one, whose /etc is
+	# snapshotted for the shutdown to bring later changes into it. A
+	# rollback copies the newest complete version older than the running
+	# one, /etc as it was.
+	merge=merge
+	if [ "$cmd" = rollback ]; then
+		src= merge= seen=
+		for id in $(ls -r "$top"/roots); do
+			[ -n "$seen" ] && atomic_ready "$id" && { src=$id; break; }
+			[ "$id" != "$atomic_id" ] || seen=1
+		done
+		[ -n "$src" ] || die "there is no earlier version to go back to"
+		etc=$top/roots/$src/etc
+	elif [ -n "$staged_id" ]; then
+		src=$staged_id merge=$staged_merge etc=$top/roots/$staged_id/etc
+	else
+		src=$atomic_id etc=$top/etc-base
+		[ -d "$etc" ] || { btrfs -q subvolume snapshot -r "$top/roots/$atomic_id"/etc "$etc" && made_base=1; } ||
+			die "could not snapshot /etc"
+	fi
+	id=$(date -u +%Y%m%d%H%M%S)
+	while [ -e "$top/roots/$id" ]; do sleep 1; id=$(date -u +%Y%m%d%H%M%S); done
+	new=$id R=$top/roots/$id
+	btrfs -q subvolume snapshot "$top/roots/$src" "$R" && rmdir "$R"/etc &&
+		btrfs -q subvolume snapshot "$etc" "$R"/etc || die "could not copy the system"
+	[ "$cmd" != rollback ] || finish
+	for d in proc sys dev var; do
+		mount --bind /"$d" "$R/$d" || die "could not mount /$d in the new version"
+		mounts="$R/$d $mounts"
+	done
+	for d in run tmp; do
+		mount -t tmpfs "$d" "$R/$d" || die "could not mount /$d in the new version"
+		mounts="$R/$d $mounts"
+	done
+	before=$(state)
+fi
+
+case $cmd in
+add|del)
+	run apk "$cmd" --update-cache "$@" || exit
+	finish ;;
+esac
+
+echo "Updating the installed packages..."
+run apk upgrade --update-cache || exit
+
+# The release branch the repositories point at; nothing to offer on edge.
+read -r mirror current <<REPO
+$(sed -nE 's#^[[:space:]]*(https?://[^[:space:]]*)/(v[0-9]+\.[0-9]+)/main/?[[:space:]]*$#\1 \2#p' "$R$repos" | head -n1)
+REPO
+[ -n "${current:-}" ] || finish
+arch=$(apk --print-arch)
+latest=$(wget -qO- -T 20 "$mirror/latest-stable/releases/$arch/latest-releases.yaml" |
+	awk '/branch:/ { print $2; exit }')
+case $latest in v[0-9]*.[0-9]*) ;; *)
+	echo
+	echo "Could not find out the latest Alpine release from $mirror."
+	finish
+esac
+echo "${current#v} ${latest#v}" | awk '{
+	split($1, c, "."); split($2, l, ".")
+	exit !(l[1] > c[1] || (l[1] == c[1] && l[2] > c[2]))
+}' || { echo; echo "Alpine Linux ${current#v} is the latest release."; finish; }
+
+cervino=
+if [ -f "$R$list" ]; then
+	cervino=$(sed -nE 's#^[[:space:]]*(https?://[^[:space:]]*).*#\1#p' "$R$list" | head -n1)
+	case $cervino in */"$current")
+		cervino=${cervino%/*}/$latest
+		if ! wget -q -T 20 --spider "$cervino/$arch/APKINDEX.tar.gz" 2> /dev/null; then
+			echo
+			echo "Alpine Linux ${latest#v} is out, but Cervino's packages for it are"
+			echo "not published yet. Try again later."
+			finish
+		fi ;;
+	*) cervino= ;;
+	esac
+fi
+
+echo
+echo "Alpine Linux ${latest#v} is available (this system runs ${current#v})."
+ask "Upgrade to Alpine Linux ${latest#v} now?" || finish
+
+cp "$R$repos" "$R$repos.update-alpine"
+[ -z "$cervino" ] || cp "$R$list" "$R$list.update-alpine"
+sed -i "s#/$(echo "$current" | sed 's/\./\\./g')/#/$latest/#g" "$R$repos"
+[ -z "$cervino" ] || echo "$cervino" > "$R$list"
+if ! run apk update; then
+	mv "$R$repos.update-alpine" "$R$repos"
+	[ -z "$cervino" ] || mv "$R$list.update-alpine" "$R$list"
+	echo
+	echo "Could not fetch Alpine Linux ${latest#v}'s package lists; nothing was changed."
+	exit 1
+fi
+rm -f "$R$repos.update-alpine" "$R$list.update-alpine"
+if ! run apk add --upgrade apk-tools || ! run apk upgrade --available; then
+	echo
+	if [ -n "$atomic" ]; then
+		echo "The upgrade did not finish; nothing was changed."
+	else
+		echo "The upgrade did not finish. Once the problem above is fixed, finish it"
+		echo "with: doas apk upgrade --available"
+	fi
+	exit 1
+fi
+# The new cervino-desktop brings the list just written; apk writes it as
+# .apk-new, as the file was changed.
+if [ -n "$cervino" ] && cmp -s "$R$list" "$R$list.apk-new"; then
+	rm -f "$R$list.apk-new"
+fi
+[ -z "$atomic" ] || finish
+sync
+
+echo
+echo "The system now runs Alpine Linux ${latest#v}. Restart to finish the upgrade."
+ask "Restart now?" && reboot
+exit 0

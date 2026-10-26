@@ -1,0 +1,51 @@
+#!/bin/sh
+. /usr/local/share/gnomelive/gnomelive.conf
+shim=$(mktemp -d) || exit
+trap 'rm -rf "$shim"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+cat > "$shim"/openrc <<'SHIM'
+#!/bin/sh
+case "$1" in
+-*) exec setsid -w /sbin/openrc "$@" ;;
+*) exec setsid -w /sbin/openrc --no-stop "$@" ;;
+esac
+SHIM
+cat > "$shim"/rc-service <<'SHIM'
+#!/bin/sh
+case " $* " in
+*" networking stop "*|*" networking start "*) exit 0 ;;
+*" hostname restart "*) read -r h _ < /etc/hostname && exec hostname "$h"; exit ;;
+esac
+exec setsid -w /sbin/rc-service "$@"
+SHIM
+cat > "$shim"/setup-devd <<'SHIM'
+#!/bin/sh
+case " $* " in
+*" mdev "*) exit 0 ;;
+esac
+exec /usr/sbin/setup-devd "$@"
+SHIM
+cat > "$shim"/rc-update <<'SHIM'
+#!/bin/sh
+case " $* " in
+*" add acpid "*) exit 0 ;;
+*" add crond "*) exec /sbin/rc-update -q add cronie ;;
+esac
+exec /sbin/rc-update "$@"
+SHIM
+for cmd in setup-interfaces setup-dns; do
+	printf '#!/bin/sh\necho "%s: skipped, NetworkManager manages the network"\n' $cmd > "$shim"/$cmd
+done
+chmod +x "$shim"/*
+if [ -z "${MIRRORS:-}" ]; then
+	MIRRORS=$(wget -qO- -T 10 https://mirrors.alpinelinux.org/mirrors.json |
+		grep -o 'https:\\/\\/[^"]*' | sed 's#\\/#/#g')
+	export MIRRORS=${MIRRORS:-https://dl-cdn.alpinelinux.org/alpine/}
+fi
+DEVDOPTS=${DEVDOPTS:-udev} APKREPOSOPTS=${APKREPOSOPTS:--c} \
+	USEROPTS=${USEROPTS:--a -g audio,input,video,netdev,plugdev,lpadmin} \
+	KERNELOPTS=${KERNELOPTS:-quiet $KERNEL_OPTS} SSHDOPTS=${SSHDOPTS:-none} \
+	NTPOPTS=${NTPOPTS:-none} GNOMELIVE_SETUP=1 \
+	PATH="$shim:$PATH" /usr/sbin/setup-alpine -e "$@"

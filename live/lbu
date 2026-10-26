@@ -1,0 +1,33 @@
+#!/bin/sh
+[ "$*" = "package -" ] || exec /usr/sbin/lbu "$@"
+. /usr/local/share/gnomelive/gnomelive.conf
+d=$(mktemp -d) || exit
+trap 'rm -rf "$d"' EXIT
+/usr/sbin/lbu package - > "$d"/ovl.tar.gz || exit
+mkdir "$d"/root
+tar -C "$d"/root -xzf "$d"/ovl.tar.gz || exit
+tar -tzf "$d"/ovl.tar.gz | grep -v -e '^etc/init\.d/live-user$' -e '^etc/runlevels/[^/]*/live-user$' \
+	-e '^etc/doas\.d/90-live-user\.conf$' -e '^etc/polkit-1/rules\.d/49-live-user\.rules$' \
+	-e "^home/$LIVE_USER/" -e "^home/$LIVE_USER\$" > "$d"/list
+cd "$d"/root || exit
+strip() { awk "$@" "$f" > "$f".new && cat "$f".new > "$f" && rm "$f".new; }
+for f in etc/passwd etc/passwd- etc/shadow etc/shadow-; do
+	[ -f "$f" ] && strip -F: -v u="$LIVE_USER" '$1 != u'
+done
+for f in etc/group etc/group-; do
+	[ -f "$f" ] && strip -F: -v OFS=: -v u="$LIVE_USER" '$1 == u { next } { n = split($4, m, ","); $4 = ""; for (i = 1; i <= n; i++) if (m[i] != u) $4 = $4 ($4 == "" ? "" : ",") m[i]; print }'
+done
+if [ -f etc/group ] && awk -F: '$1 == "wheel" && $4 != "" { found = 1 } END { exit !found }' etc/group; then
+	for f in etc/shadow etc/shadow-; do
+		[ -f "$f" ] && strip -F: -v OFS=: '$1 == "root" { $2 = "!" } { print }'
+	done
+fi
+[ -f etc/gdm/custom.conf ] && sed -i '/^AutomaticLogin/d' etc/gdm/custom.conf
+[ -f etc/inittab ] && sed -i 's|:/sbin/getty |:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty |' etc/inittab
+[ -f etc/apk/protected_paths.d/lbu.list ] && sed -i "\\:^+home/$LIVE_USER\$:d" etc/apk/protected_paths.d/lbu.list
+if [ -f /usr/local/share/gnomelive/usercfg.txt ]; then
+	mkdir -p boot
+	cp /usr/local/share/gnomelive/usercfg.txt boot/
+	echo boot/usercfg.txt >> "$d"/list
+fi
+tar -c --no-recursion -T "$d"/list -z
