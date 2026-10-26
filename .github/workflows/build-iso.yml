@@ -105,8 +105,9 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-      # cervino-desktop (and for rpi, its ffmpeg7 and vlc), laid out as in
-      # the published repo (<branch>/<arch>/), for the repo job.
+      # cervino-desktop (and for rpi, its ffmpeg7, vlc, wpa_supplicant and
+      # bluez), laid out as in the published repo (<branch>/<arch>/), for
+      # the repo job.
       - uses: actions/upload-artifact@v7
         with:
           name: cervino-repo-${{ matrix.target }}
@@ -195,9 +196,10 @@ jobs:
           gh release create "$GITHUB_REF_NAME" out/alpine-gnomelive-* out/SHA256SUMS \
             --title "$GITHUB_REF_NAME" --generate-notes
 
-  # Adds the release's packages (cervino-desktop, the Pi's ffmpeg7 and vlc)
-  # to the apk repo on the gh-pages branch, which GitHub Pages serves and installs get updates from.
-  # The branch holds only the repo, written by this job alone.
+  # Adds the release's packages (cervino-desktop, the Pi's ffmpeg7, vlc,
+  # wpa_supplicant and bluez) to the apk repo on the gh-pages branch, which
+  # GitHub Pages serves and installs get updates from. The branch holds only
+  # the repo, written by this job alone.
   repo:
     needs: [build, vm-test]
     if: startsWith(github.ref, 'refs/tags/v')

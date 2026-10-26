@@ -163,6 +163,17 @@ SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660", TAG+="uaccess"
 SUBSYSTEM=="dma_heap", KERNEL=="system", PROGRAM="/bin/grep -q iommu /proc/iomem", SYMLINK+="dma_heap/vidbuf_cached"
 SUBSYSTEM=="dma_heap", KERNEL=="linux,cma", SYMLINK+="dma_heap/vidbuf_cached", OPTIONS+="link_priority=-50"
 EOF
+		# The Pi's Wi-Fi as Raspberry Pi OS sets it up (firmware-nonfree's
+		# rpi-brcmfmac.conf): roaming is left to wpa_supplicant, not the
+		# chip's firmware, as are the 4-way handshake and WPA3's SAE
+		# (feature_disable: brcmfmac's FWSUP, SAE and DUMP_OBSS features),
+		# which the firmware does unreliably. The Pi's wpa_supplicant
+		# (rpi/wpa_supplicant) has the patches that go with this. udev
+		# loads the driver through libkmod, which reads /etc/modprobe.d, as
+		# busybox's modprobe does.
+		makefile root:root 0644 "$pkgdir"/etc/modprobe.d/cervino-brcmfmac.conf <<'EOF'
+options brcmfmac roamoff=1 feature_disable=0x282000
+EOF
 	fi
 	makefile root:root 0755 "$pkgdir"/etc/init.d/wifi-region <<'EOF'
 #!/sbin/openrc-run

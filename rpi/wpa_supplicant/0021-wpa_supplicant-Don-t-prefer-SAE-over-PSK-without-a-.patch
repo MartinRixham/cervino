@@ -1,0 +1,43 @@
+From: Phil Elwell <phil@raspberrypi.com>
+Date: Wed, 23 Sep 2026 12:00:00 +0000
+Subject: [PATCH] wpa_supplicant: Don't prefer SAE over PSK without a
+ passphrase
+
+SAE (WPA3) requires a passphrase (or an explicit sae_password) in
+order to derive the password element used in the handshake - a raw
+PSK, as stored for a network profile that only has a 64-hex-digit PSK
+configured, cannot be used with SAE.
+
+For a network profile whose key_mgmt allows both WPA-PSK and SAE
+(e.g. connecting to an AP running in WPA2/WPA3 transition mode), the
+key management selection logic always preferred SAE when the driver
+and AP both support it, regardless of whether the network profile
+actually has a passphrase available. If credentials for such a
+network were stored as a raw PSK rather than a passphrase (as
+happens when a PSK is provided in hex form, e.g. by some device
+provisioning flows), this caused the SAE key derivation to fail and
+the connection to be rejected, even though falling back to WPA2-PSK
+would have worked with the stored PSK.
+
+Only prefer SAE if the profile has a passphrase or an explicit SAE
+password configured; otherwise mask out SAE/FT-SAE from the
+candidate key_mgmt set so that PSK/FT-PSK can be selected instead.
+
+Signed-off-by: Phil Elwell <phil@raspberrypi.com>
+[Ported to wpa_supplicant 2.11, which also has SAE-EXT-KEY: cervino]
+---
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -1880,6 +1880,12 @@
+ 	    wpas_is_sae_avoided(wpa_s, ssid, &ie))
+ 		sel &= ~(WPA_KEY_MGMT_SAE | WPA_KEY_MGMT_SAE_EXT_KEY |
+ 			 WPA_KEY_MGMT_FT_SAE | WPA_KEY_MGMT_FT_SAE_EXT_KEY);
++	if (!ssid->sae_password && !ssid->passphrase) {
++		wpa_dbg(wpa_s, MSG_DEBUG,
++			"WPA: No SAE password/passphrase available; not preferring SAE/FT-SAE");
++		sel &= ~(WPA_KEY_MGMT_SAE | WPA_KEY_MGMT_SAE_EXT_KEY |
++			 WPA_KEY_MGMT_FT_SAE | WPA_KEY_MGMT_FT_SAE_EXT_KEY);
++	}
+ #endif /* CONFIG_SAE */
+ #ifdef CONFIG_IEEE80211R
+ 	if (!(wpa_s->drv_flags & (WPA_DRIVER_FLAGS_SME |

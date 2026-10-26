@@ -28,8 +28,9 @@
 # Installs copy the system from the squashfs too; the image's on-disc apk
 # repository only has the disk tools and boot loaders Alpine's setup-disk
 # adds. The Pi's image also has VLC and the ffmpeg7 libraries it plays
-# through, built from rpi/: Alpine's packages with Raspberry Pi OS's patches
-# for the Pi's hardware video decoders, published with cervino-desktop.
+# through, wpa_supplicant and bluez, built from rpi/: Alpine's packages with
+# Raspberry Pi OS's patches for the Pi's hardware video decoders, Wi-Fi and
+# Bluetooth, published with cervino-desktop.
 #
 # The container runs the target's architecture, so the packages' scripts
 # run when the root file system is installed: building for another
@@ -54,9 +55,9 @@
 #                   (default: https://dl-cdn.alpinelinux.org/alpine)
 #   SIGNING_KEY     abuild private key (its public key is derived from it,
 #                   named after the file plus .pub) to sign the packages
-#                   built here (cervino-desktop, and the Pi's ffmpeg7 and
-#                   vlc) and the image's repo with (default: a new key each
-#                   build)
+#                   built here (cervino-desktop, and the Pi's ffmpeg7, vlc,
+#                   wpa_supplicant and bluez) and the image's repo with
+#                   (default: a new key each build)
 #   APK_REPO        URL of the repo those packages are published in, without
 #                   the branch; installs get updates from APK_REPO/<branch>
 #                   (default: none). Its packages must be signed with
@@ -383,9 +384,11 @@ builder_main() {
 	rpi) disc_apks="$disc_apks raspberrypi-bootloader" ;;
 	esac
 
-	# --- The Pi's ffmpeg7 and vlc ---------------------------------------------
-	# Alpine's, with Raspberry Pi OS's patches for the Pi's hardware video
-	# decoders (rpi/), which rank above Alpine's and so replace them. Each is
+	# --- The Pi's packages ----------------------------------------------------
+	# Alpine's, with Raspberry Pi OS's patches (rpi/): ffmpeg7 and vlc for
+	# the Pi's hardware video decoders, wpa_supplicant for WPA3 with its
+	# Wi-Fi, bluez for audio over its Bluetooth, which shares the radio.
+	# They rank above Alpine's and so replace them. Each is
 	# Alpine's APKBUILD of one version (its _alpine) with the patches: stop
 	# if Alpine's has moved on, as its changes (security fixes, rebuilds for
 	# libraries' new sonames) would be missing. abuild -r installs what they
@@ -395,7 +398,7 @@ builder_main() {
 	if [[ $TARGET == rpi ]]; then
 		local name base alpine
 		mkdir -p /work/cervino
-		for name in ffmpeg7 vlc; do
+		for name in ffmpeg7 vlc wpa_supplicant bluez; do
 			base=$(sed -n 's/^_alpine=//p' /rpi/"$name"/APKBUILD)
 			alpine=$(apk --root "$apkroot" search --exact "$name") ||
 				die "Alpine $ALPINE_BRANCH has no $name"

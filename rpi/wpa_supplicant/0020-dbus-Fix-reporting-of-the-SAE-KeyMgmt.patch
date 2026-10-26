@@ -1,0 +1,29 @@
+From: Beniamino Galvani <bgalvani@redhat.com>
+Date: Wed, 22 Jul 2026 19:21:02 +0200
+Subject: dbus: Fix reporting of the SAE KeyMgmt
+
+Not all drivers report SAE in the supported AKMs. Also check flag
+NL80211_FEATURE_SAE (mapped to WPA_DRIVER_FLAGS_SAE) to detect support
+for SAE in the D-Bus KeyMgmt capabilities, similarly to what ctrl_iface
+and dpp_supplicant already do.
+
+Signed-off-by: Beniamino Galvani <bgalvani@redhat.com>
+Origin: upstream, https://w1.fi/cgit/hostap/commit/?id=26c7f1bc107843f0ae57d35f3c9363367a0d11e7
+Bug-Debian: https://bugs.debian.org/1147955
+Bug: https://github.com/raspberrypi/linux/issues/7528
+---
+ wpa_supplicant/dbus/dbus_new_handlers.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/wpa_supplicant/dbus/dbus_new_handlers.c
++++ b/wpa_supplicant/dbus/dbus_new_handlers.c
+@@ -3169,7 +3169,8 @@ dbus_bool_t wpas_dbus_getter_capabilities(
+ #endif /* CONFIG_WPS */
+ 
+ #ifdef CONFIG_SAE
+-		if ((capa.key_mgmt & WPA_DRIVER_CAPA_KEY_MGMT_SAE) &&
++		if (((capa.key_mgmt & WPA_DRIVER_CAPA_KEY_MGMT_SAE) ||
++		     (capa.flags & WPA_DRIVER_FLAGS_SAE)) &&
+ 		    !wpa_dbus_dict_string_array_add_element(&iter_array, "sae"))
+ 			goto nomem;
+ #endif /* CONFIG_SAE */

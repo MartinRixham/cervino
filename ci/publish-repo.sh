@@ -1,12 +1,12 @@
 #!/bin/sh
 # ci/publish-repo.sh NEW PAGES KEY BRANCH: adds the packages of Alpine branch
 # BRANCH that builds left under NEW/BRANCH/<arch>/ (the images' OUTDIR/repo:
-# cervino-desktop, and for aarch64 the Pi's ffmpeg7 and vlc) to the apk repo
-# in PAGES (a checkout of the gh-pages branch), keeps the newest few versions
-# of each package, and indexes and signs each arch again with KEY, the abuild
-# private key the packages are signed with. Runs as root in an
-# alpine:<BRANCH> container, so the index is in the format that branch's apk
-# reads.
+# cervino-desktop, and for aarch64 the Pi's ffmpeg7, vlc, wpa_supplicant and
+# bluez) to the apk repo in PAGES (a checkout of the gh-pages branch), keeps
+# the newest few versions of each package, and indexes and signs each arch
+# again with KEY, the abuild private key the packages are signed with. Runs
+# as root in an alpine:<BRANCH> container, so the index is in the format
+# that branch's apk reads.
 
 set -eu
 

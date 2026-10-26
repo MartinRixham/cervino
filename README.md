@@ -121,7 +121,7 @@ and uploads the ISO and the Raspberry Pi image, each with its `SHA256SUMS`, as
 workflow artifacts. You can also start it by hand from the Actions tab and
 choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
-and the Pi's `ffmpeg7` and `vlc`) to the update repo (see
+and the Pi's `ffmpeg7`, `vlc`, `wpa_supplicant` and `bluez`) to the update repo (see
 [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
@@ -344,9 +344,18 @@ replace Alpine's for every program that uses them. Both are Alpine's
 packages with the patches applied ([`rpi/`](rpi)), at a version above
 Alpine's, and come from the update repo with `cervino-desktop`. Other
 players (GNOME's Showtime, Firefox) use Alpine's FFmpeg 8, and so decode
-in software on the Pi. The build compiles both packages, which takes tens
-of minutes on an arm64 host, and hours under QEMU emulation on an x86_64
-one.
+in software on the Pi.
+
+The Pi's Wi-Fi and Bluetooth are set up as on Raspberry Pi OS too: the
+Wi-Fi driver leaves roaming and the WPA2/WPA3 handshakes to wpa_supplicant
+rather than the chip's firmware, which does them unreliably, with
+Raspberry Pi OS's wpa_supplicant patches that go with that (so
+NetworkManager uses WPA3, and falls back to WPA2 where it must), and
+BlueZ gives Bluetooth audio priority on the radio the Pi shares between
+Wi-Fi and Bluetooth, so headphones don't stutter while Wi-Fi is busy.
+These packages come from the update repo too. The build compiles all four,
+which takes tens of minutes on an arm64 host, and hours under QEMU
+emulation on an x86_64 one.
 
 Write it to an SD card or USB drive with Raspberry Pi Imager ("Use custom"),
 or with:
@@ -398,10 +407,11 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
 3. **Builder:** sparse-clones `aports/scripts`, resolves the package list
    that `setup-desktop gnome` would install plus the desktop features listed
    above, and generates:
-   - for the Pi, the `ffmpeg7` and `vlc` packages, built with abuild from
-     [`rpi/`](rpi): Alpine's, with Raspberry Pi OS's patches for the Pi's
-     hardware video decoders (the build stops when Alpine's packages are
-     no longer the versions those are based on);
+   - for the Pi, the `ffmpeg7`, `vlc`, `wpa_supplicant` and `bluez` packages, built with abuild
+     from [`rpi/`](rpi): Alpine's, with Raspberry Pi OS's patches for the
+     Pi's hardware video decoders, Wi-Fi and Bluetooth (the build stops
+     when Alpine's packages are no longer the versions those are based
+     on);
    - the `cervino-desktop` package, built with abuild from
      [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
      features' configuration and the AppArmor profiles from
