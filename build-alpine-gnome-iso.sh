@@ -18,12 +18,20 @@
 #
 # How it works: the desktop features' configuration is built into a package,
 # cervino-desktop (cervino-desktop/APKBUILD), which depends on the features'
-# packages. It and the GNOME packages (with all dependencies) are added to
-# the ISO's on-disc apk repository, and an apkovl (the same overlay mechanism
-# `lbu` uses) is placed on the ISO. At boot the initramfs unpacks the apkovl
-# and installs everything in its /etc/apk/world from the disc into the RAM
-# root, then OpenRC starts udev, dbus, gdm etc. exactly as setup-desktop
-# would have configured them.
+# packages. It and the GNOME packages, with the kernel and firmware, are
+# installed once into a root file system, which goes on the image as a
+# squashfs (cervino/rootfs.squashfs), with an apkovl (the same overlay
+# mechanism `lbu` uses) for what only the live system has. At boot the
+# initramfs (with initramfs-live.patch) mounts the squashfs read-only with a
+# tmpfs over it as the root, unpacks the apkovl into it, and OpenRC starts
+# udev, dbus, gdm etc. exactly as setup-desktop would have configured them.
+# Installs copy the system from the squashfs too; the image's on-disc apk
+# repository only has the disk tools and boot loaders Alpine's setup-disk
+# adds.
+#
+# The container runs the target's architecture, so the packages' scripts
+# run when the root file system is installed: building for another
+# architecture needs QEMU user emulation (binfmt_misc, e.g. qemu-user-static).
 #
 # Usage:
 #   ./build-alpine-gnome-iso.sh
@@ -50,8 +58,8 @@
 #                   (default: none). Its packages must be signed with
 #                   SIGNING_KEY.
 #
-# Note: the live system runs entirely from RAM (tmpfs), so booting the
-# resulting image needs roughly 6 GB of RAM or more (an 8 GB Pi).
+# Note: the live system runs from the root file system image on the boot
+# media, with only its changes in RAM: it boots to the desktop in 2 GB.
 
 set -euo pipefail
 
@@ -113,14 +121,23 @@ host_main() {
 	fi
 	[[ -z $APK_REPO || $APK_REPO == https://* ]] || die "APK_REPO must be an https:// URL"
 
+	# The container runs the target's architecture, as installing the root
+	# file system runs its packages' scripts: on another host, under QEMU.
+	local platform=amd64
+	[[ $ARCH == aarch64 ]] && platform=arm64
+	[[ $(uname -m) == "$ARCH" || -e /proc/sys/fs/binfmt_misc/qemu-$ARCH ]] ||
+		die "building for $ARCH on $(uname -m) needs QEMU user emulation (qemu-user-static)"
+
 	echo ">>> Building Alpine ${ALPINE_BRANCH#v} GNOME live $TARGET image ($ARCH) with $runtime"
 	# On SELinux hosts, disable confinement for this container rather than
 	# relabelling the volumes with :Z: a container-private label on $OUTDIR
 	# stops libvirt's qemu from opening the ISO in it.
 	"$runtime" run --rm \
+		--platform "linux/$platform" \
 		--security-opt label=disable \
 		-v "$(realpath "$0")":/build.sh:ro \
 		-v "$here"/genapkovl-gnomelive.sh:/genapkovl-gnomelive.sh:ro \
+		-v "$here"/initramfs-live.patch:/initramfs-live.patch:ro \
 		-v "$here"/cervino-desktop:/cervino-desktop:ro \
 		-v "$here"/apparmor.d:/apparmor.d:ro \
 		-v "$OUTDIR":/out \
@@ -148,10 +165,10 @@ container_main() {
 	printf '%s\n' "$MIRROR/$ALPINE_BRANCH/main" "$MIRROR/$ALPINE_BRANCH/community" \
 		> /etc/apk/repositories
 	apk update --quiet
-	# clang and lld cross-compile cervino-desktop's tryboot for the Pi.
+	# clang and lld build cervino-desktop's freestanding tryboot for the Pi.
 	apk add --quiet alpine-sdk alpine-conf apk-tools busybox fakeroot \
 		syslinux xorriso squashfs-tools mtools dosfstools sfdisk grub grub-efi git \
-		clang lld
+		clang lld mkinitfs patch
 
 	# mkimage must run unprivileged: apk 3 rejects its --no-chown as root.
 	adduser -D build
@@ -179,10 +196,57 @@ container_main() {
 	cp "$privkey".pub /etc/apk/keys/
 
 	su build -s /bin/bash -c 'bash /build.sh --as-builder'
+	build_rootfs
+	su build -s /bin/bash -c 'bash /build.sh --mkimage'
+	# The live system loads the root file system's modules for the image's
+	# kernel, which mkimage fetched separately: a kernel released in between
+	# would have none.
+	local kver
+	kver=$(ls /work/rootfs/lib/modules)
+	[[ -n $(find /work/mkimage -path "*/boot/config-$kver" -print -quit) ]] ||
+		die "the image's kernel is not the root file system's ($kver): build again"
 	cp /work/out/*."$image_ext" /out/
 	# The package, laid out as in the published repo.
 	mkdir -p /out/repo
 	cp -R /work/pkgout/. /out/repo/
+}
+
+# The installed system, built once: the packages builder_main lists, from
+# Alpine's repos and cervino-desktop's, installed into an empty root with
+# their scripts and triggers run (as root, which apk needs to chroot into it;
+# the container runs $ARCH, so it can run them), then packed into a squashfs,
+# which mkimage puts on the image as cervino/rootfs.squashfs: the live
+# system's root.
+build_rootfs() {
+	local rootfs=/work/rootfs
+	echo ">>> Installing the root file system"
+	# Alpine's keys and the build's, which the root's own packages
+	# (alpine-keys, cervino-desktop) then take over.
+	mkdir -p "$rootfs"/etc/apk/keys
+	cp /etc/apk/keys/* "$rootfs"/etc/apk/keys/
+	apk add --root "$rootfs" --initdb --no-cache --quiet \
+		--repository "$MIRROR/$ALPINE_BRANCH/main" \
+		--repository "$MIRROR/$ALPINE_BRANCH/community" \
+		--repository /work/pkgrepo \
+		$(cat /work/rootfs-packages) || die "could not install the root file system"
+	# mkinitfs's trigger built an initramfs for this container; installs
+	# build their own. Each system needs a machine-id of its own, which the
+	# dbus service makes when there is none.
+	rm -f "$rootfs"/boot/initramfs-* "$rootfs"/etc/machine-id
+	# A container may not make device nodes (rootless podman cannot), so apk
+	# may have made none, and scripts writing to /dev/null a plain file. Put
+	# the nodes apk makes in the squashfs instead (mksquashfs keeps a file
+	# that is there over a -p definition).
+	rm -f "$rootfs"/dev/{null,zero,random,urandom,console}
+	echo ">>> Packing the root file system"
+	# The host's SELinux labels stay out (the container's files get them on
+	# an SELinux host); other xattrs, such as file capabilities, go in.
+	mksquashfs "$rootfs" /work/rootfs.squashfs -comp xz -b 1M -noappend -quiet \
+		-xattrs-exclude '^security\.selinux$' \
+		-p 'dev/null c 666 0 0 1 3' -p 'dev/zero c 666 0 0 1 5' \
+		-p 'dev/random c 666 0 0 1 8' -p 'dev/urandom c 666 0 0 1 9' \
+		-p 'dev/console c 600 0 0 5 1' ||
+		die "could not pack the root file system"
 }
 
 builder_main() {
@@ -208,8 +272,8 @@ builder_main() {
 	#   setup-wayland-base: elogind polkit-elogind $BROWSER
 	#   setup-devd udev:    eudev udev-init-scripts udev-init-scripts-openrc
 	#   gnome:              apk add $(apk info --quiet --depends gnome gnome-apps-core)
-	# mkimage cross-builds for $ARCH, which need not be the container's own
-	# architecture, so resolve the packages in an apk root for $ARCH.
+	# Resolve the packages in an apk root of their own for $ARCH, with
+	# Alpine's repos only.
 	local apkroot=/work/apkroot
 	# (The keys there are symlinks: cp without -r copies the files.)
 	mkdir -p "$apkroot"/etc/apk/keys
@@ -283,29 +347,24 @@ builder_main() {
 	# cervino-desktop, which brings in the features. So a feature added to
 	# the package later reaches installed systems with it, while GNOME's
 	# apps stay in world, where they can be removed one by one.
-	local world packages
+	local world
 	world=$(printf '%s\n' alpine-base doas \
 		elogind polkit-elogind "$BROWSER" \
 		eudev udev-init-scripts udev-init-scripts-openrc \
 		$gnome_deps cervino-desktop | sort -u)
-	# What that installs, for the check below (cervino-desktop isn't built
-	# yet).
-	packages=$(printf '%s\n' $world $features | grep -vx cervino-desktop | sort -u)
-	# mkimage puts the packages apk fetch --recursive picks in the image's
-	# repo, and that picks the default provider of each dependency on its
-	# own (sudo for raspinfo's sudo-virt, say). If installing the world as a
-	# whole needs one the fetch did not pick, every apk add on the live
-	# system fails, so check that the fetch covers the install.
-	local fetched installed missing
-	fetched=$(apk --root "$apkroot" fetch --simulate --recursive $packages |
-		sed -n 's/^Downloading \(.*\)-[^-]*-r[0-9]*$/\1/p' | sort -u) ||
-		die "could not fetch the packages for the image"
-	installed=$(apk --root "$apkroot" add --simulate $packages |
-		sed -n 's/^([0-9/]*) Installing \([^ ]*\) .*/\1/p' | sort -u) ||
-		die "the packages for the image conflict (see above)"
-	missing=$(comm -13 <(echo "$fetched") <(echo "$installed"))
-	[[ -z $missing ]] ||
-		die "the image's repo would lack $(echo $missing): add them to the features"
+
+	# The image's on-disc apk repo, for Alpine's setup-disk (sys installs,
+	# see genapkovl-gnomelive.sh): the disk tools it installs on the live
+	# system and the boot loaders it installs on the new one, which the root
+	# file system (copied to the new system first) lacks, and the keymaps
+	# setup-alpine's keyboard step installs. Also apparmor-profiles, which
+	# ci/guest/install.sh reinstalls.
+	local disc_apks="e2fsprogs xfsprogs lvm2 mdadm dosfstools sfdisk cryptsetup btrfs-progs
+		kbd-bkeymaps apparmor-profiles"
+	case $TARGET in
+	iso) disc_apks="$disc_apks syslinux grub-bios grub-efi efibootmgr" ;;
+	rpi) disc_apks="$disc_apks raspberrypi-bootloader" ;;
+	esac
 
 	# --- cervino-desktop package ---------------------------------------------
 	# Built from cervino-desktop/APKBUILD, with the AppArmor profiles and
@@ -338,11 +397,34 @@ builder_main() {
 		-o "$pkgrepo/$ARCH"/APKINDEX.tar.gz "$pkgrepo/$ARCH"/*.apk ||
 		die "could not index cervino-desktop"
 	abuild-sign -q "$pkgrepo/$ARCH"/APKINDEX.tar.gz
+
+	# --- Root file system -----------------------------------------------------
+	# container_main installs these into the root file system: the world plus
+	# the kernel and firmware an installed system needs (setup-disk would
+	# otherwise fetch them from the mirror). The firmware is all of
+	# linux-firmware but what only servers, network appliances and ARM SoCs
+	# use, as an installed system may get hardware the machine it was
+	# installed from did not have. The modloop's firmware is no substitute:
+	# it has only the files modules declare, and drivers load many by names
+	# they make up (Intel Bluetooth, laptop speaker amps, ath11k/ath12k).
+	local kernel=lts firmware
+	[[ $TARGET == rpi ]] && kernel=rpi
+	firmware=$(apk --root "$apkroot" info --quiet --depends linux-firmware |
+		sed -e 's/[<>=~].*//' | grep -v '^$' |
+		grep -vxE 'linux-firmware-(qcom|mellanox|qed|netronome|dpaa2|liquidio|cxgb4|bnx2x|vxge|amlogic|s5p-mfc|amphion)') ||
+		die "could not resolve linux-firmware's packages"
+	# The root file system's world, and the live system's (in the apkovl).
+	local image_world
+	image_world=$(printf '%s\n' $world "linux-$kernel" $firmware wireless-regdb | sort -u)
+	echo "$image_world" > /work/rootfs-packages
+
 	# The live system installs the world at boot, and goes on without it if
 	# that fails, so check that the package installs with it (a cmd: or file
-	# it provides could conflict with another package's).
+	# it provides could conflict with another package's), and with the rest
+	# of the root file system.
 	apk --root "$apkroot" add --simulate --allow-untrusted --repository "$pkgrepo" \
-		$world > /dev/null || die "cervino-desktop does not install with the rest of the image (see above)"
+		$(cat /work/rootfs-packages) > /dev/null ||
+		die "cervino-desktop does not install with the rest of the image (see above)"
 
 	# Kernel arguments, both on the image and (through setup-disk's
 	# KERNELOPTS) on installs. AppArmor is built into the kernel but needs
@@ -389,7 +471,7 @@ builder_main() {
 			# profile_extended)
 			boot_addons="amd-ucode intel-ucode"
 			initrd_ucode="/boot/amd-ucode.img /boot/intel-ucode.img"
-			apks="\$apks $(echo $world)"
+			apks="$(echo $disc_apks)"
 			apkovl="aports/scripts/genapkovl-gnomelive.sh"
 			hostname="alpine"
 		}
@@ -411,7 +493,7 @@ builder_main() {
 			desc="Alpine for the Raspberry Pi plus GNOME, booting straight into GDM."
 			arch="aarch64"
 			kernel_cmdline="\$kernel_cmdline $kernel_opts"
-			apks="\$apks $(echo $world)"
+			apks="$(echo $disc_apks)"
 			output_format="gnomelive"
 			apkovl="aports/scripts/genapkovl-gnomelive.sh"
 			hostname="rpi"
@@ -444,6 +526,19 @@ builder_main() {
 		}
 		EOF
 	fi
+	# The root file system image (built by then), the live system's root.
+	cat >> aports/scripts/mkimg.gnomelive.sh <<-'EOF'
+
+	section_gnomelive_rootfs() {
+		[ "$PROFILE" = gnomelive ] || return 0
+		build_section gnomelive_rootfs $(checksum < /work/rootfs.squashfs)
+	}
+
+	build_gnomelive_rootfs() {
+		mkdir -p "$DESTDIR"/cervino
+		cp /work/rootfs.squashfs "$DESTDIR"/cervino/
+	}
+	EOF
 
 	# --- apkovl generator ----------------------------------------------------
 	# genapkovl-gnomelive.sh reads the build settings from the .conf (and on
@@ -453,18 +548,42 @@ builder_main() {
 		LIVE_PASSWORD "$(shquote "$LIVE_PASSWORD")" \
 		AUTOLOGIN "$(shquote "$AUTOLOGIN")" \
 		KERNEL_OPTS "$(shquote "$kernel_opts")" \
-		WORLD "$(shquote "$world")" > aports/scripts/genapkovl-gnomelive.conf
+		WORLD "$(shquote "$image_world")" > aports/scripts/genapkovl-gnomelive.conf
 	install -m 0755 /genapkovl-gnomelive.sh aports/scripts/genapkovl-gnomelive.sh
 
-	# --- build ---------------------------------------------------------------
-	sh aports/scripts/mkimage.sh \
+	# --- initramfs -----------------------------------------------------------
+	# The live system's root is the root file system image on the boot media
+	# (see initramfs-live.patch), so the image's initramfs gets an init of
+	# its own: update-kernel runs mkinitfs, which takes it from $DATADIR.
+	cp -R /usr/share/mkinitfs /work/mkinitfs
+	patch -s -d /work/mkinitfs -p1 < /initramfs-live.patch ||
+		die "initramfs-live.patch does not apply to this release's mkinitfs"
+	# The live system has the kernel's modules and firmware in the root file
+	# system, so the image goes without the modloop that mkimage's kernel
+	# section has update-kernel make: an update-kernel ahead of it in PATH
+	# deletes it from the section's boot/ (its last argument, with --media).
+	mkdir -p /work/bin
+	cat > /work/bin/update-kernel <<'EOF'
+#!/bin/sh
+/usr/sbin/update-kernel "$@" || exit
+for dest; do :; done
+rm -f "$dest"/boot/modloop-*
+EOF
+	chmod 0755 /work/bin/update-kernel
+}
+
+# Builds the image, once container_main has built the root file system it
+# puts on it.
+mkimage_main() {
+	cd /work
+	DATADIR=/work/mkinitfs PATH=/work/bin:$PATH sh aports/scripts/mkimage.sh \
 		--tag "$(cat /etc/alpine-release)" \
 		--outdir /work/out \
 		--workdir /work/mkimage \
 		--arch "$ARCH" \
-		--repository "$repo_main" \
-		--repository "$repo_community" \
-		--repository "$pkgrepo" \
+		--repository "$MIRROR/$ALPINE_BRANCH/main" \
+		--repository "$MIRROR/$ALPINE_BRANCH/community" \
+		--repository /work/pkgrepo \
 		--profile gnomelive
 }
 
@@ -472,6 +591,8 @@ if [[ ${1:-} == --in-container ]]; then
 	container_main
 elif [[ ${1:-} == --as-builder ]]; then
 	builder_main
+elif [[ ${1:-} == --mkimage ]]; then
+	mkimage_main
 else
 	host_main
 fi

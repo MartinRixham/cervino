@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
     # Tag builds sign with the APK_SIGNING_KEY secret of the release
     # environment, which only v* tags may deploy to; other builds run
@@ -43,9 +43,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # iso: the x86_64 ISO; rpi: the aarch64 Raspberry Pi image, cross-built
-        # on the same runner.
-        target: [iso, rpi]
+        # iso: the x86_64 ISO; rpi: the aarch64 Raspberry Pi image, on an
+        # arm64 runner, as the build runs the target's packages' scripts.
+        include:
+          - target: iso
+            runner: ubuntu-latest
+          - target: rpi
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
 

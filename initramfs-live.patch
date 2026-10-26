@@ -1,0 +1,64 @@
+Boots the live system from the root file system image the build puts on the
+boot media (cervino/rootfs.squashfs): mounted read-only with a tmpfs over it,
+in place of the tmpfs root the world is installed into. Applied by
+build-alpine-gnome-iso.sh to a copy of mkinitfs's initramfs-init, which
+mkimage then builds the image's initramfs with (through DATADIR).
+
+--- a/initramfs-init
++++ b/initramfs-init
+@@ -929,7 +929,33 @@
+ fi
+ 
+ 
+-$MOCK mount -t tmpfs -o "$rootflags" tmpfs "$sysroot"
++# cervino: the root file system image on the boot media, if there is one,
++# is the root: read-only, with a tmpfs over it for changes. Its packages are
++# installed, so the world is not installed below. Without it (or if it does
++# not mount), the root is a tmpfs as before. Not under /media, where GNOME
++# Files would list the mounts.
++rootimg=$(find "$ROOT"/media/* -maxdepth 2 -path '*/cervino/rootfs.squashfs' 2>/dev/null | head -n 1)
++if [ -n "$rootimg" ]; then
++	ebegin "Mounting root file system image $rootimg"
++	$MOCK modprobe -a loop squashfs overlay 2> /dev/null
++	mkdir -p /.cervino/ro /.cervino/rw
++	if $MOCK mount -t squashfs -o ro,loop "$rootimg" /.cervino/ro; then
++		if $MOCK mount -t tmpfs -o "$rootflags" root-tmpfs /.cervino/rw &&
++			mkdir -p /.cervino/rw/root /.cervino/rw/work &&
++			$MOCK mount -t overlay -o lowerdir=/.cervino/ro,upperdir=/.cervino/rw/root,workdir=/.cervino/rw/work \
++				overlayfs "$sysroot"; then
++			eend 0
++		else
++			eend 1
++			$MOCK umount /.cervino/rw /.cervino/ro 2> /dev/null
++			rootimg=
++		fi
++	else
++		eend 1
++		rootimg=
++	fi
++fi
++[ -n "$rootimg" ] || $MOCK mount -t tmpfs -o "$rootflags" tmpfs "$sysroot"
+ if [ "$KOPT_bootstrap_usr_merged" = "yes" ]; then
+ 	$MOCK mkdir -p "$sysroot"/usr/lib "$sysroot"/usr/bin "$sysroot"/usr/sbin
+ 	$MOCK ln -s usr/bin usr/sbin usr/lib "$sysroot"/
+@@ -960,7 +986,7 @@
+ if [ -f "$ovl" ]; then
+ 	ebegin "Loading user settings from $ovl"
+ 	# create apk db and needed /dev/null and /tmp first
+-	$MOCK apk add --root "$sysroot" --initdb --quiet
++	[ -n "$rootimg" ] || $MOCK apk add --root "$sysroot" --initdb --quiet
+ 
+ 	unpack_apkovl "$ovl" "$sysroot"
+ 	eend $? "$errstr" || ovlfiles=
+@@ -1120,7 +1146,10 @@
+ $MOCK mount -o bind /sys "$sysroot"/sys
+ $MOCK mount -o bind /proc "$sysroot"/proc
+ $MOCK mount -o bind /dev "$sysroot"/dev
+-if [ -n "$ovlfiles" ]; then
++if [ -n "$rootimg" ]; then
++	# cervino: installed in the image
++	:
++elif [ -n "$ovlfiles" ]; then
+ 	# shellcheck disable=SC2086
+ 	if ! $MOCK apk add --root $sysroot $repo_opt $apkflags $pkgs < "$ovlfiles"; then
+ 		echo "WARNING: apkovl packages install completed with errors..." > "$ROOT"/dev/kmsg

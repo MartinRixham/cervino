@@ -214,9 +214,10 @@ requests, get no update repository: only tag builds are signed for it.
 
 ## Booting the ISO
 
-The live system runs entirely from RAM (tmpfs), so you need **about 6 GB of
-RAM or more** to boot it. Write it to a USB stick or attach it to a VM, for
-example:
+The live system runs from a read-only image of the installed system on the
+disc, with only what changes kept in RAM, so **2 GB of RAM** is enough to
+boot it to the desktop (4 GB or more to do much in it). Write it to a USB
+stick or attach it to a VM, for example:
 
 ```sh
 qemu-system-x86_64 -enable-kvm -m 8G -cdrom out/*.iso
@@ -272,11 +273,16 @@ The disk step first asks how to install the system:
   system is read-only and updated as a whole, as in Fedora Silverblue. Each
   update is a new version of the system, which it starts with next time
   (once on trial first), and the four versions before stay. It asks for one
-  disk and whether to encrypt it. On a PC it needs UEFI: a PC started
-  without it (legacy BIOS) gets a sys install.
+  disk and whether to encrypt it. The system is copied from the image the
+  live system runs from, so installing downloads nothing (but packages
+  added in the live session). On a PC it needs UEFI: a PC started without it
+  (legacy BIOS) gets a sys install.
 - **sys** (`-m sys`): Alpine's standard install, updated in place, with
   Alpine's own disk questions. So does every other `setup-disk` option
-  (`data` or LVM mode, RAID, several disks).
+  (`data` or LVM mode, RAID, several disks). The system is copied from the
+  same image, with the boot loader from the disc, so this downloads nothing
+  either (but firmware the image lacks for the machine's hardware, if the
+  mirror can be reached).
 
 On a PC, an atomic install erases the disk and makes three partitions: a
 1 GiB FAT boot partition (the EFI system partition, mounted on
@@ -315,8 +321,9 @@ TARGET=rpi ./build-alpine-gnome-iso.sh
 ```
 
 builds `out/alpine-gnomelive-<release>-aarch64.img.gz`, an SD card image for
-the Raspberry Pi 4, 400, 5 and 500. Like the ISO, the live system runs from
-RAM, so it needs a Pi with **8 GB of RAM or more**. The image is built from
+the Raspberry Pi 4, 400, 5 and 500. Like the ISO's, the live system runs
+from a read-only image on the card, so a Pi with **2 GB of RAM** should do
+(4 GB or more to do much in it; not yet measured on a Pi). The image is built from
 Alpine's own Pi image, with the same packages, settings and features as the
 ISO (except the Intel VA-API drivers and the CPU microcode), so it doesn't
 need an ARM host or emulation. It also turns on the GPU's KMS driver
@@ -330,9 +337,9 @@ gunzip -c out/alpine-gnomelive-*-aarch64.img.gz | sudo dd of=/dev/sdX bs=4M conv
 ```
 
 Installing works as from the ISO (see [Installing to disk](#installing-to-disk)),
-to a USB or NVMe drive or to the SD card the Pi booted from: everything runs
-from RAM, so `setup-alpine` offers to unmount it. The installed system's boot
-partition gets the same `usercfg.txt`.
+to a USB or NVMe drive, but for now not to the SD card the Pi booted from:
+the live system runs from an image on it, so it can't be unmounted. The
+installed system's boot partition gets the same `usercfg.txt`.
 
 An atomic install on the Pi erases the disk and makes an MBR partition
 table, as the Pi's firmware starts from its first partition: a 1 GiB FAT
@@ -364,9 +371,9 @@ The script uses Alpine's own image tooling, `aports/scripts/mkimage.sh`, with
 a custom profile (`gnomelive`) that extends `profile_standard`:
 
 1. **Host:** works out the Alpine release and re-runs itself in an
-   `alpine:<release>` container, mounting the output directory. For the Pi,
-   `mkimage.sh` builds for aarch64 in the host's own container: it fetches
-   the aarch64 packages and assembles the image without running them.
+   `alpine:<release>` container of the target's architecture, mounting the
+   output directory. Building the Pi image on an x86_64 host (or the ISO on
+   an arm64 one) needs QEMU user emulation, e.g. `qemu-user-static`.
 2. **Container:** installs the build tools, creates an unprivileged `build`
    user and an abuild signing key (`mkimage.sh` must run unprivileged).
 3. **Builder:** sparse-clones `aports/scripts`, resolves the package list
@@ -376,19 +383,26 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
      features' configuration and the AppArmor profiles from
      [`apparmor.d/`](apparmor.d), depending on the features' packages;
-   - the mkimage profile, which adds those packages and `cervino-desktop`
-     (with all dependencies) to the ISO's on-disc apk repository (for the
-     Pi it extends Alpine's `rpiimg` profile instead, and adds
-     `usercfg.txt`);
+   - the mkimage profile, which puts the root file system on the image,
+     with an on-disc apk repository of only the disk tools and boot loaders
+     Alpine's `setup-disk` adds, and no modloop (for the Pi it extends
+     Alpine's `rpiimg` profile instead, and adds `usercfg.txt`);
+   - the initramfs's init: Alpine's, with
+     [`initramfs-live.patch`](initramfs-live.patch);
    - an apkovl generator. The apkovl is the same overlay mechanism `lbu` uses;
      it contains what only the live system needs: `/etc/apk/world`, the GDM
      config, OpenRC runlevels (udev in place of mdev, plus `cgroups`,
      `dbus`, `gdm` and the desktop features' services, and AppArmor in
      `sysinit`, before udev), a `live-user` init script, and the
      `setup-alpine` wrapper with its `lbu` and `adduser` shims.
-4. At boot the initramfs unpacks the apkovl, installs everything in its
-   `/etc/apk/world` from the disc into the RAM root, and OpenRC starts udev,
-   dbus, gdm and so on just as `setup-desktop` would have configured them.
+4. **Root file system:** the same packages, plus the kernel and firmware,
+   installed once, with their scripts run, and packed into a squashfs,
+   `cervino/rootfs.squashfs` on the image. Then `mkimage.sh` builds the
+   image.
+5. At boot the initramfs mounts the squashfs read-only with a tmpfs over it
+   (an overlay) as the root, unpacks the apkovl into it, and OpenRC starts
+   udev, dbus, gdm and so on just as `setup-desktop` would have configured
+   them. Nothing is installed at boot, and only what changes takes RAM.
 
 ## License
 

@@ -7,14 +7,18 @@
 # to it, and mkimage runs it with the hostname as its argument.
 #
 # The apkovl holds what only the live system has: the live user, autologin,
-# the installer's wrappers and the runlevels. The desktop features'
-# configuration is in the cervino-desktop package (cervino-desktop/APKBUILD),
-# which /etc/apk/world installs, on the live system and on installs alike.
+# the installer's wrappers and the runlevels. The live system boots from the
+# root file system image on the boot media, with /etc/apk/world (WORLD, the
+# image's packages) installed; the initramfs unpacks the apkovl over it. The
+# desktop features' configuration is in the cervino-desktop package
+# (cervino-desktop/APKBUILD), which the world installs, on the live system
+# and on installs alike.
 #
 # The runlevels are those the initramfs sets up on the standard ISO, changed
 # as setup-desktop gnome would change them: mdev/hwdrivers swapped for udev
 # (setup-devd udev), plus cgroups, dbus and gdm in default. The desktop
-# features add their services on top, and AppArmor to sysinit.
+# features add their services on top, and AppArmor to sysinit. modloop is
+# left out: the image has the kernel's modules and firmware.
 
 HOSTNAME="$1"
 [ -n "$HOSTNAME" ] || { echo "usage: $0 hostname"; exit 1; }
@@ -335,6 +339,49 @@ dir=$(getent passwd "$user" | cut -d: -f6)
 [ ! -d "$dir" ] || chmod 700 "$dir"
 EOF
 
+# Alpine's setup-disk installs a sys install's system with "apk add --root
+# MNT --initdb ... --overlay-from-stdin", once it has partitioned the disk
+# and put the live /etc (lbu package), fstab, mkinitfs.conf and the boot
+# loader's settings in MNT. Under the setup-disk shim below
+# (CERVINO_COPY_ROOT), this apk copies the root file system image the live
+# system runs from there first, but for the files already there, and builds
+# its initramfs, so apk itself only adds what the image lacks: the boot
+# loader (from the disc), firmware for hardware the image has none for, and
+# packages added in the live session. Then it makes the boot loader's
+# configuration, which the packages' triggers would have made when the
+# kernel was installed. Everything else goes to apk as it is.
+makefile root:root 0755 "$tmp"/usr/local/sbin/apk <<'EOF'
+#!/bin/sh
+[ -n "$CERVINO_COPY_ROOT" ] && [ "$1" = add ] || exec /usr/sbin/apk "$@"
+root= initdb= overlay= prev=
+for a; do
+	[ "$prev" != --root ] || root=$a
+	case $a in --initdb) initdb=1 ;; --overlay-from-stdin) overlay=1 ;; esac
+	prev=$a
+done
+[ -n "$root" ] && [ -n "$initdb" ] && [ -n "$overlay" ] && [ -d /.cervino/ro/etc ] ||
+	exec /usr/sbin/apk "$@"
+echo "Copying the system to $root..."
+rsync -aHX --ignore-existing /.cervino/ro/ "$root"/ || exit
+for k in "$root"/lib/modules/*; do
+	k=${k##*/}
+	mkinitfs -b "$root"/ -c "$root"/etc/mkinitfs/mkinitfs.conf -o "$root"/boot/initramfs-"${k##*-}" "$k" ||
+		exit
+done
+first=1
+for a; do
+	[ -z "$first" ] || { set --; first=; }
+	[ "$a" = --initdb ] || set -- "$@" "$a"
+done
+/usr/sbin/apk "$@" || exit
+if [ -f "$root"/etc/update-extlinux.conf ] && [ -x "$root"/sbin/update-extlinux ]; then
+	chroot "$root" update-extlinux --warn-only || exit
+fi
+if [ -f "$root"/etc/default/grub ] && [ -x "$root"/usr/sbin/grub-mkconfig ]; then
+	chroot "$root" grub-mkconfig -o /boot/grub/grub.cfg || exit
+fi
+EOF
+
 # setup-disk offers an atomic install (-m atomic, and the default answer)
 # besides Alpine's standard one (-m sys, and the other modes, RAID, several
 # disks or a mounted root, which go to Alpine's setup-disk; sys chosen at its
@@ -347,11 +394,15 @@ EOF
 # key at each boot) and a btrfs volume, on LUKS if the disk is to be
 # encrypted. The volume holds the system in roots/<id> (the install's date
 # and time) with a nested subvolume for its /etc, and @var and @home, which
-# later versions share. Alpine's setup-disk installs the packages and the
-# live /etc into it (with BOOTLOADER=none, as a mounted root), then this shim
-# writes fstab and /etc/kernel/cmdline (the kernel arguments, but for the
-# subvolume), turns mkinitfs's trigger off (the kernel hook builds the
-# initramfs instead, before copying it), removes GNOME Software's apk
+# later versions share. The system is the root file system image the live
+# system runs from (as built, not as the live session changed it), copied
+# into it, with the live /etc that differs from it over that (lbu package,
+# through the lbu shim above, as Alpine's setup-disk does); packages added
+# in the live session are installed from the repositories. Then this shim
+# writes fstab, /etc/kernel/cmdline (the kernel arguments, but for the
+# subvolume) and mkinitfs.conf (the features Alpine's setup-disk picks, with
+# the trigger off: the kernel hook builds the initramfs instead, before
+# copying it) and builds the initramfs, removes GNOME Software's apk
 # plugin, moves /root to /var/roothome, makes the system read-only and runs
 # cervino-desktop's update-boot, which puts the kernel, initramfs and
 # command line on the boot partition as a unified kernel image, with a UEFI
@@ -361,8 +412,8 @@ EOF
 # /boot/firmware, swap only with -s, as Alpine's setup-disk does on the Pi,
 # and then the btrfs volume; update-boot puts each version's boot files in
 # its own directory there, and config.txt starts one (os_prefix). The
-# disk the live system started from can be installed to once its modloop is
-# copied to RAM, as Alpine's setup-disk offers.
+# disk the live system started from can't be installed to: the live system
+# runs from it.
 makefile root:root 0755 "$tmp"/usr/local/sbin/setup-disk <<'EOF'
 #!/bin/sh
 . /usr/lib/libalpine.sh
@@ -390,6 +441,9 @@ parse "$@"
 case $mode in ''|atomic|none) ;; *) stock=1 ;; esac
 case $disks in *" "*) stock=1 ;; esac
 [ -d "${disks:-/nonexistent}" ] && stock=1
+# Alpine's setup-disk, for what it does, copies the system (see the apk shim
+# above).
+export CERVINO_COPY_ROOT=1
 [ -z "$stock" ] || exec /usr/sbin/setup-disk "$@"
 [ "$mode" != none ] && [ "$disks" != none ] || exit 0
 asked=
@@ -442,26 +496,8 @@ show_disk_info() {
 	done
 }
 
-# The disk the live system started from (the Pi's SD card, say) can be
-# installed to once its modloop is copied to RAM and it is unmounted, as
-# Alpine's setup-disk does.
-boot_media=$(find_modloop_media 2>/dev/null) || boot_media=
-boot_disk=
-if [ -n "$boot_media" ]; then
-	boot_disk=$(sed -n 's/^DEVNAME=//p' /sys/dev/block/"$(mountpoint -d "$boot_media" | cut -d: -f1)":0/uevent 2>/dev/null)
-fi
-free_boot_disk() {
-	DO_UMOUNT=1 modloop_media=$boot_media copy-modloop || die "could not unmount $boot_media"
-	boot_media=
-}
-
 if [ -z "$disks" ]; then
 	avail=$(find_disks)
-	if [ -z "$avail" ] && [ -n "$boot_disk" ] &&
-		ask_yesno "No disks available. Try boot media $boot_media? (y/n)" n; then
-		free_boot_disk
-		avail=$(find_disks)
-	fi
 	[ -n "$avail" ] || { qecho "No disks found." >&2; exit 0; }
 	set -- $avail
 	resp=
@@ -478,7 +514,6 @@ disk=$(readlink -f "$disks")
 case $disk in /dev/*) ;; *) disk=/dev/$disks ;; esac
 d=${disk#/dev/}
 [ -e /sys/block/"$d"/device ] || die "$disks is not a disk"
-[ -z "$boot_media" ] || [ "$d" != "$boot_disk" ] || free_boot_disk
 if [ -n "$asked" ] && [ -z "$crypt" ]; then
 	echo
 	ask_yesno "Encrypt the disk? Its passphrase will be asked for at every boot. (y/n)" n && crypt=1
@@ -601,7 +636,15 @@ mount -t btrfs -o noatime,subvol=/roots/"$id" "$dev" "$mnt" &&
 	mount -t btrfs -o noatime,subvol=/@home "$dev" "$mnt"/home &&
 	mount -t vfat "$esp" "$mnt$bootdir" || die "could not mount $dev"
 
-BOOTLOADER=none /usr/sbin/setup-disk ${QUIET:+-q} "$mnt" || exit
+# The system: the image the live system runs from, then the live /etc
+# that differs from it (the lbu shim leaves the live user out), with the
+# disc's repositories commented out, as Alpine's setup-disk does.
+[ -d /.cervino/ro/etc ] || die "the live system has no root file system image to install"
+echo "Copying the system to $dev..."
+rsync -aHX /.cervino/ro/ "$mnt"/ || die "could not copy the system"
+lbu package - | tar -C "$mnt" -xzf - || die "could not copy the live system's settings"
+[ ! -f "$mnt"/etc/apk/repositories ] || sed -i -e 's:^/:#/:' "$mnt"/etc/apk/repositories
+rm -f "$mnt"/etc/runlevels/*/modloop
 
 uuid=$(blkid -s UUID -o value "$dev")
 f=$mnt/etc/fstab
@@ -619,7 +662,9 @@ f=$mnt/etc/fstab
 		mkswap -L swap "$swappart" >/dev/null || die "could not format $swappart"
 		printf 'UUID=%s\tnone\tswap\tdefaults\t0 0\n' "$(blkid -s UUID -o value "$swappart")"
 	fi
-	awk -v b="$bootdir" '$2 != "/" && $2 != "/var" && $2 != "/home" && $2 != b && $3 != "swap"' "$f"
+	printf '/dev/cdrom\t/media/cdrom\tiso9660\tnoauto,ro 0 0\n'
+	printf '/dev/usbdisk\t/media/usb\tvfat\tnoauto\t0 0\n'
+	printf 'tmpfs\t/tmp\ttmpfs\tnosuid,nodev\t0\t0\n'
 } > "$f".new && mv "$f".new "$f" || die "could not write $f"
 if [ "$swap" != 0 ] && [ -n "$crypt" ]; then
 	printf '\nswap=swap\nsource=/dev/disk/by-partuuid/%s\noptions="-c aes-xts-plain64 -s 512 -d /dev/urandom"\n' \
@@ -646,10 +691,27 @@ case $tty in /dev/ttyS[0-9]*)
 esac
 mkdir -p "$mnt"/etc/kernel
 echo "$cmdline" > "$mnt"/etc/kernel/cmdline
-echo disable_trigger=yes >> "$mnt"/etc/mkinitfs/mkinitfs.conf
-# GNOME Software cannot install packages into the read-only system: it keeps
-# Flatpak, and update-alpine add installs packages.
+# The initramfs's features, as Alpine's setup-disk picks them, and the
+# kernel hook builds it rather than mkinitfs's trigger.
+features="ata base scsi usb virtio"
+[ -z "$pi" ] || features="base mmc usb"
+features="$features btrfs"
+case $d in nvme*) features="$features nvme" ;; mmcblk*) features="$features mmc" ;; esac
+[ -z "$crypt" ] || features="$features cryptsetup keymap"
+printf 'features="%s"\ndisable_trigger=yes\n' "$features" > "$mnt"/etc/mkinitfs/mkinitfs.conf ||
+	die "could not write mkinitfs.conf"
+for k in "$mnt"/lib/modules/*; do
+	k=${k##*/}
+	mkinitfs -b "$mnt"/ -c "$mnt"/etc/mkinitfs/mkinitfs.conf -o "$mnt"/boot/initramfs-"${k##*-}" "$k" ||
+		die "could not build the initramfs"
+done
 if mount --bind /proc "$mnt"/proc && mount --bind /dev "$mnt"/dev; then
+	# Packages added in the live session (the image has the rest).
+	cmp -s "$mnt"/etc/apk/world /.cervino/ro/etc/apk/world ||
+		apk add --root "$mnt" --quiet --clean-protected ||
+		echo "The packages added in the live session could not all be installed." >&2
+	# GNOME Software cannot install packages into the read-only system: it
+	# keeps Flatpak, and update-alpine add installs packages.
 	apk del --root "$mnt" --quiet gnome-software-plugin-apk2 ||
 		echo "GNOME Software's apk plugin could not be removed." >&2
 	umount "$mnt"/dev "$mnt"/proc
@@ -675,7 +737,6 @@ EOF
 
 rc_add devfs sysinit
 rc_add dmesg sysinit
-rc_add modloop sysinit
 rc_add apparmor sysinit
 rc_add udev sysinit
 rc_add udev-trigger sysinit
