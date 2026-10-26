@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Widevine probe</title>
+<script>
+// Asks the browser for Widevine and has its CDM make a license request,
+// which needs no license server: the CDM must load and run. Firefox
+// downloads its CDM the first time a page asks, so a failed attempt is
+// retried. Results go to the console as "widevine-probe: <result>".
+const log = s => console.log("widevine-probe: " + s);
+// A version 0 Widevine pssh box holding one key id
+const system = [0xed, 0xef, 0x8b, 0xa9, 0x79, 0xd6, 0x4a, 0xce,
+                0xa3, 0xc8, 0x27, 0xdc, 0xd5, 0x1d, 0x21, 0xed];
+const data = [0x12, 0x10, ...Array(16).fill(0x11)];
+const pssh = new Uint8Array([0, 0, 0, 32 + data.length, 0x70, 0x73, 0x73, 0x68,
+                             0, 0, 0, 0, ...system, 0, 0, 0, data.length, ...data]);
+let tries = 0;
+async function attempt() {
+  tries++;
+  try {
+    const access = await navigator.requestMediaKeySystemAccess("com.widevine.alpha", [{
+      initDataTypes: ["cenc"],
+      videoCapabilities: [{contentType: 'video/mp4; codecs="avc1.42E01E"'}],
+      audioCapabilities: [{contentType: 'audio/mp4; codecs="mp4a.40.2"'}],
+    }]);
+    const session = (await access.createMediaKeys()).createSession();
+    session.addEventListener("message", e => log("ok " + e.messageType + " of " + e.message.byteLength + " bytes"));
+    await session.generateRequest("cenc", pssh);
+  } catch (e) {
+    if (tries < 10) {
+      log("retry " + e.name + ": " + e.message);
+      setTimeout(attempt, 10000);
+    } else {
+      log("error " + e.name + ": " + e.message);
+    }
+  }
+}
+attempt();
+</script>

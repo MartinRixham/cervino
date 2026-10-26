@@ -188,6 +188,23 @@ apparmor_profile=wifi-region
 . /usr/libexec/cervino/apparmor-start.sh
 EOF
 
+	# Firefox plays DRM video (Netflix, Spotify, ...) with Google's Widevine
+	# CDM, which it downloads the first time a page asks for it and the user
+	# turns DRM on. The CDM is built for glibc; Alpine's Firefox loads gcompat
+	# into its process, but Alpine's vendor.js hides Widevine, as without
+	# gcompat it fails with an unhelpful error. The features install gcompat,
+	# so show it again. Firefox reads this directory in reverse alphabetical
+	# order, the last setting winning, so the file must sort before vendor.js.
+	# Mozilla offers no Widevine for Linux on aarch64, so not on the Pi.
+	if [ "$TARGET_ARCH" = x86_64 ]; then
+		for _firefox in firefox firefox-esr; do
+			makefile root:root 0644 "$pkgdir"/usr/lib/$_firefox/browser/defaults/preferences/cervino.js <<'EOF'
+pref("media.gmp-widevinecdm.visible", true);
+pref("media.gmp-widevinecdm.enabled", true);
+EOF
+		done
+	fi
+
 	# The default nftables ruleset drops incoming connections; allow SSH,
 	# mDNS and AirPlay: a speaker sends PipeWire's AirPlay sink timing and
 	# control packets on UDP 6001 and up (6001/6002 for the first sink) before

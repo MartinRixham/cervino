@@ -963,6 +963,49 @@ t_media_decoders() {
     [[ -z $missing ]] || { echo "no decoder for $missing"; return 1; }
 }
 
+t_browser_drm() {
+    # Streaming services (Netflix, Spotify, Disney+, ...) need Widevine,
+    # which Firefox downloads from Google the first time a page asks for it.
+    # The CDM is built for glibc: on musl it needs gcompat. This opens the
+    # probe page in a headless Firefox with a new profile, which downloads
+    # the CDM and has it make a license request.
+    local ff dir i result
+    ff=$(first_have firefox firefox-esr) || { echo "Firefox not installed"; return 2; }
+    have pkill || { echo "pkill missing"; return 2; }
+    dir=$(mktemp -d) || return 1
+    mkdir "$dir/profile"
+    # The probe's console lines go to stdout. On Linux Firefox asks before
+    # it plays DRM video: media.eme.enabled is what its "Enable DRM" button
+    # turns on.
+    printf 'user_pref("%s", %s);\n' devtools.console.stdout.content true \
+        media.eme.enabled true browser.shell.checkDefaultBrowser false \
+        datareporting.policy.dataSubmissionEnabled false >"$dir/profile/user.js"
+    # TMPDIR: where Firefox downloads the CDM to, deleted with the rest
+    TMPDIR=$dir "$ff" --headless --no-remote --profile "$dir/profile" \
+        "file://$(realpath "$(dirname "${BASH_SOURCE[0]}")")/widevine-probe.html" >"$dir/out" 2>&1 &
+    for ((i = 0; i < 150; i++)); do
+        result=$(sed -n 's/^console\.log: "widevine-probe: \(.*\)"$/\1/p' "$dir/out" | tail -n1)
+        [[ $result == ok* || $result == error* ]] && break
+        sleep 1
+    done
+    # The launcher may be a script that keeps running: end Firefox itself
+    pkill -f -- "--profile $dir/profile"
+    wait
+    if [[ $result == ok* ]]; then
+        rm -rf "$dir"
+        return 0
+    fi
+    if [[ $result == *NotSupportedError* ]]; then
+        echo "Firefox does not offer Widevine (turned off in its preferences?)"
+    elif [[ -d $dir/profile/gmp-widevinecdm ]]; then
+        echo "Firefox downloaded Widevine but it does not run (gcompat on musl?): ${result:-no result}"
+    else
+        echo "Firefox did not download Widevine: ${result:-no result}"
+    fi
+    rm -rf "$dir"
+    return 1
+}
+
 t_spice_agent() {
     [[ -e /dev/virtio-ports/com.redhat.spice.0 ]] || { echo "not a SPICE VM"; return 2; }
     proc_running spice-vdagent spice-vdagentd ||
@@ -1031,6 +1074,7 @@ run_test "Distribution packages in GNOME Software"     t_app_store_distro_packag
 run_test "Firmware updates in GNOME Software"          t_app_store_firmware_updates
 run_test "VA-API video acceleration available"         t_video_acceleration
 run_test "Decoders for common video and audio formats" t_media_decoders
+run_test "DRM video in the browser (Widevine)"         t_browser_drm
 run_test "SPICE guest agent (VM clipboard/resize)"     t_spice_agent
 run_test "Logout not blocked by GNOME Shell"           t_logout_not_blocked_by_shell
 

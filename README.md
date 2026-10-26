@@ -57,6 +57,10 @@ from a desktop distribution, and keeps it when installed to disk:
 - `gst-libav` (FFmpeg's decoders for GStreamer): multithreaded H.264 and
   HEVC, and the AC-3, E-AC-3 and DTS sound tracks of most video files, and
   dav1d's AV1 decoder (`gst-plugins-rs-dav1d`)
+- DRM video (Netflix, Spotify, ...) in Firefox: Alpine hides Firefox's
+  Widevine, which needs `gcompat`; the ISO shows it again, and Firefox
+  downloads it from Google when a page first asks and you turn DRM on
+  (x86_64 only: Mozilla has no Widevine for Linux on aarch64)
 - Alpine's packages in GNOME Software: `apk-polkit-server` runs at boot, and
   the AppStream catalog of the repositories in `/etc/apk/repositories` is
   fetched when a network connection comes up and daily (the live system's
