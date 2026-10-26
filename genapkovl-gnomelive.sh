@@ -205,7 +205,7 @@ fi
 DEVDOPTS=\${DEVDOPTS:-udev} APKREPOSOPTS=\${APKREPOSOPTS:--c} \\
 	USEROPTS=\${USEROPTS:--a -g audio,input,video,netdev,plugdev,lpadmin} \\
 	KERNELOPTS=\${KERNELOPTS:-quiet $KERNEL_OPTS} SSHDOPTS=\${SSHDOPTS:-none} \\
-	NTPOPTS=\${NTPOPTS:-none} \\
+	NTPOPTS=\${NTPOPTS:-none} GNOMELIVE_SETUP=1 \\
 	PATH="\$shim:\$PATH" /usr/sbin/setup-alpine -e "\$@"
 EOF
 
@@ -295,22 +295,41 @@ fi
 # read; give desktop users bash and a home only they can read instead
 # (system users, created with -S, are left alone, and so are an explicit
 # -s and -H). With two names, adduser adds an existing user to a group.
+# setup-user asks for a user again if adduser fails, so a user that an
+# earlier setup-alpine run made (one that was abandoned before or after
+# writing the disk; the live /etc keeps the user) would only be refused as
+# taken. Users made under the setup-alpine wrapper are listed in
+# /run/gnomelive-setup-users, and the wrapper's next runs get them back,
+# with the full name now given.
 makefile root:root 0755 "$tmp"/usr/local/sbin/adduser <<'EOF'
 #!/bin/sh
-shell=/bin/bash home=yes user= names=0 value=
+shell=/bin/bash home=yes user= names=0 value= gecos= next=
+list=/run/gnomelive-setup-users
 for a; do
-	if [ -n "$value" ]; then value=; continue; fi
+	if [ -n "$value" ]; then
+		[ "$next" != g ] || gecos=$a
+		value= next=
+		continue
+	fi
 	case $a in
 	-S|-[!-]*S*) exec /usr/sbin/adduser "$@" ;;
 	-s) shell= value=1 ;;
-	-[hgGuk]) value=1 ;;
+	-g) value=1 next=g ;;
+	-[hGuk]) value=1 ;;
 	-H|-[!-]*H*) home= ;;
 	-*) ;;
 	*) user=$a names=$((names + 1)) ;;
 	esac
 done
+if [ -n "$GNOMELIVE_SETUP" ] && [ "$names" = 1 ] && getent passwd "$user" >/dev/null &&
+	grep -qxF "$user" "$list" 2>/dev/null; then
+	echo "adduser: using user '$user', made by an earlier setup-alpine run"
+	[ -z "$gecos" ] || usermod -c "$gecos" "$user"
+	exit
+fi
 [ -z "$shell" ] || set -- -s "$shell" "$@"
 /usr/sbin/adduser "$@" || exit
+[ -z "$GNOMELIVE_SETUP" ] || [ "$names" != 1 ] || echo "$user" >> "$list"
 [ "$names" = 1 ] && [ -n "$home" ] || exit 0
 dir=$(getent passwd "$user" | cut -d: -f6)
 [ ! -d "$dir" ] || chmod 700 "$dir"
