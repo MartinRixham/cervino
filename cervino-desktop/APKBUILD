@@ -625,7 +625,9 @@ atomic_ready() {
 # atomic_pi [ROOT]: whether ROOT (default /) is a Raspberry Pi's system (the
 # firmware's files are in its /boot).
 atomic_pi() {
-	[ -f "${1%/}"/boot/start4.elf ] || [ -f "${1%/}"/boot/bootcode.bin ]
+	local r=${1:-}
+	r=${r%/}
+	[ -f "$r"/boot/start4.elf ] || [ -f "$r"/boot/bootcode.bin ]
 }
 
 # atomic_trial [ROOT]: whether a new version of ROOT's system starts once
@@ -633,7 +635,7 @@ atomic_pi() {
 # /usr/libexec/cervino/boot-trial): on a PC, which UEFI starts, and on a Pi
 # whose firmware has tryboot.
 atomic_trial() {
-	if atomic_pi "$1"; then
+	if atomic_pi "${1:-}"; then
 		[ -e /proc/device-tree/chosen/bootloader/tryboot ]
 	else
 		[ -d /sys/firmware/efi ]
