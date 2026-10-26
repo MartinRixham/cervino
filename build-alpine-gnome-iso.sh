@@ -304,7 +304,8 @@ builder_main() {
 	# gcompat (the glibc loader, for programs built for glibc), fstrim,
 	# cronie (cron with anacron, for periodic jobs missed while off),
 	# earlyoom (kills a process before running out of memory freezes the
-	# desktop) and
+	# desktop), iw and wireless-regdb (the Wi-Fi region, set from the time
+	# zone) and
 	# (x86_64 only) the CPU microcode.
 	# Their configuration is in the cervino-desktop package, which depends on
 	# them (built below), and their services are set up in the apkovl.
@@ -322,7 +323,7 @@ builder_main() {
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium gst-libav
 		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal
-		cronie cronie-openrc earlyoom earlyoom-openrc"
+		cronie cronie-openrc earlyoom earlyoom-openrc iw wireless-regdb"
 	# The installer's setup-disk shim (see genapkovl-gnomelive.sh) offers an
 	# atomic install: the system on a btrfs volume, optionally encrypted,
 	# booted from a FAT boot partition. Installed systems need the same tools

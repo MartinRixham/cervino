@@ -1,0 +1,32 @@
+# AppArmor profile for the wifi-region service: busybox inotifyd watching
+# /etc, and /usr/libexec/cervino/wifi-region, which it runs when the time
+# zone changes to set the Wi-Fi region with iw. inotifyd is a busybox
+# applet, which no profile can attach to by path: /etc/conf.d/wifi-region
+# starts it under this one by name. (udev runs the same helper, under
+# udevd's profile, when a radio appears.)
+
+abi <abi/4.0>,
+
+include <tunables/global>
+
+profile wifi-region flags=(attach_disconnected) {
+  include <abstractions/base>
+
+  # Signals from root's shells and what they run (kill, rc-service, ...),
+  # which Alpine's busybox profile, in unconfined mode, labels busybox
+  signal (receive) peer=busybox,
+
+  # Setting the region (nl80211, a generic netlink family)
+  capability net_admin,
+  network netlink raw,
+
+  /bin/busybox mrix,
+  /usr/libexec/cervino/wifi-region rix,
+  /usr/sbin/iw mrix,
+
+  /etc/ r,
+  /etc/timezone r,
+  /etc/zoneinfo/** r,
+
+  include if exists <local/wifi-region>
+}

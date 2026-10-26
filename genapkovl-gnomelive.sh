@@ -756,6 +756,7 @@ rc_add dbus default
 rc_add networkmanager default
 rc_add chronyd default
 rc_add earlyoom default
+rc_add wifi-region default
 rc_add openrc-settingsd default
 rc_add bluetooth default
 rc_add cupsd default

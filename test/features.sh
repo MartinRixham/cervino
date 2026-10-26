@@ -449,6 +449,67 @@ t_ipv6_rpfilter() {
     return 1
 }
 
+regdom_probe() {
+    local tz hwsim= v=
+    reg() { iw reg get 2>/dev/null | awk '/^global/ { g = 1 } g && /^country/ { sub(/:$/, "", $2); print $2; exit }'; }
+    set_tz() {
+        gdbus call --system --dest org.freedesktop.timedate1 --object-path /org/freedesktop/timedate1 \
+            --method org.freedesktop.timedate1.SetTimezone "$1" false >/dev/null
+    }
+    # wait_reg COUNTRY: prints the region once it is COUNTRY, or after 10 s
+    wait_reg() {
+        local i r
+        for i in $(seq 20); do
+            r=$(reg)
+            [[ $r == "$1" ]] && break
+            sleep 0.5
+        done
+        echo "${r:-none}"
+    }
+    tz=$(gdbus call --system --dest org.freedesktop.timedate1 --object-path /org/freedesktop/timedate1 \
+        --method org.freedesktop.DBus.Properties.Get org.freedesktop.timedate1 Timezone 2>/dev/null |
+        sed -n "s/^(<'\(.*\)'>,)$/\1/p")
+    [[ -n $tz ]] || return 1
+    cleanup() {
+        set_tz "$tz"
+        [[ -z $hwsim ]] || modprobe -r mac80211_hwsim
+    }
+    trap cleanup EXIT
+    set_tz Europe/Oslo || return 1
+    # A radio appears (a simulated one, unless the machine has Wi-Fi)
+    if [[ ! -d /sys/module/mac80211_hwsim ]]; then
+        modprobe mac80211_hwsim radios=1 || return 1
+        hwsim=1
+    fi
+    v+=" $(wait_reg NO)"
+    # The time zone changes
+    set_tz Europe/Berlin || return 1
+    v+=" $(wait_reg DE)"
+    set_tz UTC || return 1
+    v+=" $(wait_reg 00)"
+    echo $v
+}
+
+# The Wi-Fi region (allowed channels and power, and whether the computer may
+# start transmitting on a channel, as a hotspot does) is the time zone's
+# country, as it changes. Needs root and mac80211_hwsim for a simulated radio,
+# so the test is skipped when the user cannot get root without a password.
+t_wifi_region() {
+    local out
+    as_root true 2>/dev/null || { echo "cannot load a simulated radio without root"; return 2; }
+    have iw || { echo "iw is not installed"; return 1; }
+    out=$(as_root bash -c "$(declare -f regdom_probe); regdom_probe" 2>/dev/null) ||
+        { echo "cannot set up a simulated radio (mac80211_hwsim) or set the time zone (timedate1)"; return 1; }
+    local hotplug changed reset
+    read -r hotplug changed reset <<<"$out"
+    [[ $hotplug == NO ]] ||
+        { echo "a radio appeared with the time zone Europe/Oslo, but the region is $hotplug, not NO"; return 1; }
+    [[ $changed == DE ]] ||
+        { echo "the time zone changed to Europe/Berlin, but the region is $changed, not DE"; return 1; }
+    [[ $reset == 00 ]] ||
+        { echo "the time zone changed to UTC, but the region is $reset, not 00 (world)"; return 1; }
+}
+
 # A network service nobody asked for is something more to attack: sshd is
 # installed, but should only run once the user turns it on.
 t_sshd_disabled() {
@@ -938,6 +999,7 @@ run_test "mDNS hostname published"                      t_mdns
 run_test "Firewall active"                             t_firewall
 run_test "Firewall forwards container and VM traffic"  t_firewall_forwarding
 run_test "IPv6 reverse path filter"                     t_ipv6_rpfilter
+run_test "Wi-Fi region follows the time zone"          t_wifi_region
 run_test "SSH installed, server disabled by default"  t_sshd_disabled
 run_test "Power management service"                    t_power_profiles
 run_test "Power button left to logind"                 t_power_button

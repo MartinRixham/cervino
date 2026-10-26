@@ -27,6 +27,11 @@ from a desktop distribution, and keeps it when installed to disk:
   mDNS and AirPlay in, forwarding for container and VM bridges, and an IPv6
   reverse path filter dropping spoofed source addresses), and power
   profiles
+- the Wi-Fi region set to the time zone's country (as chosen in the
+  installer or GNOME Settings, and following it when it changes), so the
+  country's channels and power limits apply, including for a hotspot; a
+  time zone with no country (UTC) keeps the kernel's world region, and
+  drivers that set the region themselves (Intel's) ignore it
 - OpenSSH installed, but sshd not enabled until you turn it on
   (`rc-update add sshd`): the installer's SSH step defaults to none. sftp
   runs the external `sftp-server`, so sshd's AppArmor profile need not

@@ -133,6 +133,59 @@ iface lo inet loopback
 iface lo inet6 loopback
 EOF
 
+	# The Wi-Fi region (which channels, at what power, and whether this
+	# computer may start transmitting on them, as in a hotspot) is the
+	# kernel's world region until something sets it: the time zone's country,
+	# from tzdata's zone.tab (no country, such as UTC, keeps the world
+	# region). Drivers that set the region themselves (Intel's) ignore it. udev
+	# sets it when a radio appears (cfg80211, which holds it, is loaded with the
+	# first one), and the wifi-region service, inotifyd watching /etc, when the
+	# time zone changes (setup-timezone, GNOME Settings through
+	# openrc-settingsd, which both replace /etc/localtime, the latter
+	# /etc/timezone too). Both run it under an AppArmor profile: udevd's, and
+	# the service's own, which conf.d gives it by name (inotifyd is a busybox
+	# applet).
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/wifi-region <<'EOF'
+#!/bin/sh
+# wifi-region [EVENTS DIR NAME]: sets the Wi-Fi region to the time zone's
+# country. With arguments (from inotifyd watching /etc), only when NAME is
+# the time zone's file.
+case ${3-localtime} in localtime|timezone) ;; *) exit 0 ;; esac
+# Without cfg80211 there is no radio, and iw would load it.
+[ -d /sys/module/cfg80211 ] || exit 0
+# /etc/localtime is a link into a zoneinfo directory (setup-timezone's in
+# /etc, openrc-settingsd's in /usr/share), whose path is the zone's name;
+# else /etc/timezone names it.
+zone=
+if [ -L /etc/localtime ]; then
+	zone=$(readlink /etc/localtime)
+	zone=${zone#*/zoneinfo/}
+elif [ -f /etc/localtime ] && [ -f /etc/timezone ]; then
+	read -r zone < /etc/timezone
+fi
+country=$(awk -v z="$zone" '!/^#/ && $3 == z { print $1; exit }' /usr/share/zoneinfo/zone.tab 2>/dev/null)
+country=${country:-00}
+current=$(iw reg get 2>/dev/null | awk '/^global/ { g = 1 } g && /^country/ { sub(/:$/, "", $2); print $2; exit }')
+[ "$current" != "$country" ] || exit 0
+iw reg set "$country" && logger -t wifi-region "Wi-Fi region $country (time zone ${zone:-none})"
+exit 0
+EOF
+	makefile root:root 0644 "$pkgdir"/usr/lib/udev/rules.d/60-cervino-wifi-region.rules <<'EOF'
+ACTION=="add", SUBSYSTEM=="ieee80211", RUN+="/usr/libexec/cervino/wifi-region"
+EOF
+	makefile root:root 0755 "$pkgdir"/etc/init.d/wifi-region <<'EOF'
+#!/sbin/openrc-run
+description="Sets the Wi-Fi region when the time zone changes"
+command=/sbin/inotifyd
+command_args="/usr/libexec/cervino/wifi-region /etc:nyd"
+command_background=yes
+pidfile=/run/wifi-region.pid
+EOF
+	makefile root:root 0644 "$pkgdir"/etc/conf.d/wifi-region <<'EOF'
+apparmor_profile=wifi-region
+. /usr/libexec/cervino/apparmor-start.sh
+EOF
+
 	# The default nftables ruleset drops incoming connections; allow SSH,
 	# mDNS and AirPlay: a speaker sends PipeWire's AirPlay sink timing and
 	# control packets on UDP 6001 and up (6001/6002 for the first sink) before

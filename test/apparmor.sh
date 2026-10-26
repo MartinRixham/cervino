@@ -313,6 +313,7 @@ run_test "wpa_supplicant (NetworkManager_t)"                  t_daemon wpa_suppl
 run_test "dnsmasq DNS server (dnsmasq_t)"                     t_daemon dnsmasq
 run_test "chrony time sync (chronyd_t)"                       t_daemon chronyd
 run_test "Avahi mDNS (avahi_t)"                               t_daemon avahi-daemon
+run_test "Wi-Fi region service (ifconfig_t, as iw runs)"      t_daemon inotifyd
 run_test "Every system process on a network socket confined"  t_network_listeners
 
 echo
