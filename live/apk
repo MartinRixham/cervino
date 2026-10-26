@@ -9,7 +9,10 @@ done
 [ -n "$root" ] && [ -n "$initdb" ] && [ -n "$overlay" ] && [ -d /.cervino/ro/etc ] ||
 	exec /usr/sbin/apk "$@"
 echo "Copying the system to $root..."
-rsync -aHX --ignore-existing /.cervino/ro/ "$root"/ || exit
+# mkinitfs's /boot/boot -> . link can't be made on a FAT /boot (the Pi's);
+# like mkinitfs's trigger, make it where it can be.
+rsync -aHX --ignore-existing --exclude=/boot/boot /.cervino/ro/ "$root"/ || exit
+ln -sf . "$root"/boot/boot 2>/dev/null
 for k in "$root"/lib/modules/*; do
 	k=${k##*/}
 	mkinitfs -b "$root"/ -c "$root"/etc/mkinitfs/mkinitfs.conf -o "$root"/boot/initramfs-"${k##*-}" "$k" ||
