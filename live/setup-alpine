@@ -47,5 +47,6 @@ fi
 DEVDOPTS=${DEVDOPTS:-udev} APKREPOSOPTS=${APKREPOSOPTS:--c} \
 	USEROPTS=${USEROPTS:--a -g audio,input,video,netdev,plugdev,lpadmin} \
 	KERNELOPTS=${KERNELOPTS:-quiet $KERNEL_OPTS} SSHDOPTS=${SSHDOPTS:-none} \
-	NTPOPTS=${NTPOPTS:-none} GNOMELIVE_SETUP=1 \
+	NTPOPTS=${NTPOPTS:-none} PROXYOPTS=${PROXYOPTS:-none} \
+	USERSSHKEY=${USERSSHKEY:-none} GNOMELIVE_SETUP=1 \
 	PATH="$shim:$PATH" /usr/sbin/setup-alpine -e "$@"

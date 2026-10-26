@@ -256,6 +256,8 @@ puts a wrapper in front of it that:
   to `mdev`,
 - skips the network interface and DNS questions, because NetworkManager
   manages the network,
+- skips the HTTP proxy and user SSH key questions, which are for servers
+  (GNOME Settings has its own proxy settings),
 - enables the community repository, where GNOME lives, by default,
 - offers only mirrors that serve packages over HTTPS (set `MIRRORS` to
   choose your own list),
