@@ -365,9 +365,12 @@ The patches come from the `.debian.tar.xz` of Pi OS's package in
 patch from it in `prepare()`), or are vendored in `rpi/<package>/` when they
 had to be ported (each says what changed). VLC's are the exception: from
 `RPi-Distro` at a pinned commit, followed by our `rpi-musl-gcc15.patch` (Pi
-OS builds with glibc and GCC 14) and `rpi-qt-wayland.patch` (the Qt
-interface tries Wayland before X11, so in GNOME it shows video through
-`wl_dmabuf` instead of EGL on Xwayland, which stutters). The version is
+OS builds with glibc and GCC 14), `rpi-qt-wayland.patch` (the Qt interface
+tries Wayland before X11, so in GNOME it shows video through `wl_dmabuf`
+instead of EGL on Xwayland, which stutters) and `rpi-caching.patch` (2000
+ms file and network caching, not 1000: an AirPlay speaker plays about half
+a second behind, and VLC, always late, drops audio and pads it with
+silence, the video jumping with it). The version is
 Alpine's plus `_p<n>`, Pi OS's patch set or `+rpt` release, which ranks
 above Alpine's. To move to a newer one, take Alpine's APKBUILD again and
 Raspberry Pi OS's patches for that version.

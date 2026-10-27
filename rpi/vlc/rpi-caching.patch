@@ -1,0 +1,27 @@
+VLC plays a file or stream as far ahead of its clock as its caching
+(file-caching, network-caching: 1000 ms), and an audio output that takes
+longer than that to play what it is given leaves the audio always late:
+VLC drops and pads it with silence over and over, and the video, timed by
+the audio, jumps with it. AirPlay speakers do (PipeWire's RAOP sink, about
+half a second to a KEF LSX II). Cache 2000 ms of both.
+
+--- a/src/libvlc-module.c
++++ b/src/libvlc-module.c
+@@ -1861,7 +1861,7 @@
+ 
+     set_section( N_( "Advanced" ), NULL )
+ 
+-    add_integer( "file-caching", CLOCK_FREQ / 1000,
++    add_integer( "file-caching", 2 * CLOCK_FREQ / 1000,
+                  CACHING_TEXT, CACHING_LONGTEXT, true )
+         change_integer_range( 0, 60000 )
+         change_safe()
+@@ -1891,7 +1891,7 @@
+     add_obsolete_integer( "dvdnav-caching" ) /* 2.0.0 */
+     add_obsolete_integer( "dvdread-caching" ) /* 2.0.0 */
+     add_obsolete_integer( "vcd-caching" ) /* 2.0.0 */
+-    add_integer( "network-caching", CLOCK_FREQ / 1000,
++    add_integer( "network-caching", 2 * CLOCK_FREQ / 1000,
+                  NETWORK_CACHING_TEXT, NETWORK_CACHING_LONGTEXT, true )
+         change_integer_range( 0, 60000 )
+         change_safe()
