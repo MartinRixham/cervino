@@ -131,8 +131,8 @@ and uploads the ISO and the Raspberry Pi image, each with its `SHA256SUMS`, as
 workflow artifacts. You can also start it by hand from the Actions tab and
 choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
-and the Pi's `ffmpeg7`, `vlc`, `gst-plugins-base`, `gst-plugins-bad`, `wpa_supplicant` and `bluez`) to the update repo (see
-[Updates](#updates)).
+`cervino-vlc`, `cervino-gstreamer`, and the Pi's `wpa_supplicant` and
+`bluez`) to the update repo (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -352,13 +352,27 @@ Pi's video decoders, as Raspberry Pi OS ships it: HEVC (H.265) on the Pi 4
 and 5, and H.264 on the Pi 4 (the Pi 5 has no H.264 decoder), decoded by
 the hardware and shown without copying the frames. It plays through
 `ffmpeg7`'s libraries, built with Raspberry Pi OS's FFmpeg patch, which
-replace Alpine's for every program that uses them. Both are Alpine's
-packages with the patches applied ([`rpi/`](rpi)), at a version above
-Alpine's, and come from the update repo with `cervino-desktop`.
-GStreamer's base and bad plug-ins are built with Raspberry Pi OS's patches
-too, so what plays through GStreamer (GNOME's Showtime, GNOME Web, the file
-previews) decodes HEVC on the Pi 4's and 5's decoder. Firefox uses Alpine's
-FFmpeg 8, and so decodes in software on the Pi.
+replace Alpine's for every program that uses them. GStreamer's base and bad
+plug-ins are built with Raspberry Pi OS's patches too, so what plays
+through GStreamer (GNOME's Showtime, GNOME Web, the file previews) decodes
+HEVC on the Pi 4's and 5's decoder. Firefox uses Alpine's FFmpeg 8, and so
+decodes in software on the Pi.
+
+All four are Alpine's packages with the patches applied
+([`rpi/`](rpi)), and come in two packages, `cervino-vlc` (VLC with its
+FFmpeg) and `cervino-gstreamer` (GStreamer's plug-ins), which take the
+place of Alpine's packages of the same names and come from the update repo
+with `cervino-desktop`. Either can be removed:
+
+```sh
+doas apk del cervino-vlc          # no VLC; Alpine's FFmpeg 7 for the rest
+doas apk add vlc-qt               # then, for Alpine's VLC
+doas apk del cervino-gstreamer    # Alpine's GStreamer plug-ins
+```
+
+Alpine's packages then take their place, without the hardware decoding
+(`doas apk add` switches back). On a PC both packages are empty: the
+system uses Alpine's packages, and the PC image has no VLC.
 
 The Pi's Wi-Fi and Bluetooth are set up as on Raspberry Pi OS too: the
 Wi-Fi driver leaves roaming and the WPA2/WPA3 handshakes to wpa_supplicant
@@ -421,12 +435,18 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
 3. **Builder:** sparse-clones `aports/scripts`, resolves the package list
    that `setup-desktop gnome` would install plus the desktop features listed
    above, and generates:
-   - for the Pi, the `ffmpeg7`, `vlc`, `gst-plugins-base`, `gst-plugins-bad`, `wpa_supplicant` and
-     `bluez` packages, built with abuild
-     from [`rpi/`](rpi): Alpine's, with Raspberry Pi OS's patches for the
-     Pi's hardware video decoders, Wi-Fi and Bluetooth (the build stops
-     when Alpine's packages are no longer the versions those are based
-     on);
+   - for the Pi, the `ffmpeg7`, `vlc`, `gst-plugins-base`,
+     `gst-plugins-bad`, `wpa_supplicant` and `bluez` packages, built with
+     abuild from [`rpi/`](rpi): Alpine's, with Raspberry Pi OS's patches
+     for the Pi's hardware video decoders, Wi-Fi and Bluetooth (the build
+     stops when Alpine's packages are no longer the versions those are
+     based on);
+   - the `cervino-vlc` and `cervino-gstreamer` packages, built with
+     abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
+     [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the
+     Pi, the runtime packages of `ffmpeg7` and `vlc`, and of
+     `gst-plugins-base` and `gst-plugins-bad`, each pair in one, providing
+     their names at Alpine's versions; empty on a PC;
    - the `cervino-desktop` package, built with abuild from
      [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
      features' configuration and the AppArmor profiles from

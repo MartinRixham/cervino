@@ -1,13 +1,13 @@
 #!/bin/sh
 # ci/publish-repo.sh NEW PAGES KEY BRANCH: adds the packages of Alpine
 # branch BRANCH that builds left under NEW/BRANCH/<arch>/ (the images'
-# OUTDIR/repo: cervino-desktop, and for aarch64 the Pi's ffmpeg7, vlc,
-# gst-plugins-base, gst-plugins-bad, wpa_supplicant and bluez) to the apk
-# repo in PAGES (a checkout of the gh-pages branch), keeps the newest few
-# versions of each package, and indexes and signs each arch again with KEY,
-# the abuild private key the packages are signed with. Runs as root in an
-# alpine:<BRANCH> container, so the index is in the format that branch's apk
-# reads.
+# OUTDIR/repo: cervino-desktop, cervino-vlc and cervino-gstreamer, and
+# for aarch64 the Pi's wpa_supplicant and bluez) to the apk repo in PAGES (a
+# checkout of the gh-pages branch), keeps the newest few versions of each
+# package, and indexes and signs each arch again with KEY, the abuild
+# private key the packages are signed with. Runs as root in an
+# alpine:<BRANCH> container, so the index is in the format that branch's
+# apk reads.
 
 set -eu
 
@@ -26,9 +26,10 @@ for dir in "$new/$branch"/*/; do
 	arch=$(basename "$dir")
 	out=$pages/$branch/$arch
 	mkdir -p "$out"
-	# Every release builds the Pi's packages again, mostly at a version
-	# already published: that one stays (installs have it already, and the
-	# branch's history doesn't get a copy of it each time).
+	# Every release builds the Pi's packages, cervino-vlc and
+	# cervino-gstreamer again, mostly at a version already published: that
+	# one stays (installs have it already, and the branch's history doesn't
+	# get a copy of it each time).
 	for apk in "$dir"/*.apk; do
 		[ -e "$out/${apk##*/}" ] || cp "$apk" "$out"/
 	done

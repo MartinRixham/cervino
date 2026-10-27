@@ -18,6 +18,8 @@ Besides the script, the repo holds:
   scripts in `live/`
 - the live initramfs's `initramfs-live.patch`
 - the `cervino-desktop` package's `cervino-desktop/APKBUILD`
+- the `cervino-vlc` and `cervino-gstreamer` packages'
+  `cervino-vlc/APKBUILD` and `cervino-gstreamer/APKBUILD`
 - the AppArmor profiles in `apparmor.d/`
 - the Pi's patched `ffmpeg7`, `vlc`, `gst-plugins-base`, `gst-plugins-bad`,
   `wpa_supplicant` and `bluez` packages in `rpi/`
@@ -157,10 +159,11 @@ and the VM's release is always the latest.
 ### shellcheck and formatting
 
 `shellcheck build-alpine-gnome-iso.sh genapkovl-gnomelive.sh mkimg.gnomelive.sh live/*`,
-plus the shell scripts in `cervino-desktop/`, `ci/` and `test/`, should
-print nothing. `.shellcheckrc` turns off the checks that go against the
-scripts' own idioms (`a= b=`, `cmd && ok || die`, functions called by name,
-programs in single quotes, `ls` over names the scripts make), and follows
+plus the shell scripts in `cervino-desktop/`, `cervino-vlc/`,
+`cervino-gstreamer/`, `ci/` and `test/`, should print nothing. `.shellcheckrc` turns off the checks
+that go against the scripts' own idioms (`a= b=`, `cmd && ok || die`,
+functions called by name, programs in single quotes, `ls` over names the
+scripts make), and follows
 the `# shellcheck source=` directives. Deliberate word splitting is marked
 where it happens with `# shellcheck disable=`. The short files written
 through heredocs are not checked.
@@ -184,8 +187,8 @@ add it when moving one into a source file of its own.
 
 CI (`.github/workflows/build-iso.yml`) runs the script with
 `CONTAINER=docker` on pushes and PRs that touch the script, the generator,
-`live/`, `mkimg.gnomelive.sh`, `cervino-desktop/`, `apparmor.d/`, `rpi/`,
-`ci/`, `test/` or the workflow.
+`live/`, `mkimg.gnomelive.sh`, `cervino-desktop/`, `cervino-vlc/`,
+`cervino-gstreamer/`, `apparmor.d/`, `rpi/`, `ci/`, `test/` or the workflow.
 
 - **Build jobs**: one per `TARGET`, a matrix of `iso` on `ubuntu-latest` and
   `rpi` on `ubuntu-24.04-arm`. They free runner disk space first because
@@ -214,9 +217,9 @@ CI (`.github/workflows/build-iso.yml`) runs the script with
   otherwise).
 - **The packages**: the build jobs set `APK_REPO` to the repository's GitHub
   Pages URL, and each uploads its `out/repo` (the packages as
-  `<branch>/<arch>/*.apk`: `cervino-desktop`, and for `rpi` `ffmpeg7`,
-  `vlc`, `gst-plugins-base`, `gst-plugins-bad`, `wpa_supplicant` and `bluez`
-  with their subpackages) as `cervino-repo-<target>`.
+  `<branch>/<arch>/*.apk`: `cervino-desktop`, `cervino-vlc`,
+  `cervino-gstreamer`, and for `rpi` `wpa_supplicant` and `bluez` with
+  their subpackages) as `cervino-repo-<target>`.
 - **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` in an
   `alpine:<branch>` container per branch (so the index is in a format that
   branch's apk reads) on a worktree of the `gh-pages` branch. That is an
@@ -244,10 +247,11 @@ The same file runs in four phases, selected by its first argument.
   `latest-releases.yaml`.
 - Re-runs itself in `alpine:<release>`, mounting itself at `/build.sh`;
   `genapkovl-gnomelive.sh`, `live/`, `mkimg.gnomelive.sh`,
-  `initramfs-live.patch`, `cervino-desktop/`, `apparmor.d/` and `rpi/` (from
-  the script's directory) at `/genapkovl-gnomelive.sh`, `/live`,
-  `/mkimg.gnomelive.sh`, `/initramfs-live.patch`, `/cervino-desktop`,
-  `/apparmor.d` and `/rpi`; `$OUTDIR` at `/out`; and `CACHEDIR`, if set, at
+  `initramfs-live.patch`, `cervino-desktop/`, `cervino-vlc/`,
+  `cervino-gstreamer/`, `apparmor.d/` and `rpi/` (from the script's
+  directory) at `/genapkovl-gnomelive.sh`, `/live`, `/mkimg.gnomelive.sh`,
+  `/initramfs-live.patch`, `/cervino-desktop`, `/cervino-vlc`,
+  `/cervino-gstreamer`, `/apparmor.d` and `/rpi`; `$OUTDIR` at `/out`; and `CACHEDIR`, if set, at
   `/cache`.
 - Passes `PKGVER`, the package's version: the last commit's time
   (`YYYYMMDD.HHMMSS`, UTC), or the build time outside git, so each commit's
@@ -301,10 +305,12 @@ packages for what `test/features.sh` checks; some only exist on one
 architecture (e.g. the Intel VA-API drivers), and `iproute2-minimal` is for
 its IPv6 reverse path filter test, which needs `ip netns`.
 
-`/etc/apk/world` is what `setup-desktop gnome` would put there (plus
-`vlc-qt` for `rpi`, an app like GNOME's) plus `cervino-desktop`, which
-depends on `$features`: a feature added later reaches installed systems with
-the package, while GNOME's apps stay removable from world.
+`/etc/apk/world` is what `setup-desktop gnome` would put there plus
+`cervino-desktop`, which depends on `$features`: a feature added later
+reaches installed systems with the package, while GNOME's apps stay
+removable from world. It also has `cervino-vlc` (VLC, on the Pi) and
+`cervino-gstreamer` (below), either of which can be removed for Alpine's
+packages.
 
 **The Pi's packages.** For `rpi` it first builds `rpi/ffmpeg7`, `rpi/vlc`,
 `rpi/gst-plugins-base`, `rpi/gst-plugins-bad`, `rpi/wpa_supplicant` and
@@ -354,6 +360,52 @@ OS's patch set or `+rpt` release, which ranks above Alpine's. To move to a
 newer one, take Alpine's APKBUILD again and Raspberry Pi OS's patches for
 that version.
 
+`wpa_supplicant` and `bluez` are published as they are, and so replace
+Alpine's. The four media packages are published only inside
+`cervino-vlc` (`vlc` and `ffmpeg7`) and `cervino-gstreamer`
+(`gst-plugins-base` and `gst-plugins-bad`).
+
+**`cervino-vlc` and `cervino-gstreamer`.** `build_bundle NAME VERSION
+PACKAGE...` builds each with `abuild -d` in `/work/cervino/<name>`, from a
+copy of `<name>/` with `<name>.conf` (`PKGVER`, `TARGET_ARCH`) next to the
+APKBUILD. On `x86_64` they are empty. For `rpi` each also gets, from its
+pair of packages:
+
+- `apks/`: their runtime `.apk`s (not `-dev`, `-doc`, `-dbg`, `-lang` or
+  `vlc-daemon`), whose files `package()` unpacks into it;
+- in the `.conf`, from their `.PKGINFO`s: `PROVIDES`, each package's name
+  and `cmd:` provides at Alpine's version (`_alpine`) rather than ours, and
+  its `so:` provides; `DEPENDS`, their depends but those they provide each
+  other; `LICENSE`, all their licenses. The packages have `!tracedeps`, as
+  abuild can't trace the libraries with what they link not installed;
+- for `cervino-vlc`, `vlc-libs`' `.trigger` and `.pre-deinstall` (VLC's
+  plug-in cache), taken out of its `.apk` as the package's own. Any other
+  install script stops the build.
+
+Each pair has to stay together: VLC builds against ffmpeg7's patches, and
+gst-plugins-bad's HEVC decoder uses the formats gst-plugins-base adds. The
+pairs don't depend on each other: the GStreamer plug-ins don't use ffmpeg7,
+and VLC, built against our gst-plugins-base, links it only by soname, whose
+ABI only adds to Alpine's.
+
+In world, each takes the place of Alpine's packages of those names (its
+provides make them one name each, so they never install together), and
+`apk del` of it brings Alpine's back. That only works with Alpine's version
+in its provides: apk keeps a provider of a higher version for a name world
+gives (`gst-plugins-base`) even once its package is deleted. Under their own
+names, the patched packages would shadow Alpine's for good. VLC itself is
+not in world (`cervino-vlc` brings it), so deleting `cervino-vlc` removes
+it.
+
+Their version is not `PKGVER` but `VLC_PKGVER` and `GSTREAMER_PKGVER`,
+which `host_main`'s `bundle_version` takes from the last commit that
+changed the package's directory, its two packages in `rpi/` or
+`build_bundle` (`git log -L`), so that a release leaving them as they were
+doesn't make installs download them again; `ci/publish-repo.sh` keeps a
+file already published. That needs the history, so the build job checks
+out with `fetch-depth: 0`. A change elsewhere that changes what they hold
+has to touch one of those paths too.
+
 **`cervino-desktop`.** It builds the package with `abuild -d` in
 `/work/cervino/cervino-desktop`, from a copy of `cervino-desktop/` with,
 next to the APKBUILD:
@@ -366,8 +418,10 @@ next to the APKBUILD:
 - the `apparmor.d/` directory.
 
 The package is signed with the build's key, which mkimage puts in the image,
-so the live system and installs trust it. It is indexed, with the Pi's
-packages, in a repo of its own, `/work/pkgrepo/$ARCH`, as a package for
+so the live system and installs trust it. It is indexed, with
+`cervino-vlc`, `cervino-gstreamer` and the Pi's other packages, in a
+repo of its own,
+`/work/pkgrepo/$ARCH`, as a package for
 `$ARCH` (`apk index --rewrite-arch`: abuild files a noarch package under the
 container's architecture, and apk 3 fetches a package from the directory of
 the arch its index records), which mkimage gets as a third `--repository`.
