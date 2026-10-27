@@ -358,10 +358,12 @@ The patches come from the `.debian.tar.xz` of Pi OS's package in
 patch from it in `prepare()`), or are vendored in `rpi/<package>/` when they
 had to be ported (each says what changed). VLC's are the exception: from
 `RPi-Distro` at a pinned commit, followed by our `rpi-musl-gcc15.patch` (Pi
-OS builds with glibc and GCC 14). The version is Alpine's plus `_p<n>`, Pi
-OS's patch set or `+rpt` release, which ranks above Alpine's. To move to a
-newer one, take Alpine's APKBUILD again and Raspberry Pi OS's patches for
-that version.
+OS builds with glibc and GCC 14) and `rpi-qt-wayland.patch` (the Qt
+interface tries Wayland before X11, so in GNOME it shows video through
+`wl_dmabuf` instead of EGL on Xwayland, which stutters). The version is
+Alpine's plus `_p<n>`, Pi OS's patch set or `+rpt` release, which ranks
+above Alpine's. To move to a newer one, take Alpine's APKBUILD again and
+Raspberry Pi OS's patches for that version.
 
 `wpa_supplicant` and `bluez` are published as they are, and so replace
 Alpine's. The four media packages are published only inside
