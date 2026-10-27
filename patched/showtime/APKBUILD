@@ -1,0 +1,54 @@
+# Alpine's community/showtime (_alpine below) with video-queue.patch, ours:
+# on an AirPlay speaker, the sound skipped every few seconds, the demuxer
+# stalling on the video while the audio had to be decoded well ahead of it.
+# pkgver is Alpine's, plus _p and our patch set's number, so it ranks above
+# Alpine's. build-alpine-gnome-iso.sh stops when Alpine's showtime is no
+# longer _alpine.
+_alpine=50.0-r2
+maintainer="team/gnome <achill@achill.org>"
+pkgname=showtime
+pkgver=50.0_p1
+_pkgver=${pkgver%_p*}
+pkgrel=0
+pkgdesc="Watch without distraction"
+url="https://gitlab.gnome.org/GNOME/showtime"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	gst-plugins-rs-gtk4
+	py3-cryptography
+	py3-gettext
+	py3-gobject3
+	python3
+	"
+makedepends="
+	blueprint-compiler-dev
+	desktop-file-utils
+	gtk4.0-dev
+	libadwaita-dev
+	meson
+	"
+subpackages="$pkgname-lang $pkgname-pyc"
+source="https://download.gnome.org/sources/showtime/${_pkgver%.*}/showtime-$_pkgver.tar.xz
+	video-queue.patch
+	"
+builddir="$srcdir/showtime-$_pkgver"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+d532bc97d33aff9fb691349d28214fa58d5e2f20a991653e175da6035e3c662b10ee2076916cd55c3a4c51dafaaea9a85202ed27a70e46e8f66551801cabf652  showtime-50.0.tar.xz
+bac474daceded567662b2709c900a93c7a940d199a6c5fb631e97274826bc7ca05ecfdc981a562923a57a6f5ccf94f02bfdbf3d8e4836e8ec4fc11384191f5f1  video-queue.patch
+"

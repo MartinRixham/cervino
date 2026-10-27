@@ -114,6 +114,14 @@ jobs:
           key: ${{ matrix.target }}-mutter-${{ github.sha }}
           restore-keys: ${{ matrix.target }}-mutter-
 
+      - name: Restore showtime
+        id: restore-showtime
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/showtime
+          key: ${{ matrix.target }}-showtime-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-showtime-
+
       - name: Restore ffmpeg7
         id: restore-ffmpeg7
         if: matrix.target == 'rpi'
@@ -280,6 +288,16 @@ jobs:
           path: ${{ runner.temp }}/pkgcache/mutter
           key: ${{ steps.keys.outputs.mutter }}
 
+      - name: Save showtime
+        if: >-
+          always() && steps.keys.outputs.showtime &&
+          steps.keys.outputs.showtime !=
+          steps.restore-showtime.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/showtime
+          key: ${{ steps.keys.outputs.showtime }}
+
       - name: Checksum
         working-directory: out
         run: sha256sum alpine-gnomelive-* | tee SHA256SUMS
@@ -293,9 +311,10 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-      # cervino-desktop, cervino-vlc, cervino-gstreamer, cervino-terminal
-      # and mutter (and for rpi, wpa_supplicant, bluez and mesa), laid out
-      # as in the published repo (<branch>/<arch>/), for the repo job.
+      # cervino-desktop, cervino-vlc, cervino-gstreamer, cervino-terminal,
+      # mutter and showtime (and for rpi, wpa_supplicant, bluez and mesa),
+      # laid out as in the published repo (<branch>/<arch>/), for the repo
+      # job.
       - uses: actions/upload-artifact@v7
         with:
           name: cervino-repo-${{ matrix.target }}

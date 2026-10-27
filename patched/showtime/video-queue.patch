@@ -1,0 +1,29 @@
+An audio sink that plays well behind (an AirPlay speaker: PipeWire's RAOP
+sink, about half a second to a KEF LSX II) has the audio decoded that far
+ahead of the video. Between the video decoder and the sink there is room
+for only a few decoded frames, so the demuxer stalls on the video, the
+audio runs dry and skips every few seconds. Queue a second of decoded
+video (1080p: about 75 MB) in front of the sink.
+
+--- a/showtime/play.py
++++ b/showtime/play.py
+@@ -35,6 +35,19 @@
+         gl_sink.props.sink = paintable_sink  # pyright: ignore[reportAttributeAccessIssue, reportOptionalMemberAccess]
+         sink = gl_sink
+ 
++    # Hold a second of decoded video in front of the sink, so that the
++    # demuxer can keep the audio far enough ahead of it.
++    queue = Gst.ElementFactory.make("queue")
++    queue.props.max_size_time = Gst.SECOND  # pyright: ignore[reportOptionalMemberAccess]
++    queue.props.max_size_bytes = 0  # pyright: ignore[reportOptionalMemberAccess]
++    queue.props.max_size_buffers = 0  # pyright: ignore[reportOptionalMemberAccess]
++    sink_bin = Gst.Bin.new("video-sink-bin")
++    sink_bin.add(queue)
++    sink_bin.add(sink)
++    queue.link(sink)  # pyright: ignore[reportOptionalMemberAccess]
++    sink_bin.add_pad(Gst.GhostPad.new("sink", queue.get_static_pad("sink")))  # pyright: ignore[reportOptionalMemberAccess]
++    sink = sink_bin
++
+     play = GstPlay.Play(
+         video_renderer=GstPlay.PlayVideoOverlayVideoRenderer.new_with_sink(None, sink)
+     )

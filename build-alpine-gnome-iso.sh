@@ -38,8 +38,9 @@
 # two packages, cervino-vlc (vlc and ffmpeg7) and cervino-gstreamer
 # (cervino-vlc/ and cervino-gstreamer/; empty on a PC), which can be deleted
 # for Alpine's; wpa_supplicant and bluez are published with cervino-desktop,
-# as is the Pi's mesa, with a patch of ours. Both images have mutter built
-# from patched/: Alpine's with a fix of ours, published the same way.
+# as is the Pi's mesa, with a patch of ours. Both images have mutter and
+# showtime built from patched/: Alpine's with fixes of ours, published the
+# same way.
 # The terminal, Zellij in foot, with AstroNvim, is a package of its own
 # too, cervino-terminal (cervino-terminal/), which can be deleted.
 #
@@ -67,9 +68,9 @@
 #   SIGNING_KEY     abuild private key (its public key is derived from it,
 #                   named after the file plus .pub) to sign the packages
 #                   built here (cervino-desktop, cervino-vlc,
-#                   cervino-gstreamer, cervino-terminal, mutter, and the
-#                   Pi's wpa_supplicant, bluez and mesa) and the image's
-#                   repo with (default: a new key each build)
+#                   cervino-gstreamer, cervino-terminal, mutter, showtime,
+#                   and the Pi's wpa_supplicant, bluez and mesa) and the
+#                   image's repo with (default: a new key each build)
 #   APK_REPO        URL of the repo those packages are published in, without
 #                   the branch; installs get updates from APK_REPO/<branch>
 #                   (default: none). Its packages must be signed with
@@ -543,25 +544,28 @@ builder_main() {
 	# gst-plugins-bad for its HEVC decoder in GStreamer (Showtime, WebKit,
 	# the file previews), wpa_supplicant for WPA3 with its Wi-Fi, bluez for
 	# audio over its Bluetooth, which shares the radio; and ours, mesa, so
-	# that programs don't inherit the GPU's render node. On both, mutter
-	# (patched/), ours, so that GNOME Shell survives a buffer it can't
-	# import. It comes first, so that it builds with Alpine's mesa-dev.
-	# wpa_supplicant, bluez, mesa and mutter rank above Alpine's and so
-	# replace them (but for their -dbg packages, too big to publish); the
-	# rest go in cervino-vlc and cervino-gstreamer (below). Each is Alpine's
-	# APKBUILD of one version (its _alpine) with the patches: stop if
-	# Alpine's has moved on, as its changes (security fixes, rebuilds for
-	# libraries' new sonames) would be missing. abuild -r installs what they
-	# build with (abuild-apk, which the abuild group may run) and adds the
-	# packages it built before to the repos, so vlc builds with ffmpeg7-dev
-	# and gst-plugins-bad with gst-plugins-base-dev from here.
+	# that programs don't inherit the GPU's render node. On both, ours
+	# (patched/): mutter, so that GNOME Shell survives a buffer it can't
+	# import, and showtime, so that its sound doesn't skip on an AirPlay
+	# speaker. mutter comes first, so that it builds with Alpine's mesa-dev.
+	# wpa_supplicant, bluez, mesa, mutter and showtime rank above Alpine's
+	# and so replace them (but for their -dbg packages, too big to
+	# publish); the rest go in cervino-vlc and cervino-gstreamer (below).
+	# Each is Alpine's APKBUILD of one version (its _alpine) with the
+	# patches: stop if Alpine's has moved on, as its changes (security
+	# fixes, rebuilds for libraries' new sonames) would be missing.
+	# abuild -r installs what they build with (abuild-apk, which the abuild
+	# group may run) and adds the packages it built before to the repos, so
+	# vlc builds with ffmpeg7-dev and gst-plugins-bad with
+	# gst-plugins-base-dev from here.
 	# With CACHEDIR (mounted on /cache), a package built before is taken
 	# from there when its key matches: a hash of the release, the
 	# architecture, Alpine's version, its directory and the key of the
 	# package it builds with. Its files keep the signature of the build that
 	# made them, so they are signed again with this build's key. Packages
 	# built here are left in /work/pkgcache for container_main to keep.
-	local name file repodir=/work/packages/cervino/$ARCH patched=mutter replaces=mutter
+	local name file repodir=/work/packages/cervino/$ARCH
+	local patched="mutter showtime" replaces="mutter showtime"
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"

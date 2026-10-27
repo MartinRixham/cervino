@@ -24,7 +24,8 @@ Besides the script, the repo holds:
 - the AppArmor profiles in `apparmor.d/`
 - the Pi's patched `ffmpeg7`, `vlc`, `gst-plugins-base`, `gst-plugins-bad`,
   `wpa_supplicant`, `bluez` and `mesa` packages in `rpi/`
-- the patched `mutter` package, for both targets, in `patched/`
+- the patched `mutter` and `showtime` packages, for both targets, in
+  `patched/`
 
 `README.md` documents the user-facing behaviour and the environment
 variables (`TARGET`, `ALPINE_BRANCH`, `OUTDIR`, `LIVE_USER`,
@@ -222,9 +223,9 @@ CI (`.github/workflows/build-iso.yml`) runs the script with
 - **The packages**: the build jobs set `APK_REPO` to the repository's GitHub
   Pages URL, and each uploads its `out/repo` (the packages as
   `<branch>/<arch>/*.apk`: `cervino-desktop`, `cervino-vlc`,
-  `cervino-gstreamer`, `cervino-terminal`, `mutter`, and for `rpi`
-  `wpa_supplicant`, `bluez` and `mesa`, with their subpackages but `-dbg`)
-  as `cervino-repo-<target>`.
+  `cervino-gstreamer`, `cervino-terminal`, `mutter`, `showtime`, and for
+  `rpi` `wpa_supplicant`, `bluez` and `mesa`, with their subpackages but
+  `-dbg`) as `cervino-repo-<target>`.
 - **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` in an
   `alpine:<branch>` container per branch (so the index is in a format that
   branch's apk reads) on a worktree of the `gh-pages` branch. That is an
@@ -318,11 +319,11 @@ removable from world. It also has `cervino-vlc` (VLC, on the Pi) and
 `cervino-gstreamer` (below), either of which can be removed for Alpine's
 packages, and `cervino-terminal` (below).
 
-**The patched packages.** It first builds `patched/mutter`, then for `rpi`
-`rpi/ffmpeg7`, `rpi/vlc`, `rpi/gst-plugins-base`, `rpi/gst-plugins-bad`,
-`rpi/wpa_supplicant`, `rpi/bluez` and `rpi/mesa`, in that order, with
-`abuild -r`. mutter comes first so that it builds with Alpine's
-`mesa-dev`.
+**The patched packages.** It first builds `patched/mutter` and
+`patched/showtime`, then for `rpi` `rpi/ffmpeg7`, `rpi/vlc`,
+`rpi/gst-plugins-base`, `rpi/gst-plugins-bad`, `rpi/wpa_supplicant`,
+`rpi/bluez` and `rpi/mesa`, in that order, with `abuild -r`. mutter comes
+first so that it builds with Alpine's `mesa-dev`.
 
 - abuild-apk installs their makedepends. `vlc` builds with the
   `ffmpeg7-dev`, and `gst-plugins-bad` with the `gst-plugins-base-dev`,
@@ -370,13 +371,13 @@ tries Wayland before X11, so in GNOME it shows video through `wl_dmabuf`
 instead of EGL on Xwayland, which stutters) and `rpi-caching.patch` (2000
 ms file and network caching, not 1000: an AirPlay speaker plays about half
 a second behind, and VLC, always late, drops audio and pads it with
-silence, the video jumping with it). The version is
-Alpine's plus `_p<n>`, Pi OS's patch set or `+rpt` release, which ranks
-above Alpine's. To move to a newer one, take Alpine's APKBUILD again and
-Raspberry Pi OS's patches for that version.
+silence, the video jumping with it). The version is Alpine's plus
+`_p<n>`, Pi OS's patch set or `+rpt` release, which ranks above Alpine's.
+To move to a newer one, take Alpine's APKBUILD again and Raspberry Pi
+OS's patches for that version.
 
-`mesa` and `mutter` are Alpine's aport with a patch of ours, versioned
-Alpine's plus `_p<n>`, our patch set's number:
+`mesa`, `mutter` and `showtime` are Alpine's aport with a patch of ours,
+versioned Alpine's plus `_p<n>`, our patch set's number:
 
 - `mesa` (`kmsro-cloexec.patch`): kmsro, which pairs the Pi's display
   device (vc4) with its GPU (v3d), `dup()`ed the render node without
@@ -388,10 +389,16 @@ Alpine's plus `_p<n>`, our patch set's number:
   fractional scaling), commit returned without the reference its state
   then owned, freeing the buffer while its `wl_buffer` destroy listener was
   still attached, and GNOME Shell crashed as the client was disconnected.
+- `showtime` (`video-queue.patch`): on an AirPlay speaker (PipeWire's
+  RAOP sink, which plays about half a second behind) the audio has to be
+  decoded that far ahead of the video, but only a few decoded frames fit
+  between the video decoder and the sink, so the demuxer stalled on the
+  video and the sound skipped every few seconds. It queues a second of
+  decoded video in front of the sink.
 
-`wpa_supplicant`, `bluez`, `mesa` and `mutter` are published as they are
-(but their `-dbg` packages, too big for GitHub Pages), and so replace
-Alpine's. A change to one of them needs a new `pkgrel`, as
+`wpa_supplicant`, `bluez`, `mesa`, `mutter` and `showtime` are published
+as they are (but their `-dbg` packages, too big for GitHub Pages), and so
+replace Alpine's. A change to one of them needs a new `pkgrel`, as
 `ci/publish-repo.sh` keeps a file already published. The four media
 packages are published only inside `cervino-vlc` (`vlc` and `ffmpeg7`) and
 `cervino-gstreamer` (`gst-plugins-base` and `gst-plugins-bad`).
