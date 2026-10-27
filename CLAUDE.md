@@ -792,9 +792,10 @@ default) or `sys` (`-m atomic`/`-m sys` in answer files).
 - It can't install to the disk the live system started from (the Pi's SD
   card): the live root is a squashfs on it, so its disk list (disks with
   nothing mounted) leaves it out.
-- On a PC, only one started with UEFI can install atomic: without
-  `/sys/firmware/efi` the shim turns down `-m atomic` and makes the
-  question's answer `sys`.
+- Only a PC started with UEFI, or a Pi whose firmware has tryboot
+  (`/proc/device-tree/chosen/bootloader/tryboot`), can install atomic:
+  without it the shim turns down `-m atomic` and makes the question's
+  answer `sys`.
 
 ### Atomic installs on a PC
 
@@ -832,29 +833,41 @@ packages:
 
 ### Atomic installs on a Raspberry Pi
 
-On a Pi (`/proc/device-tree/model`) the table is MBR: the firmware's FAT
-partition first (mounted on `/boot/firmware`), swap only with `-s` (Alpine's
-default there), then btrfs. The shim copies `usercfg.txt` there.
+On a Pi (`/proc/device-tree/model`) the table is GPT, with three FAT
+partitions (Microsoft basic data, which the firmware starts from): a
+64 MiB one holding only `autoboot.txt` and `usercfg.txt` (mounted on
+`/boot/firmware`; the shim copies `usercfg.txt` there and writes a first
+`autoboot.txt`, which tells `update-boot` the disk has A and B), then
+256 MiB boot partitions A and B (2 and 3), swap only with `-s` (Alpine's
+default there), then btrfs. Every Pi with tryboot also starts from GPT.
 
 `update-boot` tells a Pi by `start4.elf`/`bootcode.bin` in the root's
 `/boot` (from `raspberrypi-bootloader`, in the Pi's features with the atomic
-tools). It:
+tools). `autoboot.txt` (`tryboot_a_b=1`) has the firmware start from the
+partition its `[all]` section names, and at a restart with the tryboot
+flag from its `[tryboot]` one. Each of A and B starts one version, which
+its `config.txt` names (`os_prefix=cervino/<id>/`). `update-boot` mounts
+them itself and:
 
-- copies each version's kernel (`vmlinuz-rpi*` as Alpine's `config.txt`
-  picks it), initramfs, `*.dtb` and `overlays/` once into
-  `cervino/<id>.new`, renamed to `cervino/<id>/`;
-- adds `overlays/README`: the firmware ignores `os_prefix` for overlays
-  without one, and Alpine's kernel ships none;
-- writes its `cmdline.txt`;
-- copies the firmware files from the version `config.txt` starts;
-- writes `config.txt` with `os_prefix=cervino/<id>/` (the others as
-  comments).
+- never rewrites the partition that starts, but for `cmdline.txt` and
+  `usercfg.txt` when they change: a version goes to the other one,
+  formatted anew (`fill`), and becomes the one that starts by
+  `autoboot.txt` naming that partition, the only file rewritten to commit
+  it. A write cut short by a power cut leaves the version that started
+  before to start;
+- fills a partition with the firmware files, the version's kernel
+  (`vmlinuz-rpi*` as Alpine's `config.txt` picks it), initramfs, `*.dtb`,
+  `overlays/` (with a `README`: the firmware ignores `os_prefix` for
+  overlays without one, and Alpine's kernel ships none), `cmdline.txt`,
+  `usercfg.txt`, and `config.txt` last;
+- puts the version on trial in the other partition. Without one, that
+  keeps the version that started before (to start by hand by swapping the
+  partitions in `autoboot.txt`), unless it was deleted.
 
-The firmware has no menu, so where it has tryboot
-(`/proc/device-tree/chosen/bootloader/tryboot` exists), `config.txt` starts
-the version that starts and `tryboot.txt` the one on trial (see "Which
-version starts" above). The firmware only reads `tryboot.txt` at a restart
-with the tryboot flag, so `boot-trial` has two more steps on the Pi:
+Without `autoboot.txt` on `/boot/firmware`, `update-boot` stops.
+
+The firmware has no menu, and only switches to the version on trial at a
+restart with the tryboot flag, so `boot-trial` has two more steps on the Pi:
 
 - `shutdown` (from the `cervino-atomic` service, after `atomic-finalize`)
   commits the version on trial with `UPDATE_BOOT_COMMIT=1` unless the
@@ -873,7 +886,7 @@ elogind `system-shutdown` hook (its `$1` is `reboot`) and its
 Ctrl-Alt-Del) write `/run/cervino-reboot`. Without it, a restart commits
 like a power off.
 
-The Pi path has been run on a Pi 500+, but the tryboot fallback has not.
+The A/B layout has not been run on a Pi yet.
 
 ## The live system's boot
 

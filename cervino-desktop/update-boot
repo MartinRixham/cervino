@@ -15,12 +15,17 @@
 # fallback, EFI/BOOT/BOOTX64.EFI, for when the boot entries are lost; the one
 # on trial is BootNext.
 #
-# On a Raspberry Pi it is the firmware's, mounted on ROOT/boot/firmware: each
-# version's kernel, initramfs, device trees and overlays are in
-# cervino/<id>/, config.txt starts one (os_prefix) and lists the others, and
-# tryboot.txt, which the firmware reads instead for a restart with the
-# tryboot flag, starts the one on trial. A Pi whose firmware has no tryboot
-# starts the newest version.
+# On a Raspberry Pi the disk is GPT, with three FAT partitions. The first,
+# mounted on ROOT/boot/firmware, holds only autoboot.txt and usercfg.txt:
+# autoboot.txt has the firmware start from partition 2 or 3 (A or B), and at
+# a restart with the tryboot flag from the other one (tryboot_a_b). Each of
+# those holds one version: the firmware, the version's kernel, initramfs,
+# device trees and overlays in cervino/<id>/, usercfg.txt, and config.txt,
+# which starts it (os_prefix). The partition that starts is never rewritten
+# (but for cmdline.txt and usercfg.txt, when they change): a version goes to
+# the other one, formatted anew, and becomes the one that starts by
+# autoboot.txt naming that partition, so a write cut short by a power cut
+# leaves the version that started before to start.
 #
 # Does nothing but on an atomic install.
 
@@ -46,12 +51,23 @@ if ! mountpoint -q "$esp"; then
 		{ echo "update-boot: the boot partition is not mounted on $esp" >&2; exit 1; }
 fi
 
+if [ -n "$pi" ] && [ ! -f "$esp"/autoboot.txt ]; then
+	echo "update-boot: there is no autoboot.txt on $esp" >&2
+	exit 1
+fi
+
 atomic_mount
 # ukify's temporary files: at shutdown /tmp and /var are unmounted and / is
 # read-only, so in /run.
 TMPDIR=$(mktemp -d /run/cervino-boot.XXXXXX)
 export TMPDIR
-trap 'atomic_umount; rm -rf "$top".cmdline "$TMPDIR"' EXIT
+cleanup() {
+	umount "$top".p2 "$top".p3 2>/dev/null || :
+	rmdir "$top".p2 "$top".p3 2>/dev/null || :
+	atomic_umount
+	rm -rf "$top".cmdline "$TMPDIR"
+}
+trap cleanup EXIT
 atomic_staged
 
 # copy FROM TO: replaces TO with FROM unless they are the same already. The
@@ -89,39 +105,40 @@ pick_kernel() {
 	return 0
 }
 
+# cmdline ID: version ID's kernel command line: its /etc/kernel/cmdline and
+# the subvolume to mount.
+cmdline() {
+	echo "$(cat "$top/roots/$1"/etc/kernel/cmdline) rootflags=subvol=/roots/$1"
+}
+
+# config FILE ID: writes the Pi's config.txt that starts version ID to FILE.
+config() {
+	pick_kernel "$2"
+	{
+		echo "# Written by /usr/libexec/cervino/update-boot, which replaces any changes:"
+		echo "# put your own settings in usercfg.txt."
+		echo "# This version of the system, made $(made "$2"):"
+		echo "os_prefix=cervino/$2/"
+		echo "kernel=$kernel"
+		echo "initramfs initramfs-${kernel#vmlinuz-}"
+		echo "arm_64bit=1"
+		echo "include usercfg.txt"
+	} > "$1"
+}
+
 # Each complete version's boot files, newest first. They never change, but
-# for the command line (the version's /etc/kernel/cmdline and the subvolume
-# to mount), so they are made once.
+# for the command line, so they are made once. On a Pi, the boot partitions
+# get the versions they hold below.
 keep=
 for id in $(ls -r "$top"/roots); do
 	atomic_ready "$id" && [ -f "$top/roots/$id"/etc/kernel/cmdline ] || continue
 	pick_kernel "$id"
 	[ -n "$kernel" ] || continue
+	keep="$keep $id"
+	[ -z "$pi" ] || continue
 	src=$top/roots/$id/boot dst=$esp/cervino/$id
-	echo "$(cat "$top/roots/$id"/etc/kernel/cmdline) rootflags=subvol=/roots/$id" \
-		> "$top".cmdline
-	if [ -n "$pi" ]; then
-		# Into a directory renamed into place.
-		if [ ! -d "$dst" ]; then
-			rm -rf "$dst".new
-			mkdir -p "$dst".new
-			cp "$src/$kernel" "$src/initramfs-${kernel#vmlinuz-}" "$src"/*.dtb \
-				"$dst".new/
-			cp -r "$src"/overlays "$dst".new/
-			sync
-			mv "$dst".new "$dst"
-		fi
-		# The firmware loads overlays from os_prefix's overlays/ only if it
-		# has a README (else from the shared /overlays, which is not there),
-		# and Alpine's kernel package ships none. Also added to versions
-		# copied before it was.
-		if [ ! -f "$dst"/overlays/README ]; then
-			echo "Device tree overlays for this version of the system." \
-				> "$dst"/overlays/README.new
-			mv "$dst"/overlays/README.new "$dst"/overlays/README
-		fi
-		copy "$top".cmdline "$dst"/cmdline.txt
-	elif [ ! -f "$dst"/linux.efi ] || ! cmp -s "$top".cmdline "$dst"/cmdline; then
+	cmdline "$id" > "$top".cmdline
+	if [ ! -f "$dst"/linux.efi ] || ! cmp -s "$top".cmdline "$dst"/cmdline; then
 		# The microcode goes first, uncompressed, as the kernel looks for it
 		# at the start of the initramfs.
 		set --
@@ -138,7 +155,6 @@ for id in $(ls -r "$top"/roots); do
 		mv "$dst"/linux.efi.new "$dst"/linux.efi
 		copy "$top".cmdline "$dst"/cmdline
 	fi
-	keep="$keep $id"
 done
 rm -f "$top".cmdline
 [ -n "$keep" ] || { echo "update-boot: no kernel to boot on $atomic_dev" >&2; exit 1; }
@@ -169,58 +185,112 @@ case " $keep " in *" $atomic_id "*)
 esac
 
 if [ -n "$pi" ]; then
-	# config FILE ID: writes the config.txt that starts version ID to FILE.
-	config() {
-		pick_kernel "$2"
-		{
-			echo "# Written by /usr/libexec/cervino/update-boot, which replaces any changes:"
-			echo "# put your own settings in usercfg.txt."
-			echo "# This version of the system, made $(made "$2"):"
-			echo "os_prefix=cervino/$2/"
-			echo "kernel=$kernel"
-			echo "initramfs initramfs-${kernel#vmlinuz-}"
-			echo "arm_64bit=1"
-			echo "include usercfg.txt"
-		} > "$1"
+	# The disk and its partition N's device, which partdev prints.
+	part=$(awk -v m="$esp" '$2 == m { print $1 }' /proc/mounts)
+	disk=$(basename "$(readlink -f /sys/class/block/"$(basename "$(readlink -f "$part")")"/..)")
+	partdev() {
+		local p
+		for p in /sys/class/block/"$disk"/*/partition; do
+			[ "$(cat "$p")" = "$1" ] || continue
+			echo /dev/"$(basename "${p%/partition}")"
+			return 0
+		done
+		echo "update-boot: $disk has no partition $1" >&2
+		return 1
 	}
 
-	conf=$esp/config.txt
-	config "$conf".new "$start"
-	others=
-	for id in $keep; do
-		[ "$id" != "$start" ] || continue
-		[ -n "$others" ] || {
-			echo "# Other versions: to start one, put it in os_prefix above (on another"
-			echo "# computer if this one does not start), or run update-alpine rollback."
-		} >> "$conf".new
-		others=1
-		note=
-		[ "$id" != "$try" ] || note=", tried once with tryboot.txt at the next restart"
-		! atomic_failed "$id" || note=", did not start"
-		echo "#os_prefix=cervino/$id/  (made $(made "$id")$note)" >> "$conf".new
-	done
+	# held N: the version partition N starts (its config.txt's), if any.
+	held() {
+		sed -n 's|^os_prefix=cervino/\([0-9]*\)/$|\1|p' "$top.p$1"/config.txt 2>/dev/null ||
+			:
+	}
 
-	if [ -n "$try" ]; then
-		config "$esp"/tryboot.txt.new "$try"
-		{
-			echo "# The firmware reads this file instead of config.txt when the machine is"
-			echo "# restarted to try this version (see /usr/libexec/cervino/boot-trial)."
-		} >> "$esp"/tryboot.txt.new
+	# wipe N: formats partition N anew, mounted on $top.pN.
+	wipe() {
+		local dev
+		dev=$(partdev "$1")
+		umount "$top.p$1" 2>/dev/null || :
+		mkfs.vfat -F 32 -n "BOOT_$(echo "$1" | tr 23 AB)" "$dev" >/dev/null
+		mount -t vfat "$dev" "$top.p$1"
+	}
+
+	# fill N ID: makes partition N start version ID: formatted anew (so
+	# nothing of what was there, or of a write to it cut short, is left),
+	# with the firmware and ID's files, and config.txt last.
+	fill() {
+		local src="$top/roots/$2/boot" dst="$top.p$1/cervino/$2" f
+		echo "Copying the version of $(made "$2") to boot partition $1"
+		wipe "$1"
+		for f in "$src"/bootcode.bin "$src"/start*.elf "$src"/fixup*.dat; do
+			[ ! -f "$f" ] || cp "$f" "$top.p$1"/
+		done
+		pick_kernel "$2"
+		mkdir -p "$dst"
+		cp "$src/$kernel" "$src/initramfs-${kernel#vmlinuz-}" "$src"/*.dtb "$dst"/
+		cp -r "$src"/overlays "$dst"/
+		# The firmware loads overlays from os_prefix's overlays/ only if it
+		# has a README, and Alpine's kernel package ships none.
+		echo "Device tree overlays for this version of the system." > "$dst"/overlays/README
+		cmdline "$2" > "$dst"/cmdline.txt
+		[ ! -f "$esp"/usercfg.txt ] || cp "$esp"/usercfg.txt "$top.p$1"/
+		sync
+		config "$top.p$1"/config.txt "$2"
+		sync
+	}
+
+	for n in 2 3; do
+		mkdir -p "$top.p$n"
+		mount -t vfat "$(partdev $n)" "$top.p$n" 2>/dev/null || :
+	done
+	def=$(sed -n '/^\[all\]/,/^\[/s/^boot_partition=\([23]\)$/\1/p' "$esp"/autoboot.txt)
+	[ "$def" = 3 ] || def=2
+	alt=$((5 - def))
+
+	# The version that starts: in the partition that starts already, or
+	# in the other one, which is made the one that starts, put there first
+	# if need be. Only an empty partition that starts (a new install's) is
+	# written.
+	if [ "$(held "$def")" != "$start" ]; then
+		if [ -z "$(held "$def")" ]; then
+			fill "$def" "$start"
+		else
+			[ "$(held "$alt")" = "$start" ] || fill "$alt" "$start"
+			def=$alt alt=$((5 - alt))
+		fi
 	fi
 
-	# The firmware, from the version that starts.
-	for f in "$top/roots/$start"/boot/bootcode.bin "$top/roots/$start"/boot/start*.elf \
-		"$top/roots/$start"/boot/fixup*.dat; do
-		[ ! -f "$f" ] || copy "$f" "$esp/${f##*/}"
+	# The one on trial in the other partition. Else that keeps the version
+	# that was there (the one that started before, to start by hand), unless
+	# it was deleted.
+	if [ -n "$try" ]; then
+		[ "$(held "$alt")" = "$try" ] || fill "$alt" "$try"
+	elif [ -n "$(held "$alt")" ]; then
+		case " $keep " in *" $(held "$alt") "*) ;; *) wipe "$alt" ;; esac
+	fi
+
+	# Changed command lines and usercfg.txt, small files rewritten in place.
+	for n in 2 3; do
+		id=$(held $n)
+		[ -n "$id" ] || continue
+		case " $keep " in *" $id "*) ;; *) continue ;; esac
+		cmdline "$id" > "$top".cmdline
+		copy "$top".cmdline "$top.p$n/cervino/$id"/cmdline.txt
+		[ ! -f "$esp"/usercfg.txt ] || copy "$esp"/usercfg.txt "$top.p$n"/usercfg.txt
 	done
 
+	{
+		echo "# Written by /usr/libexec/cervino/update-boot, which replaces any changes."
+		echo "# The firmware starts the system from boot partition $def, or, at a"
+		echo "# restart to try a new version, from $alt. To start the version in $alt"
+		echo "# instead (on another computer if this one does not start), swap them."
+		echo "[all]"
+		echo "tryboot_a_b=1"
+		echo "boot_partition=$def"
+		echo "[tryboot]"
+		echo "boot_partition=$alt"
+	} > "$esp"/autoboot.txt.new
 	sync
-	replace "$conf".new "$conf"
-	if [ -n "$try" ]; then
-		replace "$esp"/tryboot.txt.new "$esp"/tryboot.txt
-	else
-		rm -f "$esp"/tryboot.txt
-	fi
+	replace "$esp"/autoboot.txt.new "$esp"/autoboot.txt
 else
 	copy "$esp/cervino/$start"/linux.efi "$esp"/EFI/BOOT/BOOTX64.EFI
 	sync

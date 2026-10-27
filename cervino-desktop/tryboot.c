@@ -1,7 +1,7 @@
 /*
- * Restarts a Raspberry Pi with the tryboot flag, so that its firmware reads
- * tryboot.txt instead of config.txt and starts the version of an atomic
- * install that is on trial (see /usr/libexec/cervino/boot-trial).
+ * Restarts a Raspberry Pi with the tryboot flag, so that its firmware starts
+ * from the boot partition autoboot.txt names for it, which holds the version
+ * of an atomic install that is on trial (see /usr/libexec/cervino/boot-trial).
  *
  * The kernel's firmware driver sets the flag only for a restart with the
  * argument "0 tryboot" (reboot(2)'s LINUX_REBOOT_CMD_RESTART2), and clears it

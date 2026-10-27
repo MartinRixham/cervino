@@ -28,13 +28,14 @@
 # /var/roothome, makes the system read-only and runs cervino-desktop's
 # update-boot, which puts the kernel, initramfs and command line on the boot
 # partition as a unified kernel image, with a UEFI boot entry.
-# On a Raspberry Pi the disk is MBR (the firmware starts from its first
-# partition), with the firmware's FAT partition first, mounted on
-# /boot/firmware, swap only with -s, as Alpine's setup-disk does on the Pi,
-# and then the btrfs volume; update-boot puts each version's boot files in
-# its own directory there, and config.txt starts one (os_prefix). The
-# disk the live system started from can't be installed to: the live system
-# runs from it.
+# On a Raspberry Pi, only one whose firmware has tryboot (which also starts
+# from GPT disks), the disk is GPT, with three FAT partitions first: the
+# one the firmware reads autoboot.txt from, mounted on /boot/firmware, and
+# boot partitions A and B, which update-boot fills (each starts one version,
+# and autoboot.txt names the one that starts); then swap only with -s, as
+# Alpine's setup-disk does on the Pi, and the btrfs volume. The disk the
+# live system started from can't be installed to: the live system runs
+# from it.
 
 . /usr/lib/libalpine.sh
 
@@ -72,14 +73,23 @@ export CERVINO_COPY_ROOT=1
 [ "$mode" != none ] && [ "$disks" != none ] || exit 0
 
 asked=
-# An atomic install on a PC is started by UEFI, as a boot entry for each
-# version (see cervino-desktop's update-boot); without it, a sys install.
-if [ -z "$pi" ] && [ ! -d /sys/firmware/efi ]; then
-	[ "$mode" != atomic ] || die "an atomic install needs a PC started with UEFI"
+# An atomic install is started by the firmware, which tries a new version
+# once (see cervino-desktop's update-boot): on a PC UEFI, with a boot entry
+# for each version, on a Pi its tryboot. Without it, a sys install.
+nofw=
+if [ -n "$pi" ]; then
+	[ -e /proc/device-tree/chosen/bootloader/tryboot ] ||
+		nofw="This Pi's firmware has no tryboot (a Pi 4 or 5 with a current bootloader has)"
+elif [ ! -d /sys/firmware/efi ]; then
+	nofw="This PC started without UEFI"
+fi
+if [ -n "$nofw" ]; then
+	[ "$mode" != atomic ] || die "$nofw, which an atomic install needs"
 	if [ -z "$mode" ]; then
 		echo
-		echo "This PC started without UEFI, which the atomic install needs, so this is"
-		echo "Alpine's standard install (sys), updated in place."
+		echo "$nofw,"
+		echo "which the atomic install needs, so this is Alpine's standard install (sys),"
+		echo "updated in place."
 		mode=sys asked=1
 	fi
 fi
@@ -189,8 +199,8 @@ fi
 
 [ -z "$modefile" ] || echo sys > "$modefile"
 
-# The boot partition: the EFI system partition, or on the Pi the firmware's,
-# mounted on /boot/firmware as on Raspberry Pi OS.
+# The boot partition: the EFI system partition, or on the Pi the first of
+# the firmware's, mounted on /boot/firmware as on Raspberry Pi OS.
 bootdir=/boot/efi
 [ -z "$pi" ] || bootdir=/boot/firmware
 mnt=/mnt
@@ -215,14 +225,19 @@ if [ -z "$swap" ]; then
 fi
 [ "$swap" -ge 64 ] || swap=0
 
-# The Pi's firmware starts from the first partition of an MBR disk.
+# The Pi's firmware reads autoboot.txt from the first partition, which
+# names the boot partition, A or B, to start from. They are Microsoft basic
+# data partitions, which the firmware starts from on a GPT disk.
 dmesg -n1
 if [ -n "$pi" ]; then
+	basic=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7
 	{
-		echo 'label: dos'
-		echo 'size=1GiB, type=c, bootable'
-		[ "$swap" = 0 ] || echo "size=${swap}MiB, type=82"
-		echo 'type=83'
+		echo 'label: gpt'
+		echo "size=64MiB, type=$basic, name=\"Pi boot\""
+		echo "size=256MiB, type=$basic, name=\"Boot A\""
+		echo "size=256MiB, type=$basic, name=\"Boot B\""
+		[ "$swap" = 0 ] || echo "size=${swap}MiB, type=S, name=\"Swap\""
+		echo 'type=L, name="Alpine Linux"'
 	}
 else
 	{
@@ -249,6 +264,7 @@ part() {
 }
 
 n=2
+[ -z "$pi" ] || n=4
 espn=1
 if [ "$swap" != 0 ]; then
 	swappart=$(part $n) || die "the partitions of $disk did not show up"
@@ -398,9 +414,15 @@ mkdir -p "$mnt"/var/roothome &&
 	rm -rf "$mnt"/root && ln -s var/roothome "$mnt"/root || die "could not move /root"
 btrfs property set -ts "$mnt" ro true || die "could not make the system read-only"
 
-# The Pi's own settings (the lbu shim put them in the system's /boot).
-[ -z "$pi" ] || [ ! -f "$mnt"/boot/usercfg.txt ] || cp "$mnt"/boot/usercfg.txt "$mnt$bootdir"/ ||
-	die "could not write usercfg.txt"
+# The Pi's own settings (the lbu shim put them in the system's /boot), which
+# update-boot copies to the boot partitions, and autoboot.txt, which
+# update-boot rewrites: here it tells update-boot that the disk has A and B.
+if [ -n "$pi" ]; then
+	[ ! -f "$mnt"/boot/usercfg.txt ] || cp "$mnt"/boot/usercfg.txt "$mnt$bootdir"/ ||
+		die "could not write usercfg.txt"
+	printf '[all]\ntryboot_a_b=1\nboot_partition=2\n[tryboot]\nboot_partition=3\n' \
+		> "$mnt$bootdir"/autoboot.txt || die "could not write autoboot.txt"
+fi
 
 # Boot entries of an install that was on a partition gone now (this disk's,
 # before it was erased).

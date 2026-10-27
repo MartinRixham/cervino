@@ -413,29 +413,30 @@ to a USB or NVMe drive, but for now not to the SD card the Pi booted from:
 the live system runs from an image on it, so it can't be unmounted. The
 installed system's boot partition gets the same `usercfg.txt`.
 
-An atomic install on the Pi erases the disk and makes an MBR partition
-table, as the Pi's firmware starts from its first partition: a 1 GiB FAT
-boot partition (mounted on `/boot/firmware`, as on Raspberry Pi OS), swap
-only if asked for (`-s`, as Alpine does on the Pi) and the btrfs volume,
-encrypted or not, as on a PC. The firmware starts the system itself, with
-no boot menu: each version's kernel, initramfs, device trees, overlays and
-`cmdline.txt` are copied to `cervino/<date and time>/` on the boot
-partition, and `config.txt` (written by `update-boot`; your settings go in
-`usercfg.txt`) starts one with `os_prefix=`, listing the others in
-comments. A Pi whose firmware has tryboot (the Pi 4 and 5 families with a
-current bootloader) tries a new version once:
-`config.txt` stays on the version that last started, `tryboot.txt` names
-the new one, and restarting (from GNOME, `doas reboot` or
-`update-alpine`'s offer) restarts with the firmware's tryboot flag, so
-the new version starts that one time. Once it has started, `config.txt`
-names it. If it doesn't start, switching the Pi off and on starts the
-version before again, and the new one is not tried again (`update-alpine
-list` shows it as "did not start when tried"). Switching off instead of
-restarting can't use tryboot, so the next start goes straight to the new
-version, with nothing to fall back on, as on older firmware. Going back
+An atomic install on the Pi needs firmware with tryboot (the Pi 4 and 5
+families with a current bootloader); on other Pis the installer makes
+Alpine's standard install (sys). It erases the disk and makes a GPT
+partition table: a small FAT partition (mounted on `/boot/firmware`)
+holding only `autoboot.txt` and `usercfg.txt` (your settings), two 256 MiB
+FAT boot partitions, A and B, swap only if asked for (`-s`, as Alpine does
+on the Pi) and the btrfs volume, encrypted or not, as on a PC. The firmware
+starts the system itself, with no boot menu: each of A and B holds one
+version (the firmware, its kernel, initramfs, device trees and overlays in
+`cervino/<date and time>/`, `cmdline.txt` and a `config.txt` that starts
+it), and `autoboot.txt` (written by `update-boot`) names the one that
+starts. A new version is copied to the other partition, never to the one
+that starts, and tried once: restarting (from GNOME, `doas reboot` or
+`update-alpine`'s offer) restarts with the firmware's tryboot flag, which
+starts the other partition that one time. Once it has started,
+`autoboot.txt` names its partition, so a power cut while it is written
+leaves the version before to start. If it doesn't start, switching the Pi
+off and on starts the version before again, and the new one is not tried
+again (`update-alpine list` shows it as "did not start when tried").
+Switching off instead of restarting can't use tryboot, so the next start
+goes straight to the new version, with nothing to fall back on. Going back
 from a version that starts is `doas update-alpine rollback`, or, from one
-that doesn't, putting an earlier version's directory in `os_prefix` on
-another computer.
+that doesn't, swapping the two partition numbers in `autoboot.txt` on
+another computer, which starts the version in the other partition.
 
 ## How it works
 
