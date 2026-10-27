@@ -23,7 +23,8 @@ Besides the script, the repo holds:
 - the `cervino-terminal` package's `cervino-terminal/APKBUILD`
 - the AppArmor profiles in `apparmor.d/`
 - the Pi's patched `ffmpeg7`, `vlc`, `gst-plugins-base`, `gst-plugins-bad`,
-  `wpa_supplicant` and `bluez` packages in `rpi/`
+  `wpa_supplicant`, `bluez` and `mesa` packages in `rpi/`
+- the patched `mutter` package, for both targets, in `patched/`
 
 `README.md` documents the user-facing behaviour and the environment
 variables (`TARGET`, `ALPINE_BRANCH`, `OUTDIR`, `LIVE_USER`,
@@ -175,9 +176,9 @@ tab as 4. Break a long command at a pipe, `&&` or `||`, or with a backslash,
 indenting the continuation one more tab; split a long `die` message into
 several arguments, and give a long `fail` message a variable. Lines that
 can't be broken (udev rules, `.desktop` `Exec=` lines, AppArmor brace lists,
-regexes) stay as they are. The packages in `rpi/` are Alpine's aports and
-keep Alpine's formatting. Comments and Markdown are wrapped at about 76
-columns.
+regexes) stay as they are. The packages in `rpi/` and `patched/` are
+Alpine's aports and keep Alpine's formatting. Comments and Markdown are
+wrapped at about 76 columns.
 
 A blank line separates a script's header comment from its code, functions
 from each other, and the steps of a script (a group of commands with the
@@ -190,20 +191,20 @@ add it when moving one into a source file of its own.
 CI (`.github/workflows/build-iso.yml`) runs the script with
 `CONTAINER=docker` on pushes and PRs that touch the script, the generator,
 `live/`, `mkimg.gnomelive.sh`, `cervino-desktop/`, `cervino-vlc/`,
-`cervino-gstreamer/`, `cervino-terminal/`, `apparmor.d/`, `rpi/`, `ci/`,
-`test/` or the workflow.
+`cervino-gstreamer/`, `cervino-terminal/`, `apparmor.d/`, `rpi/`,
+`patched/`, `ci/`, `test/` or the workflow.
 
 - **Build jobs**: one per `TARGET`, a matrix of `iso` on `ubuntu-latest` and
   `rpi` on `ubuntu-24.04-arm`. They free runner disk space first because
   mkimage needs several GB. Each job uploads its image plus `SHA256SUMS` as
   an artifact; the `iso` job then runs `ci/update-test.sh`. The `rpi` image
   is only built: QEMU can't run GNOME on an emulated Pi.
-- **The Pi's package cache**: the `rpi` job passes
-  `CACHEDIR=$RUNNER_TEMP/pkgcache` and keeps each Pi package in an Actions
-  cache of its own. Before the build it restores the newest
-  `rpi-<package>-*` (`actions/cache/restore` with a `restore-keys` prefix),
-  and after it, even if it failed, saves each package whose `key` file is
-  not the restored one's as `rpi-<package>-<key>`.
+- **The patched packages' cache**: the build jobs pass
+  `CACHEDIR=$RUNNER_TEMP/pkgcache` and keep each patched package in an
+  Actions cache of its own. Before the build they restore the newest
+  `<target>-<package>-*` (`actions/cache/restore` with a `restore-keys`
+  prefix), and after it, even if it failed, save each package whose `key`
+  file is not the restored one's as `<target>-<package>-<key>`.
 - **`vm-test`** (after both builds): downloads the ISO and runs
   `ci/vm-test.sh` once per `INSTALL_MODE` (a matrix of `atomic` and `sys`,
   on separate runners, since a runner's 16 GB can't hold two 8 GB VMs),
@@ -221,8 +222,9 @@ CI (`.github/workflows/build-iso.yml`) runs the script with
 - **The packages**: the build jobs set `APK_REPO` to the repository's GitHub
   Pages URL, and each uploads its `out/repo` (the packages as
   `<branch>/<arch>/*.apk`: `cervino-desktop`, `cervino-vlc`,
-  `cervino-gstreamer`, `cervino-terminal`, and for `rpi` `wpa_supplicant`
-  and `bluez` with their subpackages) as `cervino-repo-<target>`.
+  `cervino-gstreamer`, `cervino-terminal`, `mutter`, and for `rpi`
+  `wpa_supplicant`, `bluez` and `mesa`, with their subpackages but `-dbg`)
+  as `cervino-repo-<target>`.
 - **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` in an
   `alpine:<branch>` container per branch (so the index is in a format that
   branch's apk reads) on a worktree of the `gh-pages` branch. That is an
@@ -251,11 +253,12 @@ The same file runs in four phases, selected by its first argument.
 - Re-runs itself in `alpine:<release>`, mounting itself at `/build.sh`;
   `genapkovl-gnomelive.sh`, `live/`, `mkimg.gnomelive.sh`,
   `initramfs-live.patch`, `cervino-desktop/`, `cervino-vlc/`,
-  `cervino-gstreamer/`, `cervino-terminal/`, `apparmor.d/` and `rpi/` (from
-  the script's directory) at `/genapkovl-gnomelive.sh`, `/live`,
-  `/mkimg.gnomelive.sh`, `/initramfs-live.patch`, `/cervino-desktop`,
-  `/cervino-vlc`, `/cervino-gstreamer`, `/cervino-terminal`, `/apparmor.d`
-  and `/rpi`; `$OUTDIR` at `/out`; and `CACHEDIR`, if set, at `/cache`.
+  `cervino-gstreamer/`, `cervino-terminal/`, `apparmor.d/`, `rpi/` and
+  `patched/` (from the script's directory) at `/genapkovl-gnomelive.sh`,
+  `/live`, `/mkimg.gnomelive.sh`, `/initramfs-live.patch`,
+  `/cervino-desktop`, `/cervino-vlc`, `/cervino-gstreamer`,
+  `/cervino-terminal`, `/apparmor.d`, `/rpi` and `/patched`; `$OUTDIR` at
+  `/out`; and `CACHEDIR`, if set, at `/cache`.
 - Passes `PKGVER`, the package's version: the last commit's time
   (`YYYYMMDD.HHMMSS`, UTC), or the build time outside git, so each commit's
   package upgrades the last.
@@ -315,9 +318,11 @@ removable from world. It also has `cervino-vlc` (VLC, on the Pi) and
 `cervino-gstreamer` (below), either of which can be removed for Alpine's
 packages, and `cervino-terminal` (below).
 
-**The Pi's packages.** For `rpi` it first builds `rpi/ffmpeg7`, `rpi/vlc`,
-`rpi/gst-plugins-base`, `rpi/gst-plugins-bad`, `rpi/wpa_supplicant` and
-`rpi/bluez`, in that order, with `abuild -r`.
+**The patched packages.** It first builds `patched/mutter`, then for `rpi`
+`rpi/ffmpeg7`, `rpi/vlc`, `rpi/gst-plugins-base`, `rpi/gst-plugins-bad`,
+`rpi/wpa_supplicant`, `rpi/bluez` and `rpi/mesa`, in that order, with
+`abuild -r`. mutter comes first so that it builds with Alpine's
+`mesa-dev`.
 
 - abuild-apk installs their makedepends. `vlc` builds with the
   `ffmpeg7-dev`, and `gst-plugins-bad` with the `gst-plugins-base-dev`,
@@ -327,14 +332,16 @@ packages, and `cervino-terminal` (below).
   the one it was made from.
 - With `/cache`, a package whose `key` there matches is taken from there
   instead (the files `abuild listpkg` names). The key is a hash of the
-  branch, `ARCH`, Alpine's version, the files of `rpi/<package>/` and, for
-  `vlc` and `gst-plugins-bad`, the key of `ffmpeg7` or `gst-plugins-base`.
+  branch, `ARCH`, Alpine's version, the files of the package's directory
+  and, for `vlc` and `gst-plugins-bad`, the key of `ffmpeg7` or
+  `gst-plugins-base`.
   Each `.apk` is signed again with this build's key (`abuild-gzsplit`, then
   `abuild-sign` of its control part), and `abuild index` puts it in abuild's
   repo.
 - A package built here is left with its key in `/work/pkgcache/<package>/`.
 
-Each is Alpine's aport with Raspberry Pi OS's patches:
+Those in `rpi/` but `mesa` are Alpine's aport with Raspberry Pi OS's
+patches:
 
 - `ffmpeg7` and `vlc`: the Pi's hardware video decoders (V4L2 request HEVC,
   V4L2 M2M H.264, DRM PRIME frames). ffmpeg7's libraries only add to
@@ -365,10 +372,26 @@ Alpine's plus `_p<n>`, Pi OS's patch set or `+rpt` release, which ranks
 above Alpine's. To move to a newer one, take Alpine's APKBUILD again and
 Raspberry Pi OS's patches for that version.
 
-`wpa_supplicant` and `bluez` are published as they are, and so replace
-Alpine's. The four media packages are published only inside
-`cervino-vlc` (`vlc` and `ffmpeg7`) and `cervino-gstreamer`
-(`gst-plugins-base` and `gst-plugins-bad`).
+`mesa` and `mutter` are Alpine's aport with a patch of ours, versioned
+Alpine's plus `_p<n>`, our patch set's number:
+
+- `mesa` (`kmsro-cloexec.patch`): kmsro, which pairs the Pi's display
+  device (vc4) with its GPU (v3d), `dup()`ed the render node without
+  close-on-exec. Every program started from GNOME Shell inherited it, and a
+  program that outlived the shell (a zellij server started from foot) kept
+  the shell's GPU memory in the Pi's 4 GB GPU address space.
+- `mutter` (`buffer-import-error.patch`): when a client's buffer couldn't
+  be imported (out of GPU memory: going fullscreen on a Pi at 4K with
+  fractional scaling), commit returned without the reference its state
+  then owned, freeing the buffer while its `wl_buffer` destroy listener was
+  still attached, and GNOME Shell crashed as the client was disconnected.
+
+`wpa_supplicant`, `bluez`, `mesa` and `mutter` are published as they are
+(but their `-dbg` packages, too big for GitHub Pages), and so replace
+Alpine's. A change to one of them needs a new `pkgrel`, as
+`ci/publish-repo.sh` keeps a file already published. The four media
+packages are published only inside `cervino-vlc` (`vlc` and `ffmpeg7`) and
+`cervino-gstreamer` (`gst-plugins-base` and `gst-plugins-bad`).
 
 **`cervino-vlc` and `cervino-gstreamer`.** `build_bundle NAME VERSION
 PACKAGE...` builds each with `abuild -d` in `/work/cervino/<name>`, from a

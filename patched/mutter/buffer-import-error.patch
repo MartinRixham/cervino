@@ -1,0 +1,20 @@
+When a buffer can't be imported (out of GPU memory), commit posts an
+error and returns after taking down the pending state's handler for the
+buffer's destruction but without taking the reference the state then
+owns. Clearing the state later unrefs a buffer it holds no reference to,
+freeing the MetaWaylandBuffer while it still listens for its wl_buffer's
+destruction, and GNOME Shell crashes (in wl_list_remove) when the client
+is destroyed for the error. Drop the pointer instead.
+
+--- a/src/wayland/meta-wayland-surface.c
++++ b/src/wayland/meta-wayland-surface.c
+@@ -1157,6 +1157,9 @@ meta_wayland_surface_commit (MetaWaylandSurface *surface)
+                                   "Failed to attach buffer to surface %i: %s",
+                                   wl_resource_get_id (surface->resource),
+                                   error->message);
++          /* Without its destroy handler the state would own the buffer
++           * and unref it when cleared, but it has taken no reference. */
++          pending->buffer = NULL;
+           return;
+         }
+ 

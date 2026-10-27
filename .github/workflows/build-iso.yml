@@ -15,6 +15,7 @@ on:
       - cervino-terminal/**
       - apparmor.d/**
       - rpi/**
+      - patched/**
       - test/**
       - ci/**
       - .github/workflows/build-iso.yml
@@ -30,6 +31,7 @@ on:
       - cervino-terminal/**
       - apparmor.d/**
       - rpi/**
+      - patched/**
       - test/**
       - ci/**
       - .github/workflows/build-iso.yml
@@ -99,10 +101,19 @@ jobs:
           pages=https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}
           echo "APK_REPO=$pages" >> "$GITHUB_ENV"
 
-      # The Pi's packages built from rpi/ take most of its build, so each is
-      # kept in a cache of its own (CACHEDIR), keyed on the hash the build
-      # writes next to it: the newest of each is restored, and the build
-      # takes it from there while that hash still matches its sources.
+      # The patched packages built from rpi/ and patched/ take most of the
+      # build, so each is kept in a cache of its own (CACHEDIR), keyed on
+      # the target and the hash the build writes next to it: the newest of
+      # each is restored, and the build takes it from there while that hash
+      # still matches its sources.
+      - name: Restore mutter
+        id: restore-mutter
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/mutter
+          key: ${{ matrix.target }}-mutter-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-mutter-
+
       - name: Restore ffmpeg7
         id: restore-ffmpeg7
         if: matrix.target == 'rpi'
@@ -157,25 +168,36 @@ jobs:
           key: rpi-bluez-${{ github.sha }}
           restore-keys: rpi-bluez-
 
+      - name: Restore mesa
+        id: restore-mesa
+        if: matrix.target == 'rpi'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/mesa
+          key: rpi-mesa-${{ github.sha }}
+          restore-keys: rpi-mesa-
+
       - name: Build image
         env:
           TARGET: ${{ matrix.target }}
           CONTAINER: docker
           ALPINE_BRANCH: ${{ inputs.alpine_branch }}
           OUTDIR: ${{ github.workspace }}/out
-          CACHEDIR: ${{ matrix.target == 'rpi' && format('{0}/pkgcache', runner.temp) || '' }}
+          CACHEDIR: ${{ runner.temp }}/pkgcache
         run: ./build-alpine-gnome-iso.sh
 
       # Each package the build made (its hash is not the restored one's)
       # goes in the cache, even if the build stopped after it.
       - name: Cache keys
         id: keys
-        if: always() && matrix.target == 'rpi'
+        if: always()
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           for dir in "$RUNNER_TEMP"/pkgcache/*/; do
             [ -f "$dir/key" ] || continue
             name=$(basename "$dir")
-            echo "${name//-/_}=rpi-$name-$(cat "$dir/key")" >> "$GITHUB_OUTPUT"
+            echo "${name//-/_}=$TARGET-$name-$(cat "$dir/key")" >> "$GITHUB_OUTPUT"
           done
 
       - name: Save ffmpeg7
@@ -238,6 +260,26 @@ jobs:
           path: ${{ runner.temp }}/pkgcache/bluez
           key: ${{ steps.keys.outputs.bluez }}
 
+      - name: Save mesa
+        if: >-
+          always() && steps.keys.outputs.mesa &&
+          steps.keys.outputs.mesa !=
+          steps.restore-mesa.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/mesa
+          key: ${{ steps.keys.outputs.mesa }}
+
+      - name: Save mutter
+        if: >-
+          always() && steps.keys.outputs.mutter &&
+          steps.keys.outputs.mutter !=
+          steps.restore-mutter.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/mutter
+          key: ${{ steps.keys.outputs.mutter }}
+
       - name: Checksum
         working-directory: out
         run: sha256sum alpine-gnomelive-* | tee SHA256SUMS
@@ -251,8 +293,8 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-      # cervino-desktop, cervino-vlc, cervino-gstreamer and
-      # cervino-terminal (and for rpi, wpa_supplicant and bluez), laid out
+      # cervino-desktop, cervino-vlc, cervino-gstreamer, cervino-terminal
+      # and mutter (and for rpi, wpa_supplicant, bluez and mesa), laid out
       # as in the published repo (<branch>/<arch>/), for the repo job.
       - uses: actions/upload-artifact@v7
         with:

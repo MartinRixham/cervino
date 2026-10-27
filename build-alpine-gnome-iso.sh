@@ -37,7 +37,9 @@
 # Pi's hardware video decoders, Wi-Fi and Bluetooth. The media ones come in
 # two packages, cervino-vlc (vlc and ffmpeg7) and cervino-gstreamer
 # (cervino-vlc/ and cervino-gstreamer/; empty on a PC), which can be deleted
-# for Alpine's; wpa_supplicant and bluez are published with cervino-desktop.
+# for Alpine's; wpa_supplicant and bluez are published with cervino-desktop,
+# as is the Pi's mesa, with a patch of ours. Both images have mutter built
+# from patched/: Alpine's with a fix of ours, published the same way.
 # The terminal, Zellij in foot, with AstroNvim, is a package of its own
 # too, cervino-terminal (cervino-terminal/), which can be deleted.
 #
@@ -65,16 +67,17 @@
 #   SIGNING_KEY     abuild private key (its public key is derived from it,
 #                   named after the file plus .pub) to sign the packages
 #                   built here (cervino-desktop, cervino-vlc,
-#                   cervino-gstreamer, cervino-terminal, and the Pi's
-#                   wpa_supplicant and bluez) and the image's repo with
-#                   (default: a new key each build)
+#                   cervino-gstreamer, cervino-terminal, mutter, and the
+#                   Pi's wpa_supplicant, bluez and mesa) and the image's
+#                   repo with (default: a new key each build)
 #   APK_REPO        URL of the repo those packages are published in, without
 #                   the branch; installs get updates from APK_REPO/<branch>
 #                   (default: none). Its packages must be signed with
 #                   SIGNING_KEY.
-#   CACHEDIR        where the Pi's packages built from rpi/ are kept, to be
-#                   taken from there by later builds while their sources,
-#                   Alpine's version and the release are the same
+#   CACHEDIR        where the packages built from rpi/ and patched/ are
+#                   kept, to be taken from there by later builds while
+#                   their sources, Alpine's version and the release are the
+#                   same
 #                   (default: none, each build builds them)
 #
 # Note: the live system runs from the root file system image on the boot
@@ -200,6 +203,7 @@ host_main() {
 		-v "$here"/cervino-terminal:/cervino-terminal:ro \
 		-v "$here"/apparmor.d:/apparmor.d:ro \
 		-v "$here"/rpi:/rpi:ro \
+		-v "$here"/patched:/patched:ro \
 		-v "$OUTDIR":/out \
 		-e TARGET="$TARGET" \
 		-e ALPINE_BRANCH="$ALPINE_BRANCH" \
@@ -263,9 +267,9 @@ container_main() {
 	fi
 	cp "$privkey".pub /etc/apk/keys/
 
-	# The Pi's packages it built go in the cache (owned by its owner on the
-	# host) even if the build stops later, so the next one need not build
-	# them again.
+	# The patched packages it built go in the cache (owned by its owner on
+	# the host) even if the build stops later, so the next one need not
+	# build them again.
 	local rc=0
 	su build -s /bin/bash -c 'bash /build.sh --as-builder' || rc=$?
 	if [[ -d /cache ]]; then
@@ -533,93 +537,102 @@ builder_main() {
 	rpi) disc_apks="$disc_apks raspberrypi-bootloader" ;;
 	esac
 
-	# --- The Pi's packages ----------------------------------------------------
-	# Alpine's, with Raspberry Pi OS's patches (rpi/): ffmpeg7 and vlc for
-	# the Pi's hardware video decoders, gst-plugins-base and gst-plugins-bad
-	# for its HEVC decoder in GStreamer (Showtime, WebKit, the file
-	# previews), wpa_supplicant for WPA3 with its Wi-Fi, bluez for audio
-	# over its Bluetooth, which shares the radio.
-	# wpa_supplicant and bluez rank above Alpine's and so replace them; the
-	# rest go in cervino-vlc and cervino-gstreamer (below). Each is
-	# Alpine's APKBUILD of one version (its _alpine) with the patches: stop
-	# if Alpine's has moved on, as its changes (security fixes, rebuilds for
+	# --- Patched packages ----------------------------------------------------
+	# Alpine's, with patches. On the Pi, Raspberry Pi OS's (rpi/): ffmpeg7
+	# and vlc for the Pi's hardware video decoders, gst-plugins-base and
+	# gst-plugins-bad for its HEVC decoder in GStreamer (Showtime, WebKit,
+	# the file previews), wpa_supplicant for WPA3 with its Wi-Fi, bluez for
+	# audio over its Bluetooth, which shares the radio; and ours, mesa, so
+	# that programs don't inherit the GPU's render node. On both, mutter
+	# (patched/), ours, so that GNOME Shell survives a buffer it can't
+	# import. It comes first, so that it builds with Alpine's mesa-dev.
+	# wpa_supplicant, bluez, mesa and mutter rank above Alpine's and so
+	# replace them (but for their -dbg packages, too big to publish); the
+	# rest go in cervino-vlc and cervino-gstreamer (below). Each is Alpine's
+	# APKBUILD of one version (its _alpine) with the patches: stop if
+	# Alpine's has moved on, as its changes (security fixes, rebuilds for
 	# libraries' new sonames) would be missing. abuild -r installs what they
 	# build with (abuild-apk, which the abuild group may run) and adds the
 	# packages it built before to the repos, so vlc builds with ffmpeg7-dev
 	# and gst-plugins-bad with gst-plugins-base-dev from here.
 	# With CACHEDIR (mounted on /cache), a package built before is taken
 	# from there when its key matches: a hash of the release, the
-	# architecture, Alpine's version, rpi/<package>/ and the key of the
+	# architecture, Alpine's version, its directory and the key of the
 	# package it builds with. Its files keep the signature of the build that
 	# made them, so they are signed again with this build's key. Packages
 	# built here are left in /work/pkgcache for container_main to keep.
-	local name file repodir=/work/packages/cervino/$ARCH
+	local name file repodir=/work/packages/cervino/$ARCH patched=mutter replaces=mutter
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
-		local base alpine dep key tmp files
-		local -A keys after=([vlc]=ffmpeg7 [gst-plugins-bad]=gst-plugins-base)
-		mkdir -p /work/cervino /work/pkgcache
-		for name in ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez; do
-			base=$(sed -n 's/^_alpine=//p' /rpi/"$name"/APKBUILD)
-			alpine=$(apk --root "$apkroot" search --exact "$name") ||
-				die "Alpine $ALPINE_BRANCH has no $name"
-			[[ $alpine == "$name-$base" ]] ||
-				die "Alpine's $name is $alpine, rpi/$name/APKBUILD is based on" \
-					"$name-$base: update it"
-			cp -R /rpi/"$name" /work/cervino/
-			cd /work/cervino/"$name"
-			dep=${after[$name]:-}
-			key=$({
-				echo "$ALPINE_BRANCH $ARCH $alpine ${dep:+${keys[$dep]}}"
-				find . -type f -exec sha256sum {} + | LC_ALL=C sort -k 2
-			} | sha256sum | cut -d ' ' -f 1)
-			keys[$name]=$key
-			mapfile -t files < <(abuild listpkg)
-			pkgfiles[$name]=${files[*]}
-			alpinever[$name]=$base
-			if [[ $(cat /cache/"$name"/key 2>/dev/null) == "$key" ]] &&
-				(cd /cache/"$name" && ls "${files[@]}" > /dev/null 2>&1); then
-				echo ">>> $name: taking ${files[*]} from the cache"
-				mkdir -p "$repodir"
-				for file in "${files[@]}"; do
-					tmp=$(mktemp -d)
-					(cd "$tmp" && abuild-gzsplit < /cache/"$name"/"$file" &&
-						abuild-sign -q control.tar.gz &&
-						cat control.tar.gz data.tar.gz \
-							> "$repodir"/"$file") ||
-						die "could not sign $file again"
-					rm -rf "$tmp"
-				done
-				# The repo abuild -r installs vlc's and gst-plugins-bad's
-				# makedepends from.
-				abuild -P /work/packages index || die "could not index $name"
-			else
-				abuild -r -P /work/packages || die "could not build $name"
-				mkdir -p /work/pkgcache/"$name"
-				(cd "$repodir" && cp "${files[@]}" /work/pkgcache/"$name"/) ||
-					die "abuild built other packages than abuild listpkg" \
-						"names for $name"
-				echo "$key" > /work/pkgcache/"$name"/key
-			fi
-			cd /work
-		done
+		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"
+		replaces+=" wpa_supplicant bluez mesa"
 	fi
+	local dir base alpine dep key tmp files
+	local -A keys after=([vlc]=ffmpeg7 [gst-plugins-bad]=gst-plugins-base)
+	mkdir -p /work/cervino /work/pkgcache
+	for name in $patched; do
+		dir=/patched/$name
+		[[ -d $dir ]] || dir=/rpi/$name
+		base=$(sed -n 's/^_alpine=//p' "$dir"/APKBUILD)
+		alpine=$(apk --root "$apkroot" search --exact "$name") ||
+			die "Alpine $ALPINE_BRANCH has no $name"
+		[[ $alpine == "$name-$base" ]] ||
+			die "Alpine's $name is $alpine, ${dir#/}/APKBUILD is based on" \
+				"$name-$base: update it"
+		cp -R "$dir" /work/cervino/
+		cd /work/cervino/"$name"
+		dep=${after[$name]:-}
+		key=$({
+			echo "$ALPINE_BRANCH $ARCH $alpine ${dep:+${keys[$dep]}}"
+			find . -type f -exec sha256sum {} + | LC_ALL=C sort -k 2
+		} | sha256sum | cut -d ' ' -f 1)
+		keys[$name]=$key
+		mapfile -t files < <(abuild listpkg)
+		pkgfiles[$name]=${files[*]}
+		alpinever[$name]=$base
+		if [[ $(cat /cache/"$name"/key 2>/dev/null) == "$key" ]] &&
+			(cd /cache/"$name" && ls "${files[@]}" > /dev/null 2>&1); then
+			echo ">>> $name: taking ${files[*]} from the cache"
+			mkdir -p "$repodir"
+			for file in "${files[@]}"; do
+				tmp=$(mktemp -d)
+				(cd "$tmp" && abuild-gzsplit < /cache/"$name"/"$file" &&
+					abuild-sign -q control.tar.gz &&
+					cat control.tar.gz data.tar.gz \
+						> "$repodir"/"$file") ||
+					die "could not sign $file again"
+				rm -rf "$tmp"
+			done
+			# The repo abuild -r installs vlc's and gst-plugins-bad's
+			# makedepends from.
+			abuild -P /work/packages index || die "could not index $name"
+		else
+			abuild -r -P /work/packages || die "could not build $name"
+			mkdir -p /work/pkgcache/"$name"
+			(cd "$repodir" && cp "${files[@]}" /work/pkgcache/"$name"/) ||
+				die "abuild built other packages than abuild listpkg" \
+					"names for $name"
+			echo "$key" > /work/pkgcache/"$name"/key
+		fi
+		cd /work
+	done
 
 	# --- cervino-vlc, cervino-gstreamer and cervino-terminal packages --------
 	# The Pi's media packages built above, two of them in each (see
-	# build_bundle); empty elsewhere. The Pi's other packages are published
-	# as they are. cervino-terminal, Zellij in foot and AstroNvim, has only
-	# its own files.
+	# build_bundle); empty elsewhere. The other patched packages are
+	# published as they are. cervino-terminal, Zellij in foot and AstroNvim,
+	# has only its own files.
 	local published=()
 	build_bundle cervino-vlc "$VLC_PKGVER" ffmpeg7 vlc
 	build_bundle cervino-gstreamer "$GSTREAMER_PKGVER" gst-plugins-base gst-plugins-bad
 	build_bundle cervino-terminal "$TERMINAL_PKGVER"
-	if [[ $TARGET == rpi ]]; then
+	for name in $replaces; do
 		# shellcheck disable=SC2086
-		for file in ${pkgfiles[wpa_supplicant]} ${pkgfiles[bluez]}; do
+		for file in ${pkgfiles[$name]}; do
+			[[ $file == *-dbg-[0-9]* ]] && continue
 			published+=("$repodir/$file")
 		done
-	fi
+	done
 
 	# --- cervino-desktop package ---------------------------------------------
 	# Built from cervino-desktop/APKBUILD, with the AppArmor profiles and
