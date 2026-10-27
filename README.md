@@ -89,9 +89,9 @@ from a desktop distribution, and keeps it when installed to disk:
   foot too. AstroNvim and its plugins download on its first start, so that
   needs the network. Its Tree-sitter parsers are Alpine's, as the system
   has no C compiler to build them, so they don't install on demand. The
-  command line tools bat, ripgrep (`rg`), fd and GNU less come with it. All
-  this is the `cervino-terminal` package, which
-  `doas apk del cervino-terminal` removes
+  command line tools bat, ripgrep (`rg`), fd and GNU less come with it, and
+  Fedora's green bash prompt. All this is the `cervino-terminal` package,
+  which `doas apk del cervino-terminal` removes
 
 [`test/features.sh`](test/features.sh) checks all of this on a running
 system. [`test/apparmor.sh`](test/apparmor.sh) checks that AppArmor confines
@@ -490,7 +490,7 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      and `font-droid-sans-mono-nerd`, and Neovim's launcher and AstroNvim
      configuration ([`cervino-terminal/init.lua`](cervino-terminal/init.lua)),
      depending on `neovim` and `tree-sitter-grammars`, and on `bat`,
-     `ripgrep`, `fd` and `less`;
+     `ripgrep`, `fd` and `less`, and Fedora's bash prompt;
    - the `cervino-desktop` package, built with abuild from
      [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
      features' configuration and the AppArmor profiles from

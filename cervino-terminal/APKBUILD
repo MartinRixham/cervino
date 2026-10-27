@@ -8,7 +8,8 @@
 # have no Neovim configuration of their own, with the programs AstroNvim
 # runs and Alpine's Tree-sitter parsers; and Neovim's launcher, running it
 # in foot, in the Nerd Font, which has AstroNvim's icons. And the command
-# line tools bat, ripgrep, fd and GNU less (busybox's lacks most options).
+# line tools bat, ripgrep, fd and GNU less (busybox's lacks most options),
+# and Fedora's bash prompt.
 # build-alpine-gnome-iso.sh copies this directory into the build, with
 # cervino-terminal.conf (PKGVER, the version) next to it.
 # abuild sets startdir and pkgdir and reads the variables set here.
@@ -41,6 +42,20 @@ package() {
 	makefile root:root 0644 "$pkgdir"/etc/xdg/nvim/init.lua < "$startdir"/init.lua
 	makefile root:root 0644 "$pkgdir"/usr/share/icons/hicolor/scalable/apps/zellij.svg \
 		< "$startdir"/zellij.svg
+
+	# Fedora's bash prompt: bold user@host:dir, green for users and magenta
+	# for root, in the shades Ptyxis's GNOME palette (dark) gives them, as
+	# 24-bit colours so foot's own palette doesn't change them.
+	makefile root:root 0644 "$pkgdir"/etc/bash/50-prompt.sh <<'EOF'
+if [ "$EUID" -eq 0 ]; then
+	_c='\[\e[1;38;2;152;65;187m\]'
+else
+	_c='\[\e[1;38;2;46;194;126m\]'
+fi
+PS1="$_c"'\u@\h\[\e[0m\]:'"$_c"'\w\[\e[0m\]\$ '
+unset _c
+EOF
+
 	makefile root:root 0644 "$pkgdir"/usr/share/applications/zellij.desktop <<'EOF'
 [Desktop Entry]
 Type=Application

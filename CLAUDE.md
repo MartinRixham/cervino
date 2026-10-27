@@ -483,7 +483,10 @@ defaults reach users as Zellij is upgraded. That is move mode on Ctrl m
 "move"`, which it unbinds there) and no startup tips. It also takes over
 foot's three launchers (`replaces="foot"`) with copies that have
 `NoDisplay=true`, so the app grid shows Zellij alone; a change foot makes
-to them has to be copied by hand.
+to them has to be copied by hand. And it holds
+`/etc/bash/50-prompt.sh`, Fedora's bash prompt (bold `user@host:dir`,
+green, magenta for root, as 24-bit colours so foot's palette doesn't
+change them).
 
 It also brings AstroNvim. It depends on `neovim`, the programs AstroNvim
 runs (`git`, `ripgrep`, `lazygit`, `bottom`, `gdu`),
