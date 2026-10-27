@@ -8,7 +8,9 @@
 # downloads the CDM itself only where Mozilla offers it, which it does not
 # for Linux on aarch64: this gets it from Google's component update
 # service, as Chrome does, over HTTPS (the CRX3 signature is not checked).
-# The CDM is built for glibc; Alpine's Firefox loads gcompat with it.
+# The CDM is built for glibc; Alpine's Firefox loads gcompat with it. The
+# aarch64 one also has IFUNCs, which musl does not support: its loader turns
+# the library down, and Firefox's CDM process crashes. This patches them.
 #
 # The installer's setup-disk runs this for the system it installs, and
 # anacron weekly, so that a newer CDM (services turn old ones down) or one
@@ -22,6 +24,127 @@ x86_64) arch=x64 ;;
 *) echo "widevine: Google has no Widevine for $(uname -m)" >&2; exit 1 ;;
 esac
 
+# u N OFFSET: the little-endian N-byte number at OFFSET in $elf
+u() {
+	echo $((0x$(od -A n -t x"$1" -j "$2" -N "$1" "$elf" | tr -d ' ')))
+}
+
+# file_offset ADDRESS: where ADDRESS is in $elf, from $loads, its PT_LOAD
+# segments as "address offset size" lines
+file_offset() {
+	echo "$loads" | while read -r a o s; do
+		[ -n "$a" ] && [ "$1" -ge "$a" ] && [ "$1" -lt $((a + s)) ] || continue
+		echo $((o + $1 - a))
+		break
+	done
+}
+
+# ifuncs LIB: prints the file offset and the resolver's address of each
+# R_AARCH64_IRELATIVE relocation in LIB, a 64-bit little-endian aarch64 ELF
+# library (nothing for any other file)
+ifuncs() {
+	elf=$1 loads= dyn= dynsz=0
+	[ "$(od -A n -t x1 -N 6 "$elf" | tr -d ' ')" = 7f454c460201 ] || return 0
+	[ "$(u 2 18)" = 183 ] || return 0
+	phoff=$(u 8 32) phnum=$(u 2 56) i=0
+	while [ $i -lt "$phnum" ]; do
+		p=$((phoff + i * 56))
+		case $(u 4 $p) in
+		1) loads="$loads$(u 8 $((p + 16))) $(u 8 $((p + 8))) $(u 8 $((p + 32)))
+" ;;
+		2) dyn=$(u 8 $((p + 8))) dynsz=$(u 8 $((p + 32))) ;;
+		esac
+		i=$((i + 1))
+	done
+	[ -n "$dyn" ] || return 0
+	# The relocations are in two tables: DT_RELA (7) of DT_RELASZ (8)
+	# bytes, and DT_JMPREL (23) of DT_PLTRELSZ (2)
+	rela=0 relasz=0 jmprel=0 pltrelsz=0
+	while read -r tag val; do
+		case $((0x$tag)) in
+		7) rela=$((0x$val)) ;;
+		8) relasz=$((0x$val)) ;;
+		23) jmprel=$((0x$val)) ;;
+		2) pltrelsz=$((0x$val)) ;;
+		esac
+	done <<-EOF
+		$(od -A n -t x8 -v -w16 -j "$dyn" -N "$dynsz" "$elf")
+	EOF
+	for t in "$rela $relasz" "$jmprel $pltrelsz"; do
+		# shellcheck disable=SC2086
+		set -- $t
+		[ "$2" -gt 0 ] || continue
+		# Each is r_offset, r_info and r_addend; IRELATIVE is type 1032
+		od -A d -t x8 -v -w24 -j "$(file_offset "$1")" -N "$2" "$elf" |
+			awk '$3 == "0000000000000408" { print $1 + 0, $4 }'
+	done
+}
+
+# adr_imm INSN: the signed immediate of the adr or adrp instruction INSN,
+# from immhi (bits 23-5) and immlo (bits 30-29)
+adr_imm() {
+	imm=$((($1 >> 3 & 0x1ffffc) | ($1 >> 29 & 3)))
+	[ $imm -lt $((1 << 20)) ] || imm=$((imm - (1 << 21)))
+	echo $imm
+}
+
+# ifunc_default RESOLVER: the function the IFUNC resolver at address
+# RESOLVER in $elf picks without glibc's _IFUNC_ARG_HWCAP (bit 62 of its
+# first argument), when it has nothing else to go on: the plain one, not
+# the one for memory tagging (MTE). Google's resolvers start by putting it
+# in x0 (adrp and add, or adr) and then return unless that bit is set:
+#	bti c; mov x8, x0; adrp x0, ...; add x0, x0, #...; tbz x8, #62, <ret>
+#	bti c; mov x8, x0; nop; adr x0, ...; tbz x8, #62, <ret>
+# Fails for any other code.
+ifunc_default() {
+	# shellcheck disable=SC2046
+	set -- "$1" $(od -A n -t x4 -v -j "$(file_offset "$1")" -N 20 "$elf")
+	[ $# = 6 ] && [ "$2" = d503245f ] && [ "$3" = aa0003e8 ] || return 1
+	w2=$((0x$4)) w3=$((0x$5)) w4=$((0x$6))
+	if [ $((w2 & 0x9f00001f)) = $((0x90000000)) ] &&
+		[ $((w3 & 0xffc003ff)) = $((0x91000000)) ]; then
+		f=$(($1 + 8 & ~0xfff)) imm=$(adr_imm $w2)
+		f=$((f + (imm << 12) + (w3 >> 10 & 0xfff)))
+	elif [ "$4" = d503201f ] && [ $((w3 & 0x9f00001f)) = $((0x10000000)) ]; then
+		f=$(($1 + 12 + $(adr_imm $w3)))
+	else
+		return 1
+	fi
+	# tbz x8, #62 to a ret
+	[ $((w4 & 0xfff8001f)) = $((0xb6f00008)) ] || return 1
+	imm=$((w4 >> 5 & 0x3fff))
+	[ $imm -lt $((1 << 13)) ] || imm=$((imm - (1 << 14)))
+	[ "$(od -A n -t x4 -j "$(file_offset $(($1 + 16 + imm * 4)))" -N 4 "$elf" |
+		tr -d ' ')" = d65f03c0 ] || return 1
+	echo $f
+}
+
+# le64 N: N as 8 little-endian bytes
+le64() {
+	n=$1 s= i=0
+	while [ $i -lt 8 ]; do
+		s="$s\\$(printf %o $((n & 255)))"
+		n=$((n >> 8)) i=$((i + 1))
+	done
+	# shellcheck disable=SC2059
+	printf "$s"
+}
+
+# fix_ifuncs LIB: makes each IRELATIVE relocation in LIB a RELATIVE one
+# (1027) to the function its resolver picks without hardware capabilities
+fix_ifuncs() {
+	ifuncs "$1" > "$tmp"/ifuncs
+	while read -r off resolver; do
+		f=$(ifunc_default $((0x$resolver))) || {
+			echo "widevine: cannot patch the IFUNC resolver at 0x$resolver" >&2
+			return 1
+		}
+		{ le64 1027; le64 "$f"; } |
+			dd of="$1" bs=1 seek=$((off + 8)) conv=notrunc 2>/dev/null
+	done < "$tmp"/ifuncs
+	[ -z "$(ifuncs "$1")" ]
+}
+
 url="https://update.googleapis.com/service/update2/crx?response=redirect"
 url="$url&x=id%3Doimompecagnajdejgnnjijobebaeigek%26uc&acceptformat=crx3&updaterversion=999"
 url="$url&os=Linux&arch=$arch&os_arch=$arch"
@@ -32,7 +155,9 @@ version=$(echo "$loc" | sed -n 's|^https://.*_\([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*\)
 [ -n "$version" ] || { echo "widevine: Google's update service did not answer" >&2; exit 1; }
 installed=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$dir"/system/manifest.json \
 	2>/dev/null) || :
-[ "$installed" != "$version" ] || exit 0
+# An installed copy of this version is replaced only if it is unpatched
+[ "$installed" != "$version" ] ||
+	[ -n "$(ifuncs "$dir"/system/libwidevinecdm.so)" ] || exit 0
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -50,6 +175,7 @@ if [ ! -f "$lib" ] || ! grep -q "\"version\": *\"$version\"" "$tmp"/cdm/manifest
 	echo "widevine: $loc does not hold Widevine $version" >&2
 	exit 1
 fi
+fix_ifuncs "$lib" || exit 1
 
 # The new version takes the old one's place with two renames: Firefox,
 # which may be running, reads it whenever it starts the CDM.

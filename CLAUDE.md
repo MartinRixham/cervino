@@ -539,7 +539,12 @@ the apkovl (the `lbu` overlay format) holding what only the live system has:
   `/usr/libexec/cervino/widevine [ROOT]` gets Google's from Chrome's
   component update service into `/var/lib/widevine/gmp-widevinecdm/system`;
   the installer and an `/etc/periodic/weekly` job run it, and `profile.d`'s
-  `50-widevine.sh` sets `MOZ_GMP_PATH` to it;
+  `50-widevine.sh` sets `MOZ_GMP_PATH` to it. That build has IFUNCs
+  (`R_AARCH64_IRELATIVE`, MTE variants of a few functions), which musl's
+  loader rejects, crashing Firefox's CDM process: the script rewrites each
+  as a plain relocation to the function its resolver picks without
+  hardware capabilities, reading that from the resolver's first
+  instructions, and stops if a resolver doesn't look as expected;
 - the "Update Alpine Linux" launcher and its `/usr/sbin/update-alpine`
   (package upgrade, then an offered release upgrade);
 - the autostart helper that registers the session with GDM and answers

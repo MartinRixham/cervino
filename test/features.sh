@@ -1160,7 +1160,7 @@ t_browser_drm() {
 	# provide it, through MOZ_GMP_PATH). The CDM is built for glibc: on musl
 	# it needs gcompat. This opens the probe page in a headless Firefox with
 	# a new profile, which gets the CDM and has it make a license request.
-	local ff dir i result
+	local ff dir i result crashes=0
 	ff=$(first_have firefox firefox-esr) || { echo "Firefox not installed"; return 2; }
 	have pkill || { echo "pkill missing"; return 2; }
 	dir=$(mktemp -d) || return 1
@@ -1174,9 +1174,13 @@ t_browser_drm() {
 	# TMPDIR: where Firefox downloads the CDM to, deleted with the rest
 	TMPDIR=$dir "$ff" --headless --no-remote --profile "$dir/profile" \
 		"file://$(realpath "$(dirname "${BASH_SOURCE[0]}")")/widevine-probe.html" >"$dir/out" 2>&1 &
+	# The page retries for over a minute while Firefox downloads the CDM,
+	# which is no use once the CDM's process keeps crashing
 	for ((i = 0; i < 150; i++)); do
 		result=$(sed -n 's/^console\.log: "widevine-probe: \(.*\)"$/\1/p' "$dir/out" | tail -n1)
 		[[ $result == ok* || $result == error* ]] && break
+		crashes=$(grep -c 'exited on signal' "$dir/out")
+		((crashes < 3)) || break
 		sleep 1
 	done
 	# The launcher may be a script that keeps running: end Firefox itself
@@ -1188,7 +1192,10 @@ t_browser_drm() {
 	fi
 	# Firefox answers NotSupportedError both when Widevine is turned off in
 	# its preferences and when it has none
-	if [[ ! -d $dir/profile/gmp-widevinecdm && -z ${MOZ_GMP_PATH:-} ]]; then
+	if ((crashes >= 3)); then
+		echo "Firefox's Widevine process crashes (IFUNCs or glibc symbols" \
+			"musl lacks?): ${result:-no result}"
+	elif [[ ! -d $dir/profile/gmp-widevinecdm && -z ${MOZ_GMP_PATH:-} ]]; then
 		echo "Firefox has no Widevine: turned off in its preferences," \
 			"or not downloaded and MOZ_GMP_PATH not set (${result:-no result})"
 	elif [[ $result == *NotSupportedError* ]]; then
