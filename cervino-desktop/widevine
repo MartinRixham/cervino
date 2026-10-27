@@ -9,6 +9,7 @@
 # for Linux on aarch64: this gets it from Google's component update
 # service, as Chrome does, over HTTPS (the CRX3 signature is not checked).
 # The CDM is built for glibc; Alpine's Firefox loads gcompat with it.
+#
 # The installer's setup-disk runs this for the system it installs, and
 # anacron weekly, so that a newer CDM (services turn old ones down) or one
 # the install could not download arrives. Prints nothing on success.
@@ -20,13 +21,17 @@ aarch64) arch=arm64 ;;
 x86_64) arch=x64 ;;
 *) echo "widevine: Google has no Widevine for $(uname -m)" >&2; exit 1 ;;
 esac
-url="https://update.googleapis.com/service/update2/crx?response=redirect&x=id%3Doimompecagnajdejgnnjijobebaeigek%26uc&acceptformat=crx3&updaterversion=999&os=Linux&arch=$arch&os_arch=$arch"
+
+url="https://update.googleapis.com/service/update2/crx?response=redirect"
+url="$url&x=id%3Doimompecagnajdejgnnjijobebaeigek%26uc&acceptformat=crx3&updaterversion=999"
+url="$url&os=Linux&arch=$arch&os_arch=$arch"
 
 # The service redirects to the newest version's file, named with it.
 loc=$(wget -S --spider -T 30 "$url" 2>&1 | sed -n 's/^ *[Ll]ocation: *//p' | tr -d '\r' | tail -n 1)
 version=$(echo "$loc" | sed -n 's|^https://.*_\([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*\)/.*|\1|p')
 [ -n "$version" ] || { echo "widevine: Google's update service did not answer" >&2; exit 1; }
-installed=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$dir"/system/manifest.json 2>/dev/null) || :
+installed=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$dir"/system/manifest.json \
+	2>/dev/null) || :
 [ "$installed" != "$version" ] || exit 0
 
 tmp=$(mktemp -d)
@@ -35,6 +40,7 @@ wget -q -T 60 -O "$tmp"/cdm.crx3 "$loc" || { echo "widevine: could not download 
 # A CRX3 file: "Cr24", the format version, the header's length and the
 # header (the signatures), then a zip archive.
 [ "$(head -c 4 "$tmp"/cdm.crx3)" = Cr24 ] || { echo "widevine: $loc is no CRX file" >&2; exit 1; }
+
 n=$(od -A n -t u4 -j 8 -N 4 "$tmp"/cdm.crx3 | tr -d ' ')
 tail -c +$((13 + n)) "$tmp"/cdm.crx3 > "$tmp"/cdm.zip
 mkdir "$tmp"/cdm

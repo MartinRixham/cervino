@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 # Sourced by update-boot, update-alpine and the cervino-atomic service.
 # The volume's top level holds roots/<id> and, while an update is staged,
 # "staged" (the new version's id, then the id of the version it was made
@@ -8,7 +9,7 @@
 # install, mounted there (not a chroot into one being made); sets atomic_dev
 # (the volume's device) and atomic_id (the version's id).
 atomic_detect() {
-	local root=${1:-/} d m t o _ subvolid=
+	local root="${1:-/}" d m t o _ subvolid=
 	root=${root%/}
 	atomic_dev= atomic_id=
 	[ -f "$root"/etc/kernel/cmdline ] || return 1
@@ -49,7 +50,7 @@ atomic_ready() {
 # atomic_pi [ROOT]: whether ROOT (default /) is a Raspberry Pi's system (the
 # firmware's files are in its /boot).
 atomic_pi() {
-	local r=${1:-}
+	local r="${1:-}"
 	r=${r%/}
 	[ -f "$r"/boot/start4.elf ] || [ -f "$r"/boot/bootcode.bin ]
 }
@@ -73,7 +74,7 @@ atomic_failed() {
 
 # atomic_delete ID: deletes version ID.
 atomic_delete() {
-	local r=$top/roots/$1
+	local r="$top/roots/$1"
 	[ -n "$1" ] && [ -d "$r" ] || return 0
 	btrfs property set -ts "$r" ro false 2>/dev/null
 	[ ! -d "$r"/etc ] || btrfs -q subvolume delete "$r"/etc 2>/dev/null || rm -rf "${r:?}"/etc
@@ -86,6 +87,7 @@ atomic_unstage() {
 	[ -z "$staged_id" ] || atomic_delete "$staged_id"
 	[ ! -d "$top"/etc-base ] || btrfs -q subvolume delete "$top"/etc-base
 	rm -f "$top"/staged
+	# shellcheck disable=SC2034 # read by the scripts that source this
 	staged_id= staged_from= staged_merge=
 }
 

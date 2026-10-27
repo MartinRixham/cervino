@@ -14,6 +14,8 @@
 # upgraded or reinstalled. As with any package, a file in /etc changed since
 # it was installed is left as it is, and the new version written next to it
 # as .apk-new.
+# abuild sets startdir, srcdir and pkgdir and reads the variables set here.
+# shellcheck shell=sh disable=SC2034,SC2153,SC2154
 . "$startdir"/cervino-desktop.conf
 
 pkgname=cervino-desktop
@@ -26,8 +28,8 @@ license="Apache-2.0"
 # gjs runs the gnome-shell-compat helper; the "Update Alpine Linux" launcher
 # runs update-alpine with doas in GNOME Console; the post-install script
 # enables the services of the -openrc packages.
-depends="/bin/sh doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc avahi-openrc bluez-openrc
-	chrony-openrc cups-openrc earlyoom-openrc networkmanager-openrc
+depends="/bin/sh doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc avahi-openrc
+	bluez-openrc chrony-openrc cups-openrc earlyoom-openrc networkmanager-openrc
 	nftables-openrc openrc openrc-settingsd-openrc spice-vdagent-openrc
 	zram-init-openrc $DEPENDS"
 replaces="alpine-baselayout alpine-baselayout-data busybox-openrc dbus-openrc
@@ -158,7 +160,8 @@ EOF
 	# the heap they look for first: where the decoder is behind an IOMMU (Pi
 	# 5) the system heap, else CMA. grep runs under udevd's AppArmor profile.
 	if [ "$TARGET_ARCH" = aarch64 ]; then
-		makefile root:root 0644 "$pkgdir"/usr/lib/udev/rules.d/60-cervino-dma-heap.rules <<'EOF'
+		makefile root:root 0644 "$pkgdir"/usr/lib/udev/rules.d/60-cervino-dma-heap.rules \
+			<<'EOF'
 SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660", TAG+="uaccess"
 SUBSYSTEM=="dma_heap", KERNEL=="system", PROGRAM="/bin/grep -q iommu /proc/iomem", SYMLINK+="dma_heap/vidbuf_cached"
 SUBSYSTEM=="dma_heap", KERNEL=="linux,cma", SYMLINK+="dma_heap/vidbuf_cached", OPTIONS+="link_priority=-50"
@@ -196,7 +199,8 @@ EOF
 	# so show it again. Firefox reads this directory in reverse alphabetical
 	# order, the last setting winning, so the file must sort before vendor.js.
 	for _firefox in firefox firefox-esr; do
-		makefile root:root 0644 "$pkgdir"/usr/lib/$_firefox/browser/defaults/preferences/cervino.js <<'EOF'
+		makefile root:root 0644 \
+			"$pkgdir"/usr/lib/$_firefox/browser/defaults/preferences/cervino.js <<'EOF'
 pref("media.gmp-widevinecdm.visible", true);
 pref("media.gmp-widevinecdm.enabled", true);
 EOF
@@ -208,7 +212,8 @@ EOF
 	# point Firefox at it. The image does not have it, so as not to pass on
 	# Google's CDM.
 	if [ "$TARGET_ARCH" = aarch64 ]; then
-		makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/widevine < "$startdir"/widevine
+		makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/widevine \
+			< "$startdir"/widevine
 		makefile root:root 0755 "$pkgdir"/etc/periodic/weekly/widevine <<'EOF'
 #!/bin/sh
 exec /usr/libexec/cervino/widevine
@@ -273,7 +278,8 @@ EOF
 	# AirPlay sink when a stream starts playing to it after 30 s with none,
 	# which gets it a new session; within those 30 s (a track change) it
 	# keeps the old one.
-	makefile root:root 0644 "$pkgdir"/etc/wireplumber/wireplumber.conf.d/50-raop-refresh.conf <<'EOF'
+	makefile root:root 0644 "$pkgdir"/etc/wireplumber/wireplumber.conf.d/50-raop-refresh.conf \
+		<<'EOF'
 wireplumber.components = [
   {
     name = cervino/raop-refresh.lua, type = script/lua
@@ -355,7 +361,8 @@ EOF
 	makefile root:root 0644 "$pkgdir"/etc/sysctl.d/50-coredump.conf <<'EOF'
 kernel.core_pattern = |/usr/libexec/cervino/coredump-handler %P %u %s %t
 EOF
-	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/coredump-handler < "$startdir"/coredump-handler
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/coredump-handler \
+		< "$startdir"/coredump-handler
 	# Dumps also expire when no new crash comes along to prune them.
 	makefile root:root 0755 "$pkgdir"/etc/periodic/daily/coredump-cleanup <<'EOF'
 #!/bin/sh
@@ -399,7 +406,8 @@ EOF
 	# udevd runs under its profile too.
 	for f in "$startdir"/apparmor.d/* "$startdir"/apparmor.d/local/*; do
 		[ -f "$f" ] || continue
-		makefile root:root 0644 "$pkgdir"/etc/apparmor.d/"${f#"$startdir"/apparmor.d/}" < "$f"
+		makefile root:root 0644 "$pkgdir"/etc/apparmor.d/"${f#"$startdir"/apparmor.d/}" \
+			< "$f"
 	done
 	makefile root:root 0644 "$pkgdir"/etc/conf.d/apparmor <<'EOF'
 rc_need="sysfs"
@@ -463,7 +471,8 @@ EOF
 	#   new session and dies, until GDM gives up and the screen stays frozen.
 	# The login screen's gnome-session only autostarts what is in GDM's greeter
 	# directory, so the helper is listed there too.
-	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/gnome-shell-compat < "$startdir"/gnome-shell-compat
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/gnome-shell-compat \
+		< "$startdir"/gnome-shell-compat
 	for dir in etc/xdg/autostart usr/share/gdm/greeter/autostart; do
 		makefile root:root 0644 "$pkgdir"/$dir/gnome-shell-compat.desktop <<'EOF'
 [Desktop Entry]
@@ -524,7 +533,8 @@ EOF
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 exec flock -n /run/alpine-appstream.lock alpine-appstream-downloader >/dev/null 2>&1
 EOF
-	makefile root:root 0755 "$pkgdir"/etc/NetworkManager/dispatcher.d/50-alpine-appstream <<'EOF'
+	makefile root:root 0755 "$pkgdir"/etc/NetworkManager/dispatcher.d/50-alpine-appstream \
+		<<'EOF'
 #!/bin/sh
 [ "$2" = up ] || exit 0
 setsid /etc/periodic/daily/alpine-appstream </dev/null >/dev/null 2>&1 &
@@ -572,7 +582,8 @@ EOF
 	# At shutdown, the staged version is finished and made the one to boot:
 	# the service runs in the shutdown runlevel, after the others have
 	# stopped, and before the file systems are made read-only.
-	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/atomic-finalize < "$startdir"/atomic-finalize
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/atomic-finalize \
+		< "$startdir"/atomic-finalize
 	makefile root:root 0755 "$pkgdir"/etc/init.d/cervino-atomic <<'EOF'
 #!/sbin/openrc-run
 description="Switches to the update update-alpine staged"

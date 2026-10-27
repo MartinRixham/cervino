@@ -85,7 +85,8 @@ setup_cervino() {
 	release=$(cut -d. -f1,2 /etc/alpine-release)
 	apk add -q openssl busybox-extras &&
 		openssl genrsa -out /cervino-test.rsa 2048 2> /dev/null &&
-		openssl rsa -in /cervino-test.rsa -pubout -out /etc/apk/keys/cervino-test.rsa.pub 2> /dev/null &&
+		openssl rsa -in /cervino-test.rsa -pubout \
+			-out /etc/apk/keys/cervino-test.rsa.pub 2> /dev/null &&
 		cervino_repo "v$release" 1-r0 &&
 		busybox-extras httpd -p "${cervino#http://}" -h /srv &&
 		apk add -q -X "$cervino/v$release" cervino-desktop &&
@@ -112,8 +113,12 @@ t_unpublished() {
 	save
 	run ''
 	[ "$rc" = 0 ] || { run_fail "$desc" "it failed"; return 1; }
-	new=$(printf '%s\n' "$out" | sed -n 's/^Alpine Linux \([0-9]*\.[0-9]*\) is out, but Cervino.*/\1/p')
-	[ -n "$new" ] || { run_fail "$desc" "it did not say the repo has no packages for a newer release"; return 1; }
+	new=$(printf '%s\n' "$out" |
+		sed -n 's/^Alpine Linux \([0-9]*\.[0-9]*\) is out, but Cervino.*/\1/p')
+	[ -n "$new" ] || {
+		run_fail "$desc" "it did not say the repo has no packages for a newer release"
+		return 1
+	}
 	unchanged "$desc" || return 1
 	pass "$desc"
 }
@@ -122,7 +127,10 @@ t_unpublished() {
 # the repository lists alone.
 t_offer() {
 	desc="update-alpine offers a newer release; turning it down changes nothing"
-	cervino_repo "v$new" 2-r0 || { fail "$desc" "could not publish the stand-in for v$new"; return 1; }
+	cervino_repo "v$new" 2-r0 || {
+		fail "$desc" "could not publish the stand-in for v$new"
+		return 1
+	}
 	save
 	run ''
 	[ "$rc" = 0 ] || { run_fail "$desc" "it failed"; return 1; }
@@ -140,7 +148,8 @@ t_upgrade() {
 	printf '%s\n' "$out" | grep -q "^The system now runs Alpine Linux $new\\." ||
 		{ run_fail "$desc" "it did not say it upgraded to $new"; return 1; }
 	case $(cat /etc/alpine-release) in "$new".*) ;; *)
-		fail "$desc" "it said it upgraded to $new, but /etc/alpine-release is $(cat /etc/alpine-release)"
+		fail "$desc" \
+			"it said it upgraded to $new, but /etc/alpine-release is $(cat /etc/alpine-release)"
 		return 1
 	esac
 	grep -q "/v$new/main" "$repos" && ! grep -q "/v$release/" "$repos" ||
@@ -150,8 +159,11 @@ $(cat "$repos")"; return 1; }
 		{ fail "$desc" "$list not moved to v$new: $(cat "$list")"; return 1; }
 	[ ! -e "$list.apk-new" ] ||
 		{ fail "$desc" "$list.apk-new left behind"; return 1; }
-	apk list --installed cervino-desktop 2> /dev/null | grep -q '^cervino-desktop-2-r0 ' ||
-		{ fail "$desc" "cervino-desktop not upgraded to v$new's: $(apk list --installed cervino-desktop 2>&1)"; return 1; }
+	apk list --installed cervino-desktop 2> /dev/null | grep -q '^cervino-desktop-2-r0 ' || {
+		fail "$desc" \
+			"cervino-desktop not upgraded to v$new's: $(apk list --installed cervino-desktop 2>&1)"
+		return 1
+	}
 	left=$(left_to_upgrade)
 	[ -z "$left" ] || { fail "$desc" "packages left to upgrade:
 $left"; return 1; }
@@ -160,14 +172,18 @@ $left"; return 1; }
 
 # in_container current|older PACKAGE
 in_container() {
-	tar -xzf "$2" -C / usr/sbin/update-alpine && [ -x /usr/sbin/update-alpine ] ||
-		{ fail "update-alpine in the package" "$2 has no executable usr/sbin/update-alpine"; exit 1; }
+	tar -xzf "$2" -C / usr/sbin/update-alpine && [ -x /usr/sbin/update-alpine ] || {
+		fail "update-alpine in the package" "$2 has no executable usr/sbin/update-alpine"
+		exit 1
+	}
 	case $1 in
 	current)
 		t_current || true ;;
 	older)
-		setup_cervino ||
-			{ fail "Stand-in cervino-desktop installed from a local repo" "setting it up failed"; exit 1; }
+		setup_cervino || {
+			fail "Stand-in cervino-desktop installed from a local repo" "setting it up failed"
+			exit 1
+		}
 		t_unpublished && t_offer && t_upgrade || true ;;
 	esac
 	exit "$failed"
@@ -200,7 +216,8 @@ host_main() {
 		rc=0
 		"$runtime" run --rm --security-opt label=disable \
 			-v "$(realpath "$0")":/update-test.sh:ro -v "$pkg":/cervino-desktop.apk:ro \
-			"docker.io/library/alpine:$1" sh /update-test.sh --in-container "$2" /cervino-desktop.apk ||
+			"docker.io/library/alpine:$1" \
+			sh /update-test.sh --in-container "$2" /cervino-desktop.apk ||
 			rc=$?
 		total=$((total + rc))
 		echo

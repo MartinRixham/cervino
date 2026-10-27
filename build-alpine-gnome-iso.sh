@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Package lists are words in a string, split where they are used.
+# PKGVER comes from the host, through the container's environment.
+# shellcheck disable=SC2086,SC2046,SC2116,SC2153
 #
 # build-alpine-gnome-iso.sh
 #
@@ -106,7 +109,8 @@ host_main() {
 	fi
 
 	if [[ -z ${ALPINE_BRANCH:-} ]]; then
-		ALPINE_BRANCH=$(curl -fsSL "$MIRROR/latest-stable/releases/$ARCH/latest-releases.yaml" |
+		ALPINE_BRANCH=$(curl -fsSL \
+			"$MIRROR/latest-stable/releases/$ARCH/latest-releases.yaml" |
 			awk '/branch:/ { print $2; exit }') ||
 			die "could not determine latest Alpine release; set ALPINE_BRANCH"
 	fi
@@ -362,8 +366,8 @@ builder_main() {
 		pipewire-alsa pipewire-spa-bluez pipewire-zeroconf xdg-utils flatpak
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium gst-libav
-		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim iproute2-minimal
-		cronie cronie-openrc earlyoom earlyoom-openrc iw wireless-regdb"
+		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim
+		iproute2-minimal cronie cronie-openrc earlyoom earlyoom-openrc iw wireless-regdb"
 	# The installer's setup-disk shim (see live/setup-disk) offers an
 	# atomic install: the system on a btrfs volume, optionally encrypted,
 	# booted from a FAT boot partition. Installed systems need the same tools
@@ -441,7 +445,8 @@ builder_main() {
 			alpine=$(apk --root "$apkroot" search --exact "$name") ||
 				die "Alpine $ALPINE_BRANCH has no $name"
 			[[ $alpine == "$name-$base" ]] ||
-				die "Alpine's $name is $alpine, rpi/$name/APKBUILD is based on $name-$base: update it"
+				die "Alpine's $name is $alpine, rpi/$name/APKBUILD is based on" \
+					"$name-$base: update it"
 			cp -R /rpi/"$name" /work/cervino/
 			cd /work/cervino/"$name"
 			dep=${after[$name]:-}
@@ -459,7 +464,8 @@ builder_main() {
 					tmp=$(mktemp -d)
 					(cd "$tmp" && abuild-gzsplit < /cache/"$name"/"$file" &&
 						abuild-sign -q control.tar.gz &&
-						cat control.tar.gz data.tar.gz > "$repodir"/"$file") ||
+						cat control.tar.gz data.tar.gz \
+							> "$repodir"/"$file") ||
 						die "could not sign $file again"
 					rm -rf "$tmp"
 				done
@@ -470,7 +476,8 @@ builder_main() {
 				abuild -r -P /work/packages || die "could not build $name"
 				mkdir -p /work/pkgcache/"$name"
 				(cd "$repodir" && cp "${files[@]}" /work/pkgcache/"$name"/) ||
-					die "abuild built other packages than abuild listpkg names for $name"
+					die "abuild built other packages than abuild listpkg" \
+						"names for $name"
 				echo "$key" > /work/pkgcache/"$name"/key
 			fi
 			cd /work
@@ -519,10 +526,10 @@ builder_main() {
 	# it has only the files modules declare, and drivers load many by names
 	# they make up (Intel Bluetooth, laptop speaker amps, ath11k/ath12k).
 	local kernel=lts firmware
+	local unused='qcom|mellanox|qed|netronome|dpaa2|liquidio|cxgb4|bnx2x|vxge|amlogic|s5p-mfc|amphion'
 	[[ $TARGET == rpi ]] && kernel=rpi
 	firmware=$(apk --root "$apkroot" info --quiet --depends linux-firmware |
-		sed -e 's/[<>=~].*//' | grep -v '^$' |
-		grep -vxE 'linux-firmware-(qcom|mellanox|qed|netronome|dpaa2|liquidio|cxgb4|bnx2x|vxge|amlogic|s5p-mfc|amphion)') ||
+		sed -e 's/[<>=~].*//' | grep -v '^$' | grep -vxE "linux-firmware-($unused)") ||
 		die "could not resolve linux-firmware's packages"
 	# The root file system's world, and the live system's (in the apkovl).
 	local image_world
@@ -572,7 +579,8 @@ builder_main() {
 	# mkimg.gnomelive.sh reads the build settings from the .conf next to it.
 	printf '%s=%s\n' gnomelive_target "$(shquote "$TARGET")" \
 		gnomelive_kernel_opts "$(shquote "$kernel_opts")" \
-		gnomelive_apks "$(shquote "$(echo $disc_apks)")" > aports/scripts/mkimg.gnomelive.conf
+		gnomelive_apks "$(shquote "$(echo $disc_apks)")" \
+		> aports/scripts/mkimg.gnomelive.conf
 	install -m 0644 /mkimg.gnomelive.sh aports/scripts/mkimg.gnomelive.sh
 	if [[ $TARGET == rpi ]]; then
 		# The Pi's config.txt includes usercfg.txt, for settings of our own:

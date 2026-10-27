@@ -6,28 +6,28 @@
 #
 # setup-disk offers an atomic install (-m atomic, and the default answer)
 # besides Alpine's standard one (-m sys, and the other modes, RAID, several
-# disks or a mounted root, which go to Alpine's setup-disk; sys chosen at its
-# question goes there too once the disk and encryption are asked). As in Fedora
-# Silverblue, an atomic install's system is read-only, and update-alpine
-# updates it as a whole (see cervino-desktop's atomic.sh). On a PC, only one
-# started with UEFI, it goes to one disk: GPT with the EFI system partition,
-# swap sized as Alpine's setup-disk sizes it (or by -s; on an encrypted
-# disk, dmcrypt opens it with a random key at each boot) and a btrfs volume,
-# on LUKS if the disk is to be encrypted. The volume holds the system in roots/<id> (the install's date
-# and time) with a nested subvolume for its /etc, and @var and @home, which
-# later versions share. The system is the root file system image the live
-# system runs from (as built, not as the live session changed it), copied
-# into it, with the live /etc that differs from it over that (lbu package,
-# through the apkovl's lbu shim, as Alpine's setup-disk does); packages
-# added in the live session are installed from the repositories. Then this shim
-# writes fstab, /etc/kernel/cmdline (the kernel arguments, but for the
-# subvolume) and mkinitfs.conf (the features Alpine's setup-disk picks, with
-# the trigger off: the kernel hook builds the initramfs instead, before
-# copying it) and builds the initramfs, removes GNOME Software's apk
-# plugin, moves /root to /var/roothome, makes the system read-only and runs
-# cervino-desktop's update-boot, which puts the kernel, initramfs and
-# command line on the boot partition as a unified kernel image, with a UEFI
-# boot entry.
+# disks or a mounted root, which go to Alpine's setup-disk; sys chosen at
+# its question goes there too once the disk and encryption are asked). As in
+# Fedora Silverblue, an atomic install's system is read-only, and
+# update-alpine updates it as a whole (see cervino-desktop's atomic.sh). On
+# a PC, only one started with UEFI, it goes to one disk: GPT with the EFI
+# system partition, swap sized as Alpine's setup-disk sizes it (or by -s; on
+# an encrypted disk, dmcrypt opens it with a random key at each boot) and a
+# btrfs volume, on LUKS if the disk is to be encrypted. The volume holds the
+# system in roots/<id> (the install's date and time) with a nested subvolume
+# for its /etc, and @var and @home, which later versions share. The system
+# is the root file system image the live system runs from (as built, not as
+# the live session changed it), copied into it, with the live /etc that
+# differs from it over that (lbu package, through the apkovl's lbu shim, as
+# Alpine's setup-disk does); packages added in the live session are
+# installed from the repositories. Then this shim writes fstab,
+# /etc/kernel/cmdline (the kernel arguments, but for the subvolume) and
+# mkinitfs.conf (the features Alpine's setup-disk picks, with the trigger
+# off: the kernel hook builds the initramfs instead, before copying it) and
+# builds the initramfs, removes GNOME Software's apk plugin, moves /root to
+# /var/roothome, makes the system read-only and runs cervino-desktop's
+# update-boot, which puts the kernel, initramfs and command line on the boot
+# partition as a unified kernel image, with a UEFI boot entry.
 # On a Raspberry Pi the disk is MBR (the firmware starts from its first
 # partition), with the firmware's FAT partition first, mounted on
 # /boot/firmware, swap only with -s, as Alpine's setup-disk does on the Pi,
@@ -40,7 +40,9 @@
 
 pi=
 grep -q "Raspberry Pi" /proc/device-tree/model 2>/dev/null && pi=1
+
 stock= crypt= mode= modefile= disks= swap= kflavor= verbose=
+
 parse() {
 	while getopts "b:B:hek:Lm:o:qrR:s:vw:" opt; do
 		case $opt in
@@ -57,15 +59,18 @@ parse() {
 	shift $((OPTIND - 1))
 	disks=$*
 }
+
 parse "$@"
 case $mode in ''|atomic|none) ;; *) stock=1 ;; esac
 case $disks in *" "*) stock=1 ;; esac
 [ -d "${disks:-/nonexistent}" ] && stock=1
+
 # Alpine's setup-disk, for what it does, copies the system (see the apk shim
 # in genapkovl-gnomelive.sh).
 export CERVINO_COPY_ROOT=1
 [ -z "$stock" ] || exec /usr/sbin/setup-disk "$@"
 [ "$mode" != none ] && [ "$disks" != none ] || exit 0
+
 asked=
 # An atomic install on a PC is started by UEFI, as a boot entry for each
 # version (see cervino-desktop's update-boot); without it, a sys install.
@@ -78,6 +83,7 @@ if [ -z "$pi" ] && [ ! -d /sys/firmware/efi ]; then
 		mode=sys asked=1
 	fi
 fi
+
 if [ -z "$mode" ]; then
 	echo
 	echo "How would you like to install the system?"
@@ -99,7 +105,9 @@ find_disks() {
 	for p in /sys/block/*/device; do
 		d=${p%/device}
 		d=${d##*/}
-		for m in $(awk '$1 ~ /^\/dev\// { sub("/dev/", "", $1); gsub("/", "!", $1); print $1 }' /proc/mounts); do
+		# shellcheck disable=SC2013
+		for m in $(awk '$1 ~ /^\/dev\// { sub("/dev/", "", $1); gsub("/", "!", $1); print $1 }' \
+			/proc/mounts); do
 			[ "$m" = "$d" ] || [ -e /sys/block/"$d/$m" ] && continue 2
 		done
 		for m in /sys/block/"$d"/holders/* /sys/block/"$d"/*/holders/*; do
@@ -109,20 +117,26 @@ find_disks() {
 		printf ' %s' "$d"
 	done
 }
+
 show_disk_info() {
-	local d
+	local d size model
 	for d; do
-		echo "  $d	($(awk '{ printf "%.1f GB", $1 * 512 / 1000000000 }' /sys/block/"$d"/size) $(cat /sys/block/"$d"/device/vendor /sys/block/"$d"/device/model 2>/dev/null | xargs))"
+		size=$(awk '{ printf "%.1f GB", $1 * 512 / 1000000000 }' /sys/block/"$d"/size)
+		model=$(cat /sys/block/"$d"/device/vendor /sys/block/"$d"/device/model 2>/dev/null | xargs)
+		echo "  $d	($size $model)"
 	done
 }
 
 if [ -z "$disks" ]; then
 	avail=$(find_disks)
 	[ -n "$avail" ] || { qecho "No disks found." >&2; exit 0; }
+	# shellcheck disable=SC2086
 	set -- $avail
 	resp=
+	# shellcheck disable=SC2086
 	until [ "$resp" = none ] || isin "$resp" $avail; do
 		echo "Available disks are:"
+		# shellcheck disable=SC2086
 		show_disk_info $avail
 		echo
 		ask "Which disk would you like to install to? (or 'none')" "${DEFAULT_DISK:-$1}"
@@ -130,14 +144,18 @@ if [ -z "$disks" ]; then
 	[ "$resp" != none ] || exit 0
 	disks=$resp
 fi
+
 disk=$(readlink -f "$disks")
 case $disk in /dev/*) ;; *) disk=/dev/$disks ;; esac
 d=${disk#/dev/}
 [ -e /sys/block/"$d"/device ] || die "$disks is not a disk"
+
 if [ -n "$asked" ] && [ -z "$crypt" ]; then
 	echo
-	ask_yesno "Encrypt the disk? Its passphrase will be asked for at every boot. (y/n)" n && crypt=1
+	ask_yesno "Encrypt the disk? Its passphrase will be asked for at every boot. (y/n)" n &&
+		crypt=1
 fi
+
 # A sys install chosen here goes to Alpine's setup-disk with the disk and
 # mode already answered, so it doesn't ask its own question of how to use
 # the disk (sys, data, crypt, lvm, ...).
@@ -145,6 +163,7 @@ if [ "$mode" = sys ]; then
 	exec /usr/sbin/setup-disk -m sys ${crypt:+-e} ${QUIET:+-q} ${verbose:+-v} \
 		${kflavor:+-k "$kflavor"} ${swap:+-s "$swap"} ${modefile:+-w "$modefile"} "$disk"
 fi
+
 if [ "$ERASE_DISKS" != "$disks" ] && [ "$ERASE_DISKS" != "$disk" ]; then
 	echo
 	echo "WARNING: The following disk will be erased:"
@@ -152,6 +171,7 @@ if [ "$ERASE_DISKS" != "$disks" ] && [ "$ERASE_DISKS" != "$disk" ]; then
 	echo
 	ask_yesno "WARNING: Erase the above disk and continue? (y/n)" n || exit 1
 fi
+
 if [ -n "$crypt" ]; then
 	echo
 	echo "If you forget the passphrase, everything on the disk is lost."
@@ -166,6 +186,7 @@ if [ -n "$crypt" ]; then
 	done
 	IFS=$_ifs
 fi
+
 [ -z "$modefile" ] || echo sys > "$modefile"
 
 # The boot partition: the EFI system partition, or on the Pi the firmware's,
@@ -173,6 +194,7 @@ fi
 bootdir=/boot/efi
 [ -z "$pi" ] || bootdir=/boot/firmware
 mnt=/mnt
+
 cleanup() {
 	umount "$mnt$bootdir" "$mnt"/home "$mnt"/var "$mnt" 2>/dev/null
 	[ -z "$crypt" ] || cryptsetup close root 2>/dev/null
@@ -209,7 +231,9 @@ else
 		[ "$swap" = 0 ] || echo "size=${swap}MiB, type=S, name=\"Swap\""
 		echo 'type=L, name="Alpine Linux"'
 	}
-fi | sfdisk --quiet --wipe always --wipe-partitions always "$disk" || die "could not partition $disk"
+fi | sfdisk --quiet --wipe always --wipe-partitions always "$disk" ||
+	die "could not partition $disk"
+
 # part N: partition N's device, once udev has made it.
 part() {
 	local _ p
@@ -223,6 +247,7 @@ part() {
 	done
 	return 1
 }
+
 n=2
 espn=1
 if [ "$swap" != 0 ]; then
@@ -232,16 +257,20 @@ fi
 esp=$(part $espn) && rootpart=$(part $n) || die "the partitions of $disk did not show up"
 
 mkfs.vfat -F 32 -n BOOT "$esp" >/dev/null || die "could not format $esp"
+
 dev=$rootpart
 if [ -n "$crypt" ]; then
-	printf %s "$pass" | cryptsetup luksFormat --batch-mode --type luks2 --key-file=- "$rootpart" &&
+	printf %s "$pass" |
+		cryptsetup luksFormat --batch-mode --type luks2 --key-file=- "$rootpart" &&
 		printf %s "$pass" | cryptsetup open --key-file=- "$rootpart" root ||
 		die "could not encrypt $rootpart"
 	pass=
 	dev=/dev/mapper/root
 fi
+
 modprobe -q btrfs
 mkfs.btrfs -q -f -L alpine "$dev" || die "could not format $dev"
+
 id=$(date -u +%Y%m%d%H%M%S)
 mount -t btrfs "$dev" "$mnt" &&
 	btrfs -q subvolume create "$mnt"/@var &&
@@ -271,7 +300,8 @@ f=$mnt/etc/fstab
 {
 	printf 'UUID=%s\t%s\tbtrfs\t%s\t0 0\n' "$uuid" / noatime \
 		"$uuid" /var noatime,subvol=/@var "$uuid" /home noatime,subvol=/@home
-	printf 'UUID=%s\t%s\tvfat\tnoatime,fmask=0133,dmask=0022\t0 2\n' "$(blkid -s UUID -o value "$esp")" "$bootdir"
+	printf 'UUID=%s\t%s\tvfat\tnoatime,fmask=0133,dmask=0022\t0 2\n' \
+		"$(blkid -s UUID -o value "$esp")" "$bootdir"
 	# Swap on an encrypted disk gets a new random key at each boot (from
 	# dmcrypt, which runs before swap), so what was swapped out is gone.
 	if [ "$swap" = 0 ]; then
@@ -280,37 +310,47 @@ f=$mnt/etc/fstab
 		printf '/dev/mapper/swap\tnone\tswap\tdefaults\t0 0\n'
 	else
 		mkswap -L swap "$swappart" >/dev/null || die "could not format $swappart"
-		printf 'UUID=%s\tnone\tswap\tdefaults\t0 0\n' "$(blkid -s UUID -o value "$swappart")"
+		printf 'UUID=%s\tnone\tswap\tdefaults\t0 0\n' \
+			"$(blkid -s UUID -o value "$swappart")"
 	fi
 	printf '/dev/cdrom\t/media/cdrom\tiso9660\tnoauto,ro 0 0\n'
 	printf '/dev/usbdisk\t/media/usb\tvfat\tnoauto\t0 0\n'
 	printf 'tmpfs\t/tmp\ttmpfs\tnosuid,nodev\t0\t0\n'
 } > "$f".new && mv "$f".new "$f" || die "could not write $f"
+
 if [ "$swap" != 0 ] && [ -n "$crypt" ]; then
-	printf '\nswap=swap\nsource=/dev/disk/by-partuuid/%s\noptions="-c aes-xts-plain64 -s 512 -d /dev/urandom"\n' \
-		"$(blkid -s PARTUUID -o value "$swappart")" >> "$mnt"/etc/conf.d/dmcrypt &&
-		ln -sf /etc/init.d/dmcrypt "$mnt"/etc/runlevels/boot/dmcrypt || die "could not set up encrypted swap"
+	printf '\nswap=swap\nsource=/dev/disk/by-partuuid/%s\noptions="%s"\n' \
+		"$(blkid -s PARTUUID -o value "$swappart")" "-c aes-xts-plain64 -s 512 -d /dev/urandom" \
+		>> "$mnt"/etc/conf.d/dmcrypt &&
+		ln -sf /etc/init.d/dmcrypt "$mnt"/etc/runlevels/boot/dmcrypt ||
+		die "could not set up encrypted swap"
 fi
 
 if [ -n "$crypt" ]; then
-	cmdline="root=/dev/mapper/root cryptroot=UUID=$(cryptsetup luksUUID "$rootpart") cryptdm=root"
+	cmdline="root=/dev/mapper/root cryptroot=UUID=$(cryptsetup luksUUID "$rootpart")"
+	cmdline="$cmdline cryptdm=root"
 else
 	cmdline="root=UUID=$uuid"
 fi
+
 modules=sd-mod,usb-storage,btrfs
 case $d in nvme*) modules=$modules,nvme ;; esac
 [ ! -e /sys/module/vmd ] || modules=$modules,vmd
 cmdline="$cmdline rootfstype=btrfs modules=$modules${KERNELOPTS:+ $KERNELOPTS}"
 case " $(cat /proc/cmdline) " in *" nomodeset "*) cmdline="nomodeset $cmdline" ;; esac
+
 # A serial console the install runs on is the installed system's too.
 tty=$(tty 2>/dev/null)
 case $tty in /dev/ttyS[0-9]*)
 	case " $cmdline " in *" console=${tty#/dev/} "*|*" console=${tty#/dev/},"*) ;; *)
-		cmdline="$cmdline console=${tty#/dev/},$(stty speed < "$tty" 2>/dev/null || echo 115200)" ;;
+		speed=$(stty speed < "$tty" 2>/dev/null || echo 115200)
+		cmdline="$cmdline console=${tty#/dev/},$speed" ;;
 	esac ;;
 esac
+
 mkdir -p "$mnt"/etc/kernel
 echo "$cmdline" > "$mnt"/etc/kernel/cmdline
+
 # The initramfs's features, as Alpine's setup-disk picks them, and the
 # kernel hook builds it rather than mkinitfs's trigger.
 features="ata base scsi usb virtio"
@@ -320,11 +360,14 @@ case $d in nvme*) features="$features nvme" ;; mmcblk*) features="$features mmc"
 [ -z "$crypt" ] || features="$features cryptsetup keymap"
 printf 'features="%s"\ndisable_trigger=yes\n' "$features" > "$mnt"/etc/mkinitfs/mkinitfs.conf ||
 	die "could not write mkinitfs.conf"
+
 for k in "$mnt"/lib/modules/*; do
 	k=${k##*/}
-	mkinitfs -b "$mnt"/ -c "$mnt"/etc/mkinitfs/mkinitfs.conf -o "$mnt"/boot/initramfs-"${k##*-}" "$k" ||
+	mkinitfs -b "$mnt"/ -c "$mnt"/etc/mkinitfs/mkinitfs.conf \
+		-o "$mnt"/boot/initramfs-"${k##*-}" "$k" ||
 		die "could not build the initramfs"
 done
+
 if mount --bind /proc "$mnt"/proc && mount --bind /dev "$mnt"/dev; then
 	# Packages added in the live session (the image has the rest).
 	cmp -s "$mnt"/etc/apk/world /.cervino/ro/etc/apk/world ||
@@ -336,23 +379,29 @@ if mount --bind /proc "$mnt"/proc && mount --bind /dev "$mnt"/dev; then
 		echo "GNOME Software's apk plugin could not be removed." >&2
 	umount "$mnt"/dev "$mnt"/proc
 fi
+
 rm -f "$mnt"/etc/runlevels/default/apk-polkit-server
+
 # Firefox's Widevine where Firefox cannot download it (the Pi): see
 # cervino-desktop's widevine. Its weekly job tries again, first soon after
 # the system starts.
 if [ -x /usr/libexec/cervino/widevine ]; then
 	echo "Downloading Widevine, for DRM video in Firefox..."
 	/usr/libexec/cervino/widevine "$mnt" ||
-		echo "Widevine could not be downloaded: the installed system tries again after it starts." >&2
+		echo "Widevine could not be downloaded:" \
+			"the installed system tries again after it starts." >&2
 fi
+
 # Root's home, where root's shell keeps its history, is writable.
 mkdir -p "$mnt"/var/roothome &&
 	cp -a "$mnt"/root/. "$mnt"/var/roothome/ && chmod 700 "$mnt"/var/roothome &&
 	rm -rf "$mnt"/root && ln -s var/roothome "$mnt"/root || die "could not move /root"
 btrfs property set -ts "$mnt" ro true || die "could not make the system read-only"
+
 # The Pi's own settings (the lbu shim put them in the system's /boot).
 [ -z "$pi" ] || [ ! -f "$mnt"/boot/usercfg.txt ] || cp "$mnt"/boot/usercfg.txt "$mnt$bootdir"/ ||
 	die "could not write usercfg.txt"
+
 # Boot entries of an install that was on a partition gone now (this disk's,
 # before it was erased).
 [ -n "$pi" ] || efibootmgr -v |
@@ -360,4 +409,5 @@ btrfs property set -ts "$mnt" ro true || die "could not make the system read-onl
 	while read -r n uuid; do
 		blkid -t PARTUUID="$uuid" >/dev/null 2>&1 || efibootmgr -q -b "$n" -B
 	done
+
 /usr/libexec/cervino/update-boot "$mnt" || die "could not make the system bootable"

@@ -12,6 +12,7 @@
 # that is not has failed (the machine was switched off and on, and started
 # the version before), and is noted in boot-failed on the volume, and not
 # tried again.
+#
 # The Pi's kernel passes the tryboot flag to the firmware only with a
 # restart's argument (reboot "0 tryboot"), which busybox init cannot give:
 # after the shutdown runlevel, with the file systems read-only, init runs
@@ -20,7 +21,10 @@
 # restart in /run/cervino-reboot. The firmware cannot try a version after a
 # power off, so then (shutdown, run by the cervino-atomic service) the new
 # version is made the one that starts, with nothing to fall back on.
+
+# shellcheck source=atomic.sh
 . /usr/libexec/cervino/atomic.sh
+
 case $1 in
 boot)
 	atomic_detect && atomic_trial || exit 0
@@ -31,7 +35,8 @@ boot)
 		read -r trying < "$top"/boot-trying
 		if [ "$trying" != "$atomic_id" ]; then
 			echo "$trying" >> "$top"/boot-failed
-			logger -t cervino "The updated system ($trying) did not start: $atomic_id started instead"
+			logger -t cervino \
+				"The updated system ($trying) did not start: $atomic_id started instead"
 		fi
 		rm -f "$top"/boot-trying
 		sync
@@ -39,6 +44,7 @@ boot)
 	atomic_umount
 	/usr/libexec/cervino/update-boot 2>&1 | logger -t update-boot
 	;;
+
 shutdown)
 	[ -f /run/cervino-trial ] && atomic_detect && atomic_pi && atomic_trial || exit 0
 	# Restarting (and /etc/inittab, unless changed and kept from before,
@@ -49,6 +55,7 @@ shutdown)
 	flock 9
 	UPDATE_BOOT_COMMIT=1 /usr/libexec/cervino/update-boot
 	;;
+
 reboot)
 	[ -f /run/cervino-reboot ] && [ -f /run/cervino-trial ] && atomic_pi || exit 0
 	echo "Restarting to try the updated system"
@@ -56,4 +63,5 @@ reboot)
 	/usr/libexec/cervino/tryboot
 	;;
 esac
+
 exit 0

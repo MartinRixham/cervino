@@ -25,6 +25,7 @@ for f in /etc/init.d/live-user /etc/runlevels/*/live-user /etc/doas.d/90-live-us
 done
 grep -q '^AutomaticLogin' /etc/gdm/custom.conf && leftover="$leftover GDM autologin"
 if [ -n "$leftover" ]; then
+	# shellcheck disable=SC2086
 	echo "live session left on the installed system:" $leftover >&2
 	exit 1
 fi
@@ -108,7 +109,8 @@ run_suite() {
 		"$@" < /dev/null || rc=$?
 		echo "$rc" > "$out".rc
 	} | tee "$out"
-	counts=$(sed -n 's/^Passed: \([0-9]*\)  Failed: \([0-9]*\)  Skipped: \([0-9]*\)$/\1 \2 \3/p' "$out" | tail -n 1)
+	counts=$(sed -n 's/^Passed: \([0-9]*\)  Failed: \([0-9]*\)  Skipped: \([0-9]*\)$/\1 \2 \3/p' \
+		"$out" | tail -n 1)
 	rc=$(cat "$out".rc)
 	rm -f "$out" "$out".rc
 	# shellcheck disable=SC2086
@@ -137,7 +139,10 @@ t_update_launcher() {
 		print(a.get_executable());" < /dev/null 2>/dev/null) ||
 		{ fail "$desc" "update-alpine.desktop is missing or hidden"; return 1; }
 	for c in "$exe" doas /usr/sbin/update-alpine; do
-		command -v "$c" > /dev/null || { fail "$desc" "the launcher needs $c, which is not installed"; return 1; }
+		command -v "$c" > /dev/null || {
+			fail "$desc" "the launcher needs $c, which is not installed"
+			return 1
+		}
 	done
 	pass "$desc"
 }
@@ -149,7 +154,8 @@ t_update_launcher || true
 t_read_only_system() {
 	if [ "$mode" = sys ]; then
 		desc="System writable (a sys install)"
-		[ ! -e /etc/kernel/cmdline ] && [ "$(btrfs property get -ts / ro 2>/dev/null)" != ro=true ] ||
+		[ ! -e /etc/kernel/cmdline ] &&
+			[ "$(btrfs property get -ts / ro 2>/dev/null)" != ro=true ] ||
 			{ fail "$desc" "the sys install is an atomic one"; return 1; }
 		touch /usr/.ci-write 2>/dev/null && rm -f /usr/.ci-write ||
 			{ fail "$desc" "root cannot write to /usr"; return 1; }
@@ -209,17 +215,25 @@ t_memory_pressure() {
 
 	log=$(tail -n +"$((log_lines + 1))" /var/log/messages 2>/dev/null)
 	if [ "$(dmesg | grep -c 'Killed process')" -gt "${kernel_kills:-0}" ]; then
-		fail "$desc" "the kernel's OOM killer acted first: $(dmesg | grep 'Killed process' | tail -n 3)"
+		fail "$desc" \
+			"the kernel's OOM killer acted first: $(dmesg | grep 'Killed process' | tail -n 3)"
 		return 1
 	fi
-	if [ -z "$hog_pid" ] || ! printf '%s\n' "$log" | grep -q "earlyoom.*sending SIG[A-Z]* to process $hog_pid "; then
-		fail "$desc" "earlyoom did not kill the app (pid ${hog_pid:-not found}); its log: $(printf '%s\n' "$log" | grep earlyoom | tail -n 5)"
+	if [ -z "$hog_pid" ] ||
+		! printf '%s\n' "$log" | grep -q "earlyoom.*sending SIG[A-Z]* to process $hog_pid "; then
+		why=$(printf '%s\n' "$log" | grep earlyoom | tail -n 5)
+		fail "$desc" "earlyoom did not kill the app (pid ${hog_pid:-not found}); its log: $why"
 		return 1
 	fi
-	victims=$(printf '%s\n' "$log" | sed -n 's/.*earlyoom.*sending SIG[A-Z]* to process \([0-9]*\) .*/\1/p' |
+	victims=$(printf '%s\n' "$log" |
+		sed -n 's/.*earlyoom.*sending SIG[A-Z]* to process \([0-9]*\) .*/\1/p' |
 		grep -vx "$hog_pid" | sort -u | tr '\n' ' ')
-	[ -z "$victims" ] ||
-		{ fail "$desc" "earlyoom killed other processes too: $(printf '%s\n' "$log" | grep 'earlyoom.*sending SIG' | grep -v "process $hog_pid ")"; return 1; }
+	[ -z "$victims" ] || {
+		why=$(printf '%s\n' "$log" | grep 'earlyoom.*sending SIG' |
+			grep -v "process $hog_pid ") || :
+		fail "$desc" "earlyoom killed other processes too: $why"
+		return 1
+	}
 	[ -e /proc/"$pid" ] || { fail "$desc" "GNOME Shell ($pid) did not survive"; return 1; }
 	pass "$desc"
 }
@@ -252,7 +266,10 @@ t_logout_to_greeter() {
 	i=0
 	while [ -e /proc/"$pid" ] || { [ -n "$session" ] && [ -e /proc/"$session" ]; }; do
 		i=$((i + 1))
-		[ "$i" -le 90 ] || { logout_fail "the session of $user did not end within 90 s"; return 1; }
+		[ "$i" -le 90 ] || {
+			logout_fail "the session of $user did not end within 90 s"
+			return 1
+		}
 		sleep 1
 	done
 
@@ -260,15 +277,22 @@ t_logout_to_greeter() {
 	until greeter=$(proc_of gnome-shell "$gdm_uid") && [ "$greeter" != "$old_greeter" ]; do
 		# GDM only logs in automatically again when it takes the session's
 		# end for a failure ("Session never registered, failing").
-		user_proc gnome-shell > /dev/null &&
-			{ logout_fail "GDM logged $user straight back in instead of showing the login screen"; return 1; }
+		user_proc gnome-shell > /dev/null && {
+			logout_fail "GDM logged $user straight back in instead of showing the login screen"
+			return 1
+		}
 		i=$((i + 1))
-		[ "$i" -le 90 ] || { logout_fail "no login screen within 90 s of the session ending"; return 1; }
+		[ "$i" -le 90 ] || {
+			logout_fail "no login screen within 90 s of the session ending"
+			return 1
+		}
 		sleep 1
 	done
 	sleep 15
-	[ "$(proc_of gnome-shell "$gdm_uid")" = "$greeter" ] ||
-		{ logout_fail "the login screen's gnome-shell ($greeter) did not stay up"; return 1; }
+	[ "$(proc_of gnome-shell "$gdm_uid")" = "$greeter" ] || {
+		logout_fail "the login screen's gnome-shell ($greeter) did not stay up"
+		return 1
+	}
 
 	session_run gdm "$greeter" timeout 30 gdbus call --session --timeout 10 \
 		--dest org.gnome.Shell --object-path /org/gnome/Shell \
@@ -279,14 +303,20 @@ t_logout_to_greeter() {
 	# gnome-shell-compat helper), or logging in through it fails: GDM takes
 	# the end of the login screen for a failure and keeps restarting it,
 	# taking the seat from the new session, whose screen then freezes.
-	proc_of gnome-shell-com "$gdm_uid" > /dev/null ||
-		{ logout_fail "the login screen runs no gnome-shell-compat helper to register it with GDM"; return 1; }
+	proc_of gnome-shell-com "$gdm_uid" > /dev/null || {
+		logout_fail "the login screen runs no gnome-shell-compat helper to register it with GDM"
+		return 1
+	}
 
 	# The login screen has to be seat0's active session, which elogind gives
 	# the display to, or the screen stays frozen on the old session.
 	active=$(loginctl show-seat seat0 -p ActiveSession --value 2>/dev/null) || active=
-	[ -n "$active" ] && [ "$(loginctl show-session "$active" -p Name --value 2>/dev/null)" = gdm ] ||
-		{ logout_fail "the login screen is not the active session on seat0 (active: ${active:-none})"; loginctl list-sessions --no-legend 2>&1; return 1; }
+	[ -n "$active" ] &&
+		[ "$(loginctl show-session "$active" -p Name --value 2>/dev/null)" = gdm ] || {
+		logout_fail "the login screen is not the active session on seat0 (active: ${active:-none})"
+		loginctl list-sessions --no-legend 2>&1
+		return 1
+	}
 	pass "Logging out returns to the GDM login screen"
 }
 

@@ -7,12 +7,14 @@
 // downloads its CDM the first time a page asks, so a failed attempt is
 // retried. Results go to the console as "widevine-probe: <result>".
 const log = s => console.log("widevine-probe: " + s);
+
 // A version 0 Widevine pssh box holding one key id
 const system = [0xed, 0xef, 0x8b, 0xa9, 0x79, 0xd6, 0x4a, 0xce,
                 0xa3, 0xc8, 0x27, 0xdc, 0xd5, 0x1d, 0x21, 0xed];
 const data = [0x12, 0x10, ...Array(16).fill(0x11)];
 const pssh = new Uint8Array([0, 0, 0, 32 + data.length, 0x70, 0x73, 0x73, 0x68,
                              0, 0, 0, 0, ...system, 0, 0, 0, data.length, ...data]);
+
 let tries = 0;
 async function attempt() {
   tries++;
@@ -34,5 +36,6 @@ async function attempt() {
     }
   }
 }
+
 attempt();
 </script>

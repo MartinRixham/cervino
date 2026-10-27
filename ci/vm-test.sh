@@ -104,7 +104,10 @@ vm_stop() {
 	if [[ $vm_user == root ]]; then send poweroff; else send "doas poweroff"; fi
 	local end=$((SECONDS + 300))
 	while kill -0 "$qemu_pid" 2>/dev/null; do
-		((SECONDS < end)) || { echo ">>> [$vm] did not power off; killing QEMU"; kill "$qemu_pid"; }
+		((SECONDS < end)) || {
+			echo ">>> [$vm] did not power off; killing QEMU"
+			kill "$qemu_pid"
+		}
 		sleep 2
 	done
 	wait "$qemu_pid" || true
@@ -171,6 +174,7 @@ rm -f "$WORKDIR"/*.log "$WORKDIR"/disk.qcow2 "$WORKDIR"/efivars.fd
 if [[ $INSTALL_MODE == atomic ]]; then
 	cp "$OVMF_VARS" "$WORKDIR"/efivars.fd
 	chmod u+w "$WORKDIR"/efivars.fd
+	# shellcheck disable=SC2054 # commas are QEMU's
 	firmware=(-machine q35 -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE"
 		-drive if=pflash,format=raw,file="$WORKDIR"/efivars.fd)
 fi

@@ -3,7 +3,9 @@
 # settings: gnomelive_target, iso or rpi; gnomelive_kernel_opts, the kernel
 # arguments; gnomelive_apks, the on-disc repo's packages) and, for the
 # Raspberry Pi, usercfg.txt next to it.
-# shellcheck shell=sh
+# mkimage reads the variables set here and sets the ones used, and its
+# build_section takes the checksum as separate words.
+# shellcheck shell=sh disable=SC2034,SC2154,SC2046
 
 # The ISO: Alpine's standard ISO plus GNOME. The Pi's image: Alpine's Pi
 # image, one FAT partition with the firmware, kernel, apks and apkovl;
@@ -53,8 +55,8 @@ build_gnomelive_usercfg() {
 # a tenth and 64 MB bigger, leaves room for the FAT and some free space.
 create_image_gnomelive() {
 	sync "$DESTDIR"
-	local imgfile="$OUTDIR/${output_filename%.gz}"
-	local size=$(du -L -k -s "$DESTDIR" | awk '{ print int($1 * 1.1 / 1024) + 64 }')
+	local imgfile="$OUTDIR/${output_filename%.gz}" size
+	size=$(du -L -k -s "$DESTDIR" | awk '{ print int($1 * 1.1 / 1024) + 64 }')
 	rm -f "$imgfile"
 	truncate -s $((size + 1))M "$imgfile"
 	echo 'start=2048, type=c, bootable' | sfdisk "$imgfile"

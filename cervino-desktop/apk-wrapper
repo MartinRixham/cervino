@@ -3,6 +3,7 @@
 real=/sbin/apk
 lib=/usr/libexec/cervino/atomic.sh
 [ -f "$lib" ] || exec "$real" "$@"
+# shellcheck source=atomic.sh
 . "$lib"
 atomic_detect 2>/dev/null || exec "$real" "$@"
 
@@ -29,7 +30,8 @@ for a; do
 	case $a in
 	-s|--simulate|-p|--root|--root=*|-h|--help) exec "$real" "$@" ;;
 	-U|--update-cache|-q|--quiet|-v|--verbose|--progress|--no-progress|--interactive|-i) ;;
-	-X|--repository|-t|--virtual|--arch|--cache-dir|--keys-dir|--repositories-file|--from|--cache-max-age)
+	-X|--repository|-t|--virtual|--arch|--cache-dir|--keys-dir|--repositories-file|--from|\
+	--cache-max-age)
 		odd=1 skip=1 ;;
 	-*) odd=1 ;;
 	*)
@@ -45,14 +47,19 @@ done
 case $applet in
 add|del)
 	[ -z "$odd" ] && [ -n "$pkgs" ] || refuse "change"
-	echo "apk: this system is read-only (an atomic install): update-alpine $applet makes the change in a new version of it, which it starts with next time." >&2
+	echo "apk: this system is read-only (an atomic install): update-alpine $applet makes" \
+		"the change in a new version of it, which it starts with next time." >&2
 	# shellcheck disable=SC2086
 	exec update-alpine "$applet" $pkgs ;;
+
 upgrade)
 	[ -z "$odd" ] && [ -z "$pkgs" ] || refuse "upgrade"
-	echo "apk: this system is read-only (an atomic install): update-alpine upgrades it in a new version, which it starts with next time." >&2
+	echo "apk: this system is read-only (an atomic install): update-alpine upgrades it" \
+		"in a new version, which it starts with next time." >&2
 	exec update-alpine ;;
+
 fix)
 	refuse "fix" ;;
 esac
+
 exec "$real" "$@"

@@ -5,13 +5,17 @@
 # is kept next to it as .apk-new, as apk does), makes it the one to boot and
 # deletes old versions. A version staged from another one (the machine was
 # started from another version since) is deleted.
+
+# shellcheck source=atomic.sh
 . /usr/libexec/cervino/atomic.sh
+
 atomic_detect || exit 0
 exec 9> /run/cervino-update.lock
 flock 9
 atomic_mount || exit 1
 list=$top.list
 trap 'atomic_umount; rm -f "$list" "$list".del' EXIT
+
 atomic_staged
 [ -n "$staged_id" ] || exit 0
 if [ "$staged_from" != "$atomic_id" ]; then
@@ -19,9 +23,11 @@ if [ "$staged_from" != "$atomic_id" ]; then
 	atomic_unstage
 	exit 0
 fi
+
 echo "Switching to the updated system"
 if [ "$staged_merge" = merge ]; then
 	new=$top/roots/$staged_id/etc base=$top/etc-base
+
 	# What changed in /etc since the snapshot: what rsync would change in
 	# the snapshot to make it the same (the name follows the 11 characters
 	# of the change and a space).
@@ -33,13 +39,17 @@ if [ "$staged_merge" = merge ]; then
 			sub(/ -> .*/, "", name)
 			print name > chg
 		}'
+
 	touch "$list"
 	while IFS= read -r p; do
 		p=${p%/}
-		[ -f "/etc/$p" ] && [ ! -L "/etc/$p" ] && [ -f "$new/$p" ] && [ -f "$base/$p" ] || continue
-		cmp -s "$new/$p" "$base/$p" || cmp -s "$new/$p" "/etc/$p" || cp -a "$new/$p" "$new/$p.apk-new"
+		[ -f "/etc/$p" ] && [ ! -L "/etc/$p" ] && [ -f "$new/$p" ] && [ -f "$base/$p" ] ||
+			continue
+		cmp -s "$new/$p" "$base/$p" || cmp -s "$new/$p" "/etc/$p" ||
+			cp -a "$new/$p" "$new/$p.apk-new"
 	done < "$list"
 	rsync -a --files-from="$list" /etc/ "$new"/
+
 	# Deleted since: deleted from the new version too, unless the update
 	# changed them. Directories after what is in them.
 	sort -r "$list.del" | while IFS= read -r p; do
@@ -52,8 +62,10 @@ if [ "$staged_merge" = merge ]; then
 			cmp -s "$new/$p" "$base/$p" && rm -f "$new/$p"
 		fi
 	done
+
 	btrfs -q subvolume delete "$base"
 fi
+
 rm -f "$top"/staged
 sync
 atomic_gc
