@@ -610,10 +610,13 @@ EOF
 	# also adds and removes packages (update-alpine add/del), as apk cannot on
 	# an atomic install's read-only system, and goes back to the version
 	# before (update-alpine rollback), lists the versions (update-alpine list)
-	# and deletes ones (update-alpine delete). On an atomic install it does all that
+	# and deletes ones (update-alpine delete), with bash completion of those
+	# commands, packages and versions. On an atomic install it does all that
 	# to a new version of the system, made from the running one and upgraded
 	# in a chroot (which shares /var), and stages it for the next start.
 	makefile root:root 0755 "$pkgdir"/usr/sbin/update-alpine < "$startdir"/update-alpine
+	makefile root:root 0644 "$pkgdir"/usr/share/bash-completion/completions/update-alpine \
+		< "$startdir"/update-alpine.bash
 	# GLib's fallback terminal list has no GNOME Console, so Terminal=true
 	# would not work; kgx is run directly. The window stays open so the last
 	# messages can be read.

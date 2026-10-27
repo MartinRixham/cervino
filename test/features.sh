@@ -204,6 +204,15 @@ t_command_not_found() {
 	esac || { echo "no command-not-found handler in interactive ${shell##*/}"; return 1; }
 }
 
+t_update_alpine_completion() {
+	local out
+	out=$(bash -ic 'COMP_WORDS=(update-alpine ""); COMP_CWORD=1
+		_comp_load -- update-alpine 2>/dev/null || __load_completion update-alpine
+		_update_alpine; echo "${COMPREPLY[*]}"' 2>/dev/null)
+	[[ " $out " == *" add "* && " $out " == *" del "* ]] ||
+		{ echo "bash does not complete update-alpine's commands (got: $out)"; return 1; }
+}
+
 t_default_editor() {
 	local shell ed
 	shell=$(login_shell)
@@ -1258,6 +1267,7 @@ run_test "Standard CLI tools installed"                t_cli_tools
 run_test "glibc programs can run (gcompat on musl)"    t_glibc_programs
 run_test "Manual pages installed"                      t_man_pages
 run_test "Command-not-found handler in shell"          t_command_not_found
+run_test "bash completes update-alpine"                 t_update_alpine_completion
 run_test "Default editor set"                          t_default_editor
 # shellcheck disable=SC2088
 run_test "~/.local/bin first in PATH"                  t_local_bin_first_in_path

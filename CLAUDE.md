@@ -638,7 +638,9 @@ the apkovl (the `lbu` overlay format) holding what only the live system has:
   hardware capabilities, reading that from the resolver's first
   instructions, and stops if a resolver doesn't look as expected;
 - the "Update Alpine Linux" launcher and its `/usr/sbin/update-alpine`
-  (package upgrade, then an offered release upgrade);
+  (package upgrade, then an offered release upgrade), with its bash
+  completion (`update-alpine.bash`; the versions for `delete` only as root
+  or through `doas -n`);
 - the autostart helper that registers the session with GDM and answers
   gnome-session's end-of-session queries for GNOME Shell, also listed in
   GDM's greeter autostart directory so the login screen registers too;
@@ -914,8 +916,6 @@ elogind `system-shutdown` hook (its `$1` is `reboot`) and its
 `/usr/sbin/reboot` wrapper (ahead of busybox's in `PATH`; also inittab's
 Ctrl-Alt-Del) write `/run/cervino-reboot`. Without it, a restart commits
 like a power off.
-
-The A/B layout has not been run on a Pi yet.
 
 ## The live system's boot
 

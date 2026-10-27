@@ -206,6 +206,7 @@ with `apk upgrade --available`, and offers to restart. The release is only
 offered once this project's repository has a package for it. The live
 system hides the launcher, since it runs from RAM. `doas update-alpine add
 PACKAGE...` and `doas update-alpine del PACKAGE...` add and remove packages.
+bash completes its commands, and the packages to add or remove.
 
 On an atomic install, all of that happens to a new version of the system,
 a copy of the running one, upgraded in a chroot, while the running system
@@ -227,6 +228,8 @@ the one that starts again (as a new copy of it, with its `/etc` as it was).
 is running and which the system starts with next time, and `doas
 update-alpine delete ID...` deletes versions you no longer want (a staged
 update too, which cancels it); the running version can't be deleted.
+bash completes the IDs where doas doesn't ask for a password (right after
+you entered it), or in a root shell.
 `/var` and `/home` are shared, so data is never rolled back.
 
 Each `v*` tag publishes the release's packages to the `gh-pages` branch,
@@ -361,11 +364,10 @@ TARGET=rpi ./build-alpine-gnome-iso.sh
 
 builds `out/alpine-gnomelive-<release>-aarch64.img.gz`, an SD card image for
 the Raspberry Pi 4, 400, 5 and 500. Like the ISO's, the live system runs
-from a read-only image on the card, so a Pi with **2 GB of RAM** should do
-(4 GB or more to do much in it; not yet measured on a Pi). The image is built from
-Alpine's own Pi image, with the same packages, settings and features as the
-ISO (except the Intel VA-API drivers and the CPU microcode). It also turns on the GPU's KMS driver
-(`dtoverlay=vc4-kms-v3d` in `usercfg.txt`), which GNOME needs.
+from a read-only image on the card. The image is built from Alpine's own Pi
+image, with the same packages, settings and features as the ISO (except
+the Intel VA-API drivers and the CPU microcode). It also turns on the GPU's
+KMS driver (`dtoverlay=vc4-kms-v3d` in `usercfg.txt`), which GNOME needs.
 
 The Pi image also has VLC, built with Raspberry Pi OS's patches for the
 Pi's video decoders, as Raspberry Pi OS ships it: HEVC (H.265) on the Pi 4
