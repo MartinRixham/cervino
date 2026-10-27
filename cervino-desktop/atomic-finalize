@@ -63,9 +63,14 @@ if [ "$staged_merge" = merge ]; then
 		fi
 	done
 
-	btrfs -q subvolume delete "$base"
+	# Merged: noted before etc-base goes, as a merge run again without it
+	# (the power lost in between) would copy all of /etc over the update's.
+	printf '%s %s\n' "$staged_id" "$staged_from" > "$top"/staged.new &&
+		mv "$top"/staged.new "$top"/staged || exit 1
+	sync
 fi
 
+[ ! -d "$top"/etc-base ] || btrfs -q subvolume delete "$top"/etc-base
 rm -f "$top"/staged
 sync
 atomic_gc
