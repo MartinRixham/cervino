@@ -429,8 +429,9 @@ foot's three launchers (`replaces="foot"`) with copies that have
 to them has to be copied by hand.
 
 It also brings AstroNvim. It depends on `neovim`, the programs AstroNvim
-runs (`git`, `ripgrep`, `lazygit`, `bottom`, `gdu`) and
-`tree-sitter-grammars`, and holds:
+runs (`git`, `ripgrep`, `lazygit`, `bottom`, `gdu`),
+`tree-sitter-grammars`, and the command line tools `bat`, `fd` and GNU
+`less` (busybox's lacks most options), and holds:
 
 - `/etc/xdg/nvim/init.lua` (`init.lua`), which Neovim reads when the user
   has no `~/.config/nvim`: AstroNvim's template in one file. On first start
@@ -455,8 +456,9 @@ glibc.
 
 `test/features.sh` checks the launchers' programs, the font, that
 `zellij setup --check` accepts the configuration, that nvim finds
-`/etc/xdg/nvim/init.lua` and it compiles, that it has a Python parser, and
-that foot's launchers are hidden. It can't start AstroNvim, which needs
+`/etc/xdg/nvim/init.lua` and it compiles, that it has a Python parser,
+that `bat`, `rg`, `fd` and GNU `less` are installed, and that foot's
+launchers are hidden. It can't start AstroNvim, which needs
 the network.
 
 **`cervino-desktop`.** It builds the package with `abuild -d` in

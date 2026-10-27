@@ -7,7 +7,8 @@
 # Also the Neovim editor: /etc/xdg/nvim/init.lua, AstroNvim for users who
 # have no Neovim configuration of their own, with the programs AstroNvim
 # runs and Alpine's Tree-sitter parsers; and Neovim's launcher, running it
-# in foot, in the Nerd Font, which has AstroNvim's icons.
+# in foot, in the Nerd Font, which has AstroNvim's icons. And the command
+# line tools bat, ripgrep, fd and GNU less (busybox's lacks most options).
 # build-alpine-gnome-iso.sh copies this directory into the build, with
 # cervino-terminal.conf (PKGVER, the version) next to it.
 # abuild sets startdir and pkgdir and reads the variables set here.
@@ -22,7 +23,8 @@ url="https://github.com/MartinRixham/cervino"
 arch="noarch"
 license="Apache-2.0 AND MIT"
 depends="zellij foot font-droid-sans-mono-nerd
-	neovim git ripgrep lazygit bottom gdu tree-sitter-grammars"
+	neovim git ripgrep lazygit bottom gdu tree-sitter-grammars
+	bat fd less"
 # foot's launchers, which this package's copies hide, and Neovim's.
 replaces="foot neovim"
 options="!check"

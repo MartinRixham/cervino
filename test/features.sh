@@ -865,7 +865,8 @@ t_xdg_open() {
 # The Zellij launcher runs zellij in foot, in a Nerd Font, which has the
 # symbols Zellij's bars draw with; zellij reads its configuration (the
 # system's, or the user's own) without errors; Neovim has AstroNvim's
-# configuration; foot's own launchers are hidden.
+# configuration; bat, rg, fd and GNU less are installed; foot's own
+# launchers are hidden.
 t_terminal() {
 	local dir file= cmd font="DroidSansM Nerd Font"
 	local -a dirs
@@ -906,6 +907,11 @@ t_terminal() {
 		{ echo "nvim reads no AstroNvim configuration"; return 1; }
 	[[ $init == *" true "* ]] || { echo "AstroNvim's configuration doesn't compile"; return 1; }
 	[[ $init == *" 1" ]] || { echo "nvim has no Tree-sitter parser for Python"; return 1; }
+	# The command line tools; less must be GNU less, not busybox's applet.
+	for cmd in bat rg fd; do
+		have "$cmd" || { echo "$cmd not installed"; return 1; }
+	done
+	less --version 2>/dev/null | grep -q '^less ' || { echo "GNU less not installed"; return 1; }
 	# foot's own launchers stay out of the app grid.
 	local name
 	for name in foot footclient foot-server; do
