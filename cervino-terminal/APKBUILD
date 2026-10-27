@@ -1,0 +1,93 @@
+# A terminal for the Cervino GNOME desktop, as a package of its own beside
+# cervino-desktop: Zellij in foot, in the Droid Sans Mono Nerd Font, which
+# has the symbols Zellij's bars draw with. Its "Zellij" launcher starts foot
+# running zellij with the app id zellij, which GNOME Shell matches to the
+# launcher; /etc/zellij/config.kdl is Zellij's configuration for users who
+# have none of their own. zellij.svg, the launcher's icon, is Zellij's logo.
+# build-alpine-gnome-iso.sh copies this directory into the build, with
+# cervino-terminal.conf (PKGVER, the version) next to it.
+# abuild sets startdir and pkgdir and reads the variables set here.
+# shellcheck shell=sh disable=SC2034,SC2153,SC2154
+. "$startdir"/cervino-terminal.conf
+
+pkgname=cervino-terminal
+pkgver=$PKGVER
+pkgrel=0
+pkgdesc="Zellij in foot, the terminal of the Cervino GNOME desktop"
+url="https://github.com/MartinRixham/cervino"
+arch="noarch"
+license="Apache-2.0 AND MIT"
+depends="zellij foot font-droid-sans-mono-nerd"
+# foot's launchers, which this package's copies hide.
+replaces="foot"
+options="!check"
+
+makefile() {
+	mkdir -p "$(dirname "$3")"
+	cat > "$3"
+	chown "$1" "$3"
+	chmod "$2" "$3"
+}
+
+package() {
+	makefile root:root 0644 "$pkgdir"/etc/zellij/config.kdl < "$startdir"/config.kdl
+	makefile root:root 0644 "$pkgdir"/usr/share/icons/hicolor/scalable/apps/zellij.svg \
+		< "$startdir"/zellij.svg
+	makefile root:root 0644 "$pkgdir"/usr/share/applications/zellij.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Zellij
+Comment=Zellij terminal workspace
+Icon=zellij
+Exec=foot -F --app-id=zellij --font="DroidSansM Nerd Font:size=12" zellij
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=terminal;multiplexer;zellij;
+StartupWMClass=zellij
+EOF
+
+	# foot's own launchers, kept out of the app grid (NoDisplay), so that it
+	# shows Zellij alone; they still start foot by name (gtk-launch foot).
+	makefile root:root 0644 "$pkgdir"/usr/share/applications/foot.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Exec=foot
+Icon=foot
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=shell;prompt;command;commandline;
+NoDisplay=true
+
+Name=Foot
+GenericName=Terminal
+Comment=A wayland native terminal emulator
+EOF
+	makefile root:root 0644 "$pkgdir"/usr/share/applications/footclient.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Exec=footclient
+Icon=foot
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=shell;prompt;command;commandline;
+NoDisplay=true
+
+Name=Foot Client
+GenericName=Terminal
+Comment=A wayland native terminal emulator (client)
+EOF
+	makefile root:root 0644 "$pkgdir"/usr/share/applications/foot-server.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Exec=foot --server
+Icon=foot
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=shell;prompt;command;commandline;
+NoDisplay=true
+
+Name=Foot Server
+GenericName=Terminal
+Comment=A wayland native terminal emulator (server)
+EOF
+}

@@ -858,6 +858,41 @@ t_xdg_open() {
 	have xdg-open || { echo "xdg-utils not installed"; return 1; }
 }
 
+# The Zellij launcher runs zellij in foot, in a Nerd Font, which has the
+# symbols Zellij's bars draw with; zellij reads its configuration (the
+# system's, or the user's own) without errors; foot's own launchers are
+# hidden.
+t_terminal() {
+	local dir file= cmd font="DroidSansM Nerd Font"
+	local -a dirs
+	IFS=: read -ra dirs <<< "${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-}"
+	((${#dirs[@]} > 1)) || dirs+=(/usr/local/share /usr/share)
+	for dir in "${dirs[@]}"; do
+		[[ -f $dir/applications/zellij.desktop ]] || continue
+		file=$dir/applications/zellij.desktop
+		break
+	done
+	[[ -n $file ]] || { echo "no Zellij launcher"; return 1; }
+	cmd=$(sed -n 's/^Exec=\([^ ]*\).*/\1/p' "$file")
+	have "$cmd" || { echo "the launcher runs $cmd, which is not installed"; return 1; }
+	have zellij || { echo "zellij not installed"; return 1; }
+	[[ -n $(fc-list ":family=$font" family) ]] || { echo "no $font"; return 1; }
+	zellij setup --check >/dev/null 2>&1 || { echo "zellij's configuration has errors"; return 1; }
+	# foot's own launchers stay out of the app grid.
+	local name
+	for name in foot footclient foot-server; do
+		for dir in "${dirs[@]}"; do
+			file=$dir/applications/$name.desktop
+			[[ -f $file ]] || continue
+			grep -Eqx '(NoDisplay|Hidden)=true' "$file" || {
+				echo "$name.desktop shows in the app grid"
+				return 1
+			}
+			break
+		done
+	done
+}
+
 # Browsers and other apps keep their passwords in the Secret Service. Reading
 # its collections never prompts; if the keyring daemon is not on the session
 # bus, D-Bus activation hands the request to it and times out.
@@ -1227,6 +1262,7 @@ run_test "Audio output device available"               t_audio_sink
 run_test "Audio threads run with real-time priority"   t_audio_realtime
 run_test "AirPlay speaker discovery enabled"           t_airplay_discovery
 run_test "xdg-open available"                          t_xdg_open
+run_test "Terminal workspace (Zellij in foot)"         t_terminal
 run_test "Password storage (Secret Service)"           t_secret_service
 run_test "Sandboxed app store (Flatpak)"               t_app_store_sandbox
 run_test "Package repositories fetched over HTTPS"     t_package_repos_https

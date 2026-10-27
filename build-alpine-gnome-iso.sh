@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Package lists are words in a string, split where they are used.
-# PKGVER, VLC_PKGVER and GSTREAMER_PKGVER come from the host, through the
-# container's environment.
+# PKGVER, VLC_PKGVER, GSTREAMER_PKGVER and TERMINAL_PKGVER come from the
+# host, through the container's environment.
 # shellcheck disable=SC2086,SC2046,SC2116,SC2153
 #
 # build-alpine-gnome-iso.sh
@@ -38,6 +38,8 @@
 # two packages, cervino-vlc (vlc and ffmpeg7) and cervino-gstreamer
 # (cervino-vlc/ and cervino-gstreamer/; empty on a PC), which can be deleted
 # for Alpine's; wpa_supplicant and bluez are published with cervino-desktop.
+# The terminal, Zellij in foot, is a package of its own too,
+# cervino-terminal (cervino-terminal/), which can be deleted.
 #
 # The container runs the target's architecture, so the packages' scripts
 # run when the root file system is installed: building for another
@@ -63,8 +65,8 @@
 #   SIGNING_KEY     abuild private key (its public key is derived from it,
 #                   named after the file plus .pub) to sign the packages
 #                   built here (cervino-desktop, cervino-vlc,
-#                   cervino-gstreamer, and the Pi's wpa_supplicant and
-#                   bluez) and the image's repo with
+#                   cervino-gstreamer, cervino-terminal, and the Pi's
+#                   wpa_supplicant and bluez) and the image's repo with
 #                   (default: a new key each build)
 #   APK_REPO        URL of the repo those packages are published in, without
 #                   the branch; installs get updates from APK_REPO/<branch>
@@ -146,16 +148,17 @@ host_main() {
 	pkgver=$(TZ=UTC0 git -C "$here" log -1 --date=format-local:%Y%m%d.%H%M%S \
 		--format=%cd 2>/dev/null) || pkgver=
 	pkgver=${pkgver:-$(date -u +%Y%m%d.%H%M%S)}
-	# cervino-vlc's and cervino-gstreamer's: the time of the last commit that
-	# changed what they are made of (their directory, their packages in rpi/,
-	# build_bundle), so that a release that leaves them as they were doesn't
-	# make installs download them again (ci/publish-repo.sh keeps a file
-	# already published). git log needs the history for that: a shallow
-	# clone has only the last commit.
-	local vlc_pkgver gstreamer_pkgver
+	# cervino-vlc's, cervino-gstreamer's and cervino-terminal's: the time of
+	# the last commit that changed what they are made of (their directory,
+	# their packages in rpi/, build_bundle), so that a release that leaves
+	# them as they were doesn't make installs download them again
+	# (ci/publish-repo.sh keeps a file already published). git log needs the
+	# history for that: a shallow clone has only the last commit.
+	local vlc_pkgver gstreamer_pkgver terminal_pkgver
 	vlc_pkgver=$(bundle_version cervino-vlc rpi/ffmpeg7 rpi/vlc)
 	gstreamer_pkgver=$(bundle_version cervino-gstreamer rpi/gst-plugins-base \
 		rpi/gst-plugins-bad)
+	terminal_pkgver=$(bundle_version cervino-terminal)
 
 	# The signing key goes in as a file, under a fixed path; apk knows a key by
 	# its file name, which is passed alongside.
@@ -194,6 +197,7 @@ host_main() {
 		-v "$here"/cervino-desktop:/cervino-desktop:ro \
 		-v "$here"/cervino-vlc:/cervino-vlc:ro \
 		-v "$here"/cervino-gstreamer:/cervino-gstreamer:ro \
+		-v "$here"/cervino-terminal:/cervino-terminal:ro \
 		-v "$here"/apparmor.d:/apparmor.d:ro \
 		-v "$here"/rpi:/rpi:ro \
 		-v "$OUTDIR":/out \
@@ -207,6 +211,7 @@ host_main() {
 		-e PKGVER="$pkgver" \
 		-e VLC_PKGVER="$vlc_pkgver" \
 		-e GSTREAMER_PKGVER="$gstreamer_pkgver" \
+		-e TERMINAL_PKGVER="$terminal_pkgver" \
 		-e APK_REPO="${APK_REPO%/}" \
 		"${keyopts[@]}" \
 		"${cacheopts[@]}" \
@@ -327,11 +332,11 @@ build_rootfs() {
 		die "could not pack the root file system"
 }
 
-# build_bundle NAME VERSION PACKAGE...: builds NAME (cervino-vlc or
-# cervino-gstreamer) at VERSION from NAME/APKBUILD for builder_main, which
-# has (on the Pi) built each PACKAGE from rpi/ into $repodir, with its files
-# in pkgfiles and the Alpine version it is based on in alpinever, and adds
-# NAME's file to its published. host_main's bundle_version gives VERSION
+# build_bundle NAME VERSION PACKAGE...: builds NAME (cervino-vlc,
+# cervino-gstreamer or cervino-terminal) at VERSION from NAME/APKBUILD for
+# builder_main, which has (on the Pi) built each PACKAGE from rpi/ into
+# $repodir, with its files in pkgfiles and the Alpine version it is based
+# on in alpinever, and adds NAME's file to its published. host_main's bundle_version gives VERSION
 # from the commits that changed NAME/, the PACKAGEs or this function.
 #
 # On the Pi, NAME holds the PACKAGEs' runtime packages (not their -dev,
@@ -345,7 +350,8 @@ build_rootfs() {
 # license is all of theirs (none has an OR). All that comes from their
 # .PKGINFO: abuild can't trace the libraries again, as those they link
 # aren't installed here. The only install scripts among them are vlc-libs'
-# plug-in cache scripts, which become cervino-vlc's. Elsewhere it is empty.
+# plug-in cache scripts, which become cervino-vlc's. Elsewhere, and with no
+# PACKAGEs (cervino-terminal), NAME has only its own files.
 build_bundle() {
 	local bundle=$1 version=$2 src=/work/cervino/$1 name file pkg info ver script dep
 	local provides= depends= licenses= dep_name
@@ -505,12 +511,13 @@ builder_main() {
 	# apps stay in world, where they can be removed one by one. Also
 	# cervino-vlc (on the Pi, VLC, with Raspberry Pi OS's patches for its
 	# hardware decoders) and cervino-gstreamer, built below, which can be
-	# removed for Alpine's packages.
+	# removed for Alpine's packages, and cervino-terminal, Zellij in foot.
 	local world
 	world=$(printf '%s\n' alpine-base doas \
 		elogind polkit-elogind "$BROWSER" \
 		eudev udev-init-scripts udev-init-scripts-openrc \
-		$gnome_deps cervino-desktop cervino-vlc cervino-gstreamer | sort -u)
+		$gnome_deps cervino-desktop cervino-vlc cervino-gstreamer cervino-terminal |
+		sort -u)
 
 	# The image's on-disc apk repo, for Alpine's setup-disk (sys installs,
 	# see genapkovl-gnomelive.sh): the disk tools it installs on the live
@@ -597,13 +604,14 @@ builder_main() {
 		done
 	fi
 
-	# --- cervino-vlc and cervino-gstreamer packages ---------------------------
+	# --- cervino-vlc, cervino-gstreamer and cervino-terminal packages --------
 	# The Pi's media packages built above, two of them in each (see
 	# build_bundle); empty elsewhere. The Pi's other packages are published
-	# as they are.
+	# as they are. cervino-terminal, Zellij in foot, has only its own files.
 	local published=()
 	build_bundle cervino-vlc "$VLC_PKGVER" ffmpeg7 vlc
 	build_bundle cervino-gstreamer "$GSTREAMER_PKGVER" gst-plugins-base gst-plugins-bad
+	build_bundle cervino-terminal "$TERMINAL_PKGVER"
 	if [[ $TARGET == rpi ]]; then
 		# shellcheck disable=SC2086
 		for file in ${pkgfiles[wpa_supplicant]} ${pkgfiles[bluez]}; do
@@ -616,7 +624,8 @@ builder_main() {
 	# Flathub's remote (Flatpak adds the remotes in /etc/flatpak/remotes.d)
 	# next to it, and signed with the build's key, which mkimage puts in the
 	# image. It goes in a repo of its own for mkimage, with cervino-vlc,
-	# cervino-gstreamer and the Pi's other packages, indexed under $ARCH:
+	# cervino-gstreamer, cervino-terminal and the Pi's other packages,
+	# indexed under $ARCH:
 	# abuild files a noarch package under
 	# the container's architecture, and apk 3 looks for a package in the
 	# directory of the architecture its index gives. Its dependencies are in

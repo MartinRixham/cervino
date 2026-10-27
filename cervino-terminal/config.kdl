@@ -1,0 +1,16 @@
+// Zellij's configuration for users without one of their own in
+// ~/.config/zellij: its defaults, but with move mode on Ctrl m rather than
+// Ctrl h, and no tips at startup.
+
+keybinds {
+    move {
+        unbind "Ctrl h"
+        bind "Ctrl m" { SwitchToMode "normal"; }
+    }
+    shared_except "locked" "move" {
+        unbind "Ctrl h"
+        bind "Ctrl m" { SwitchToMode "move"; }
+    }
+}
+
+show_startup_tips false

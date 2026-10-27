@@ -78,6 +78,13 @@ from a desktop distribution, and keeps it when installed to disk:
   call registering the session with GDM fails, so GDM takes the end of every
   session, the login screen's included, for a crash; a session helper, run
   in user sessions and in the login screen, does both for it)
+- a **Zellij** launcher in the app grid: the Zellij terminal multiplexer
+  in the foot terminal, in the Droid Sans Mono Nerd Font, with move mode
+  on Ctrl m (Ctrl h in Zellij's defaults) and no tips at startup
+  (`/etc/zellij/config.kdl`, which a `~/.config/zellij/config.kdl` of your
+  own replaces). foot's own launchers are hidden, so the app grid shows
+  Zellij alone. It is the `cervino-terminal` package, which
+  `doas apk del cervino-terminal` removes
 
 [`test/features.sh`](test/features.sh) checks all of this on a running
 system. [`test/apparmor.sh`](test/apparmor.sh) checks that AppArmor confines
@@ -131,8 +138,8 @@ and uploads the ISO and the Raspberry Pi image, each with its `SHA256SUMS`, as
 workflow artifacts. You can also start it by hand from the Actions tab and
 choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
-`cervino-vlc`, `cervino-gstreamer`, and the Pi's `wpa_supplicant` and
-`bluez`) to the update repo (see [Updates](#updates)).
+`cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, and the Pi's
+`wpa_supplicant` and `bluez`) to the update repo (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -447,6 +454,10 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      Pi, the runtime packages of `ffmpeg7` and `vlc`, and of
      `gst-plugins-base` and `gst-plugins-bad`, each pair in one, providing
      their names at Alpine's versions; empty on a PC;
+   - the `cervino-terminal` package, built with abuild from
+     [`cervino-terminal/APKBUILD`](cervino-terminal/APKBUILD): the Zellij
+     launcher and configuration, depending on Alpine's `zellij`, `foot`
+     and `font-droid-sans-mono-nerd`;
    - the `cervino-desktop` package, built with abuild from
      [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
      features' configuration and the AppArmor profiles from
