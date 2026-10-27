@@ -146,7 +146,8 @@ vm_run() {
 	wait_for 'login: ' 1200
 	vm_user=$1
 	send "$1"
-	wait_for '~[#$] ' 120
+	# bash's prompt (cervino-terminal's) has colour sequences after the ~.
+	wait_for '~('$'\e''\[[0-9;]*m)*[#$] ' 120
 	# The marker is printed with printf so that the echoed command line
 	# cannot match it.
 	send "$2; printf '@@RC=%s@@\\n' \$?"
