@@ -1,11 +1,9 @@
 #!/bin/sh
 # apk, on an atomic install: add, del and upgrade go through update-alpine.
+# Elsewhere (and in update-alpine's chroot) apk, but that del of
+# cervino-vlc or cervino-gstreamer brings back Alpine's packages.
 real=/sbin/apk
 lib=/usr/libexec/cervino/atomic.sh
-[ -f "$lib" ] || exec "$real" "$@"
-# shellcheck source=atomic.sh
-. "$lib"
-atomic_detect 2>/dev/null || exec "$real" "$@"
 
 refuse() {
 	cat >&2 <<MSG
@@ -43,6 +41,29 @@ for a; do
 		fi ;;
 	esac
 done
+
+atomic=
+# shellcheck source=atomic.sh
+if [ -f "$lib" ] && . "$lib" && atomic_detect 2>/dev/null; then
+	atomic=1
+fi
+
+# cervino-vlc and cervino-gstreamer provide the names of the packages they
+# stand in for, which others depend on, and apk keeps an installed provider
+# of those: apk del would only take them out of world. So they are first
+# ruled out with a conflict in world (!NAME), which swaps in Alpine's
+# packages, and the del then takes that out of world again.
+if [ -z "$atomic" ]; then
+	if [ "$applet" = del ]; then
+		conflicts=
+		for p in $pkgs; do
+			case $p in cervino-vlc|cervino-gstreamer) conflicts="$conflicts !$p" ;; esac
+		done
+		# shellcheck disable=SC2086
+		[ -z "$conflicts" ] || "$real" add $conflicts || exit
+	fi
+	exec "$real" "$@"
+fi
 
 case $applet in
 add|del)

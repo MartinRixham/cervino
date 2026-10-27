@@ -4,7 +4,8 @@
 # Alpine's packages and puts their runtime ones in apks/ next to this, and
 # this package holds their files and provides each of them. While it is
 # installed (it is in /etc/apk/world), apk takes it for those names; once
-# deleted, VLC is gone and what else uses ffmpeg7 gets Alpine's. The patched
+# deleted (cervino-desktop's apk wrapper rules it out with !cervino-vlc in
+# world first), VLC is gone and what else uses ffmpeg7 gets Alpine's. The patched
 # packages are not published under their own names, which would rank above
 # Alpine's and so shadow them. Elsewhere it is empty: the PC's image has no
 # VLC.

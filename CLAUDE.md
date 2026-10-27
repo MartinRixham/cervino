@@ -448,9 +448,13 @@ Alpine's plug-ins as well as ours.
 
 Installed, each takes the place of Alpine's packages of those names (its
 provides make them one name each, so they never install together), and
-`apk del` of it brings Alpine's back. That only works with Alpine's version
-in its provides: apk keeps a provider of a higher version for a name world
-gives (`gst-plugins-base`) even once its package is deleted. Under their own
+`apk del` of it brings Alpine's back. A plain `apk del` doesn't: apk keeps
+an installed provider of a name others depend on, and only takes the
+package out of world. So the apk wrapper (below) first adds `!<name>` to
+world, which swaps Alpine's packages in, and then deletes it, which takes
+the `!` out again. Alpine's version in its provides is needed too: apk
+keeps a provider of a higher version for a name world gives
+(`gst-plugins-base`) even once its package is deleted. Under their own
 names, the patched packages would shadow Alpine's for good. VLC itself is
 not in world (`cervino-vlc` brings it), so deleting `cervino-vlc` removes
 it.
@@ -767,7 +771,9 @@ the same file). It is a wrapper:
   package names, harmless options only) to `update-alpine add`/`del` and
   `apk upgrade` to `update-alpine`, and turns down `fix` and other options;
 - everything else, `--simulate`, `--root`, and any other system (including
-  `update-alpine`'s chroot) gets `/sbin/apk` unchanged.
+  `update-alpine`'s chroot) gets `/sbin/apk` unchanged, but that a `del`
+  of `cervino-vlc` or `cervino-gstreamer` first runs `apk add !<name>`
+  (see above).
 
 ## Installing
 

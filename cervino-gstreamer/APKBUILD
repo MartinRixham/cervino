@@ -8,9 +8,10 @@
 # them as Alpine's packages and puts their runtime ones in apks/ next to
 # this, and this package holds their files and provides each of them.
 # While it is installed (it is in /etc/apk/world), apk takes it for those
-# names; once deleted, Alpine's packages come back. The patched packages
-# are not published under their own names, which would rank above Alpine's
-# and so shadow them.
+# names; once deleted (cervino-desktop's apk wrapper rules it out with
+# !cervino-gstreamer in world first), Alpine's packages come back. The
+# patched packages are not published under their own names, which would
+# rank above Alpine's and so shadow them.
 # The bad plug-ins' decoder uses the video formats the base ones add, so
 # the two go together. Showtime works with either's plug-ins.
 # build-alpine-gnome-iso.sh copies this directory into the build, with
