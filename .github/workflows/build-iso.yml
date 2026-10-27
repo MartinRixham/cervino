@@ -352,6 +352,13 @@ jobs:
           name: alpine-gnome-iso
           path: out
 
+      # The packages the image leaves out (cervino-gstreamer), which the VM
+      # test adds before running the tests.
+      - uses: actions/download-artifact@v7
+        with:
+          name: cervino-repo-iso
+          path: out/repo
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
@@ -368,7 +375,7 @@ jobs:
         env:
           INSTALL_MODE: ${{ matrix.install }}
           WORKDIR: ${{ runner.temp }}/vm-test
-        run: ci/vm-test.sh out/*.iso
+        run: ci/vm-test.sh out/*.iso out/repo
 
       - uses: actions/upload-artifact@v7
         if: failure()

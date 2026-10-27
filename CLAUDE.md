@@ -48,11 +48,14 @@ INSTALL_MODE=sys ci/vm-test.sh out/*.iso            # the same with a sys instal
 
 ### ci/vm-test.sh
 
-`ci/vm-test.sh` drives QEMU/KVM boots over the serial console, keeping the
-logs in `$WORKDIR` (default `./vm-test`). No setup happens between install
-and test: the ISO itself must make every test pass. The guest gets the repo
-files as a tar archive on `/dev/vdb`, and each command's exit status comes
-back as an `@@RC=n@@` marker on the console.
+`ci/vm-test.sh ISO [PACKAGES]` drives QEMU/KVM boots over the serial
+console, keeping the logs in `$WORKDIR` (default `./vm-test`). The only
+setup between install and test is the packages boot (below): otherwise the
+ISO itself must make every test pass. The guest gets the repo's `test/` and
+`ci/guest/`, and in `pkgs/` the x86_64 `cervino-gstreamer` `.apk` from
+`PACKAGES` (the build's `out/repo`; default `repo` next to the ISO), as a
+tar archive on `/dev/vdb`, and each command's exit status comes back as an
+`@@RC=n@@` marker on the console.
 
 The VMs:
 
@@ -77,13 +80,23 @@ loaders have no serial console), and installs to `/dev/vda` with
 4. mounts the disk, clears tester's password, which the install leaves
    locked, and adds a `permit nopass tester` doas rule.
 
-**The test boot.** It boots the disk, logs in as `tester` (root is locked
-there) and runs `ci/guest/test.sh` through doas. `test.sh` prints its own
+**The packages boot.** It boots the disk, logs in as `tester` (root is
+locked there) and runs `ci/guest/packages.sh` through doas, which adds
+what the image leaves out but the tests need, `cervino-gstreamer`, from
+`pkgs/` (signed with the build's key, which the system trusts): `apk add`
+of the files on a sys install, and on an atomic one `update-alpine add` of
+copies in `/var/lib/cervino-ci/pkgs` (the chroot of the new version has
+`/var` but not `/tmp`, and the apk wrapper turns down paths), staged for
+the test boot to start with, on trial.
+
+**The test boot.** It boots the disk, logs in as `tester` and runs
+`ci/guest/test.sh` through doas. `test.sh` prints its own
 results in `test/features.sh`'s format, then the counts of all the tests
 together. In order, it:
 
 1. fails if anything of the live session (live user, its home, `live-user`
-   script or runlevel link, autologin) reached the install;
+   script or runlevel link, autologin) reached the install, or if
+   `cervino-gstreamer` is not installed;
 2. turns on GDM autologin for `tester`, restarts gdm and runs
    `test/features.sh` as `tester` with the environment of the user's
    `gnome-shell`;
@@ -206,7 +219,8 @@ CI (`.github/workflows/build-iso.yml`) runs the script with
   `<target>-<package>-*` (`actions/cache/restore` with a `restore-keys`
   prefix), and after it, even if it failed, save each package whose `key`
   file is not the restored one's as `<target>-<package>-<key>`.
-- **`vm-test`** (after both builds): downloads the ISO and runs
+- **`vm-test`** (after both builds): downloads the ISO and
+  `cervino-repo-iso` (into `out/repo`, for `cervino-gstreamer`) and runs
   `ci/vm-test.sh` once per `INSTALL_MODE` (a matrix of `atomic` and `sys`,
   on separate runners, since a runner's 16 GB can't hold two 8 GB VMs),
   failing unless every OS feature test passes. The console logs are uploaded
@@ -315,9 +329,10 @@ its IPv6 reverse path filter test, which needs `ip netns`.
 `/etc/apk/world` is what `setup-desktop gnome` would put there plus
 `cervino-desktop`, which depends on `$features`: a feature added later
 reaches installed systems with the package, while GNOME's apps stay
-removable from world. It also has `cervino-vlc` (VLC, on the Pi) and
-`cervino-gstreamer` (below), either of which can be removed for Alpine's
-packages, and `cervino-terminal` (below).
+removable from world. It also has `cervino-vlc` (VLC, on the Pi, below),
+which can be removed for Alpine's packages, and `cervino-terminal`
+(below). `cervino-gstreamer` (below) is not in world, so not in the image:
+users add it from the repo, and the VM test adds it before the tests.
 
 **The patched packages.** It first builds `patched/mutter` and
 `patched/showtime`, then for `rpi` `rpi/ffmpeg7`, `rpi/vlc`,
@@ -431,7 +446,7 @@ patch, like VLC's caching one, is a playback trade-off (a second of decoded
 video held in memory) that deleting the package should undo; it works with
 Alpine's plug-ins as well as ours.
 
-In world, each takes the place of Alpine's packages of those names (its
+Installed, each takes the place of Alpine's packages of those names (its
 provides make them one name each, so they never install together), and
 `apk del` of it brings Alpine's back. That only works with Alpine's version
 in its provides: apk keeps a provider of a higher version for a name world

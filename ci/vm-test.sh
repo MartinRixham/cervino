@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 #
-# ci/vm-test.sh ISO
+# ci/vm-test.sh ISO [PACKAGES]
 #
 # Tests the ISO end to end in QEMU/KVM, driven over the serial console:
 #
 #   1. install: boots the ISO and installs it to a blank virtual disk with
 #      setup-alpine (through the ISO's wrapper, as a user would), as an
 #      atomic or a sys install ($INSTALL_MODE)
-#   2. test:    boots the installed system into GNOME, logged in as the
+#   2. packages: boots the installed system and adds the build's packages
+#               the image leaves out (cervino-gstreamer), from PACKAGES,
+#               the build's out/repo (default: repo next to the ISO); an
+#               atomic install stages them, to start with at the next boot
+#   3. test:    boots the installed system into GNOME, logged in as the
 #               user created during the install, and runs
 #               test/features.sh in that desktop session and
 #               test/apparmor.sh as root, then logs out and checks
 #               that GDM's login screen comes back
-#   3. upgrade: (atomic installs only) four more boots, in which
+#   4. upgrade: (atomic installs only) four more boots, in which
 #               ci/guest/upgrade.sh has
 #               update-alpine stage an update of the atomic install,
 #               checks that the system switched to it at the restart,
@@ -23,8 +27,8 @@
 # Exits non-zero if either stage fails or any test fails. The serial console
 # output of each boot is streamed to stdout and kept in $WORKDIR/<stage>.log.
 #
-# The guest gets test/ and ci/guest/ as a tar archive on a
-# second virtual disk, /dev/vdb.
+# The guest gets test/ and ci/guest/, and the packages in pkgs/, as a tar
+# archive on a second virtual disk, /dev/vdb.
 #
 # An atomic install needs UEFI, so its VM has OVMF, with variables kept
 # across its boots in $WORKDIR/efivars.fd (the boot entries the install
@@ -44,7 +48,8 @@
 set -euo pipefail
 export LC_ALL=C
 
-ISO=${1:?usage: $0 ISO}
+ISO=${1:?usage: $0 ISO [PACKAGES]}
+PACKAGES=${2:-$(dirname "$ISO")/repo}
 REPO=$(dirname "$(dirname "$(realpath "$0")")")
 WORKDIR=$(realpath -m "${WORKDIR:-./vm-test}")
 VM_MEMORY=${VM_MEMORY:-8G}
@@ -179,8 +184,13 @@ if [[ $INSTALL_MODE == atomic ]]; then
 		-drive if=pflash,format=raw,file="$WORKDIR"/efivars.fd)
 fi
 qemu-img create -q -f qcow2 "$WORKDIR"/disk.qcow2 32G
+rm -rf "$WORKDIR"/pkgs
+mkdir "$WORKDIR"/pkgs
+find "$PACKAGES" -path '*/x86_64/cervino-gstreamer-[0-9]*.apk' -exec cp {} "$WORKDIR"/pkgs/ \;
+[[ -n $(ls "$WORKDIR"/pkgs) ]] || die "no x86_64 cervino-gstreamer package in $PACKAGES"
 tar -C "$REPO" -cf "$WORKDIR"/share.tar --owner=0 --group=0 \
 	test ci/guest
+tar -C "$WORKDIR" -rf "$WORKDIR"/share.tar --owner=0 --group=0 pkgs
 
 # The ISO's boot loaders have no serial console, so boot its kernel and
 # initramfs directly (through OVMF, as UEFI would, for an atomic install),
@@ -201,10 +211,15 @@ vm_run root "$unpack_share && /tmp/ci/ci/guest/install.sh $INSTALL_MODE" 3600
 vm_stop
 ((rc == 0)) || die "installing with setup-alpine failed"
 
-vm_start test
 # The installed system's root is locked, so log in as the user created
 # during the install, whom install.sh lets log in and use doas without a
 # password.
+vm_start packages
+vm_run tester "doas sh -c '$unpack_share && /tmp/ci/ci/guest/packages.sh $INSTALL_MODE'" 1200
+vm_stop
+((rc == 0)) || die "adding the packages the image leaves out failed"
+
+vm_start test
 vm_run tester "doas sh -c '$unpack_share && /tmp/ci/ci/guest/test.sh $INSTALL_MODE'" 1500
 vm_stop
 ((rc == 0)) || die "$rc test(s) failed"

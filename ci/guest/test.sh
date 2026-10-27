@@ -1,7 +1,8 @@
 #!/bin/sh
 # ci/guest/test.sh MODE: runs as root on the installed system, an atomic or
 # a sys install (MODE, setup-disk's -m): checks that the live session was
-# left behind, logs the user created during the install in to GNOME, then
+# left behind and that packages.sh added cervino-gstreamer, logs the user
+# created during the install in to GNOME, then
 # runs test/features.sh as that user with the session's environment
 # (taken from gnome-shell), as if from a terminal in the desktop, and
 # test/apparmor.sh as root. Then it runs a runaway app in the session and
@@ -29,6 +30,11 @@ if [ -n "$leftover" ]; then
 	echo "live session left on the installed system:" $leftover >&2
 	exit 1
 fi
+
+# The packages the image leaves out, which packages.sh added in the boot
+# before (on an atomic install, to the version this one started with).
+apk info -e cervino-gstreamer > /dev/null ||
+	{ echo "cervino-gstreamer is not installed" >&2; exit 1; }
 
 cat > /etc/gdm/custom.conf <<EOF
 [daemon]

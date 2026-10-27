@@ -31,16 +31,17 @@
 # udev, dbus, gdm etc. exactly as setup-desktop would have configured them.
 # Installs copy the system from the squashfs too; the image's on-disc apk
 # repository only has the disk tools and boot loaders Alpine's setup-disk
-# adds. The Pi's image also has VLC and the ffmpeg7 libraries it plays
-# through, GStreamer's base and bad plug-ins, wpa_supplicant and bluez,
-# built from rpi/: Alpine's packages with Raspberry Pi OS's patches for the
-# Pi's hardware video decoders, Wi-Fi and Bluetooth. The media ones come in
-# two packages, cervino-vlc (vlc and ffmpeg7) and cervino-gstreamer
-# (cervino-vlc/ and cervino-gstreamer/), which can be deleted for Alpine's;
-# wpa_supplicant and bluez are published with cervino-desktop, as is the
-# Pi's mesa, with a patch of ours. Both images have mutter and showtime
-# built from patched/: Alpine's with fixes of ours, mutter published the
-# same way, showtime in cervino-gstreamer (on a PC, all it holds).
+# adds. For the Pi, VLC and the ffmpeg7 libraries it plays through,
+# GStreamer's base and bad plug-ins, wpa_supplicant and bluez are built
+# from rpi/: Alpine's packages with Raspberry Pi OS's patches for the Pi's
+# hardware video decoders, Wi-Fi and Bluetooth. The media ones come in two
+# packages, cervino-vlc (vlc and ffmpeg7) and cervino-gstreamer
+# (cervino-vlc/ and cervino-gstreamer/): cervino-vlc is in the image and
+# can be deleted for Alpine's, while cervino-gstreamer is only in the repo,
+# to be added; wpa_supplicant and bluez are published with cervino-desktop, as is the
+# Pi's mesa, with a patch of ours. mutter and showtime are built from
+# patched/ for both: Alpine's with fixes of ours, mutter published the same
+# way, showtime in cervino-gstreamer (on a PC, all it holds).
 # The terminal, Zellij in foot, with AstroNvim, is a package of its own
 # too, cervino-terminal (cervino-terminal/), which can be deleted.
 #
@@ -514,14 +515,15 @@ builder_main() {
 	# the package later reaches installed systems with it, while GNOME's
 	# apps stay in world, where they can be removed one by one. Also
 	# cervino-vlc (on the Pi, VLC, with Raspberry Pi OS's patches for its
-	# hardware decoders) and cervino-gstreamer, built below, which can be
-	# removed for Alpine's packages, and cervino-terminal, Zellij in foot
-	# and AstroNvim.
+	# hardware decoders), built below, which can be removed for Alpine's
+	# packages, and cervino-terminal, Zellij in foot and AstroNvim.
+	# cervino-gstreamer, also built below, is not: users add it from the
+	# repo.
 	local world
 	world=$(printf '%s\n' alpine-base doas \
 		elogind polkit-elogind "$BROWSER" \
 		eudev udev-init-scripts udev-init-scripts-openrc \
-		$gnome_deps cervino-desktop cervino-vlc cervino-gstreamer cervino-terminal |
+		$gnome_deps cervino-desktop cervino-vlc cervino-terminal |
 		sort -u)
 
 	# The image's on-disc apk repo, for Alpine's setup-disk (sys installs,

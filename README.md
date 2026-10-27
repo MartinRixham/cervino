@@ -151,7 +151,9 @@ the Pi's `wpa_supplicant`, `bluez` and `mesa`) to the update repo (see
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
-virtual disk with `setup-alpine`, checks that nothing of the live session
+virtual disk with `setup-alpine`, restarts it to add `cervino-gstreamer`
+from the packages just built (the image leaves it out; see
+[the Pi](#raspberry-pi)), checks that nothing of the live session
 was copied to the installed system, runs `test/features.sh` in the
 installed user's GNOME session and `test/apparmor.sh` as root, runs an app
 in the session that takes memory until something kills it and checks that
@@ -172,6 +174,9 @@ test locally (it needs
 ci/vm-test.sh out/*.iso                     # an atomic install
 INSTALL_MODE=sys ci/vm-test.sh out/*.iso    # a sys install
 ```
+
+It takes `cervino-gstreamer` from `out/repo`, next to the ISO, or from the
+directory given as a second argument.
 
 Before that, [`ci/update-test.sh`](ci/update-test.sh) tests `update-alpine`
 from the package just built, in Alpine containers: it has to upgrade the
@@ -368,32 +373,35 @@ and 5, and H.264 on the Pi 4 (the Pi 5 has no H.264 decoder), decoded by
 the hardware and shown without copying the frames. It plays through
 `ffmpeg7`'s libraries, built with Raspberry Pi OS's FFmpeg patch, which
 replace Alpine's for every program that uses them. GStreamer's base and bad
-plug-ins are built with Raspberry Pi OS's patches too, so what plays
-through GStreamer (GNOME's Showtime, GNOME Web, the file previews) decodes
-HEVC on the Pi 4's and 5's decoder. Firefox uses Alpine's FFmpeg 8, and so
+plug-ins are built with Raspberry Pi OS's patches too, but left out of the
+image: with them added (below), what plays through GStreamer (GNOME's
+Showtime, GNOME Web, the file previews) decodes HEVC on the Pi 4's and 5's
+decoder. Firefox uses Alpine's FFmpeg 8, and so
 decodes in software on the Pi.
 
 All four are Alpine's packages with the patches applied
 ([`rpi/`](rpi)), and come in two packages, `cervino-vlc` (VLC with its
 FFmpeg) and `cervino-gstreamer` (GStreamer's plug-ins), which take the
 place of Alpine's packages of the same names and come from the update repo
-with `cervino-desktop`. Either can be removed:
+with `cervino-desktop`. `cervino-vlc` is installed, and can be removed;
+`cervino-gstreamer` is not, and can be added:
 
 ```sh
 doas apk del cervino-vlc          # no VLC; Alpine's FFmpeg 7 for the rest
 doas apk add vlc-qt               # then, for Alpine's VLC
-doas apk del cervino-gstreamer    # Alpine's GStreamer plug-ins
+doas apk add cervino-gstreamer    # GStreamer's plug-ins with the patches
 ```
 
-Alpine's packages then take their place, without the hardware decoding
-(`doas apk add` switches back). On a PC `cervino-vlc` is empty, as the PC
-image has no VLC, and the system uses Alpine's GStreamer plug-ins.
+Without them, Alpine's packages take their place, without the hardware
+decoding (`doas apk add` and `doas apk del` switch between them). On a PC
+`cervino-vlc` is empty, as the PC image has no VLC, and the system uses
+Alpine's GStreamer plug-ins.
 
 `cervino-gstreamer` also holds Showtime, on both, with a patch of ours
 that keeps its sound from skipping on an AirPlay speaker: it holds a
 second of decoded video (about 75 MB at 1080p), so that the audio can be
-decoded far enough ahead of it. Deleting `cervino-gstreamer` brings back
-Alpine's Showtime too.
+decoded far enough ahead of it. Without `cervino-gstreamer`, Showtime is
+Alpine's.
 
 The Pi's Wi-Fi and Bluetooth are set up as on Raspberry Pi OS too: the
 Wi-Fi driver leaves roaming and the WPA2/WPA3 handshakes to wpa_supplicant
