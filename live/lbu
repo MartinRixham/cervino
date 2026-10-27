@@ -2,6 +2,11 @@
 [ "$*" = "package -" ] || exec /usr/sbin/lbu "$@"
 . /usr/local/share/gnomelive/gnomelive.conf
 
+# The live user's home (setup-alpine adds every /home/* to lbu.list) is
+# left out anyway, and the session changes it while tar reads it: a file
+# deleted in between (Mesa's shader cache) makes lbu fail.
+sed -i "\\:^+home/$LIVE_USER\$:d" /etc/apk/protected_paths.d/lbu.list 2> /dev/null
+
 d=$(mktemp -d) || exit
 trap 'rm -rf "$d"' EXIT
 /usr/sbin/lbu package - > "$d"/ovl.tar.gz || exit
@@ -39,8 +44,6 @@ fi
 [ -f etc/gdm/custom.conf ] && sed -i '/^AutomaticLogin/d' etc/gdm/custom.conf
 [ -f etc/inittab ] &&
 	sed -i 's|:/sbin/getty |:/usr/libexec/cervino/apparmor-exec busybox-getty /sbin/getty |' etc/inittab
-[ -f etc/apk/protected_paths.d/lbu.list ] &&
-	sed -i "\\:^+home/$LIVE_USER\$:d" etc/apk/protected_paths.d/lbu.list
 
 if [ -f /usr/local/share/gnomelive/usercfg.txt ]; then
 	mkdir -p boot
