@@ -61,7 +61,7 @@ _rpi_patches="
 pkgname=vlc
 pkgver=3.0.23_p52
 _pkgver=${pkgver%_p*}
-pkgrel=1
+pkgrel=2
 pkgdesc="Multi-platform MPEG, VCD/DVD, and DivX player"
 triggers="vlc-libs.trigger=/usr/lib/vlc/plugins"
 pkgusers="vlc"
@@ -375,5 +375,5 @@ e1162e44f46f0197d4ed935eb2106839cfbeb7998d96f1b5c1fda85e5f0f53ed68ca8b0d923b27e6
 24be37e6c10c7dcfc7f3233388ca25cadb2ba03361043e31c61c90dd1cd6b962d91bd1e8d4ff7849b74688dd26647f9dc0af9238c1d8d8b85e2662b1abe105f9  0040-avcodec-Add-J420-formats-as-equivalent-to-YUV420-for.patch
 21fd3a178f55dacf2f79d7e479d1c5a872dcc1366bc5b96aa3327aa26aa7d989a8eecf753eae0fac89e179d593048bdf5095ba60d35f805a6005736d6bdb82c4  0041-RPICHANGES-Add-change-log.patch
 7c52cea536258e8a3189e0ff6628fb05a721898b9072b0eff249a90d2188c4b323a7f0286a1abef2b26a346c5a29893a28ba39c4c09a64e68e1ff5a87882257b  rpi-musl-gcc15.patch
-68af827dc68c0d6ff52da50511349f74dd67e560a53ade1651d8b44917e553c93d6a9b925d1d5a52f9166a459d267159ab390e9d9269b162eabc7169d5a871dd  rpi-qt-wayland.patch
+d83ef0c6ba284e399d4b9714c9258e47157530bd0aeacc22d69ef04d64337232de047397133a4fa37e3ed622dd9a55c5772555509ac9875e49e4058d6bd2e814  rpi-qt-wayland.patch
 "
