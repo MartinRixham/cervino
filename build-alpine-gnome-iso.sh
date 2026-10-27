@@ -607,7 +607,9 @@ builder_main() {
 			# makedepends from.
 			abuild -P /work/packages index || die "could not index $name"
 		else
-			abuild -r -P /work/packages || die "could not build $name"
+			# Without TARGET (iso or rpi), which bindgen, run by mesa's
+			# build, takes for the Rust target triple.
+			env -u TARGET abuild -r -P /work/packages || die "could not build $name"
 			mkdir -p /work/pkgcache/"$name"
 			(cd "$repodir" && cp "${files[@]}" /work/pkgcache/"$name"/) ||
 				die "abuild built other packages than abuild listpkg" \
