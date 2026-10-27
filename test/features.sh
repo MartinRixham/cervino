@@ -864,8 +864,8 @@ t_xdg_open() {
 
 # The Zellij launcher runs zellij in foot, in a Nerd Font, which has the
 # symbols Zellij's bars draw with; zellij reads its configuration (the
-# system's, or the user's own) without errors; foot's own launchers are
-# hidden.
+# system's, or the user's own) without errors; Neovim has AstroNvim's
+# configuration; foot's own launchers are hidden.
 t_terminal() {
 	local dir file= cmd font="DroidSansM Nerd Font"
 	local -a dirs
@@ -882,6 +882,30 @@ t_terminal() {
 	have zellij || { echo "zellij not installed"; return 1; }
 	[[ -n $(fc-list ":family=$font" family) ]] || { echo "no $font"; return 1; }
 	zellij setup --check >/dev/null 2>&1 || { echo "zellij's configuration has errors"; return 1; }
+	# Neovim's launcher runs it in foot too; nvim reads AstroNvim's
+	# configuration, which compiles, and has Alpine's Tree-sitter parsers.
+	for dir in "${dirs[@]}"; do
+		file=$dir/applications/nvim.desktop
+		[[ -f $file ]] && break
+	done
+	[[ -f $file ]] || { echo "no Neovim launcher"; return 1; }
+	cmd=$(sed -n 's/^Exec=\([^ ]*\).*/\1/p' "$file")
+	have "$cmd" || { echo "the Neovim launcher runs $cmd, which is not installed"; return 1; }
+	have nvim || { echo "neovim not installed"; return 1; }
+	local init lua='
+		for _, dir in ipairs(vim.fn.stdpath("config_dirs")) do
+			local init = dir .. "/init.lua"
+			if vim.uv.fs_stat(init) then
+				io.write(init, " ", tostring(loadfile(init) ~= nil), " ")
+				break
+			end
+		end
+		io.write(#vim.api.nvim_get_runtime_file("parser/python.so", false))'
+	init=$(nvim --headless --clean +"lua $lua" +qa 2>&1)
+	[[ $init == /etc/xdg/nvim/init.lua\ * ]] ||
+		{ echo "nvim reads no AstroNvim configuration"; return 1; }
+	[[ $init == *" true "* ]] || { echo "AstroNvim's configuration doesn't compile"; return 1; }
+	[[ $init == *" 1" ]] || { echo "nvim has no Tree-sitter parser for Python"; return 1; }
 	# foot's own launchers stay out of the app grid.
 	local name
 	for name in foot footclient foot-server; do
@@ -1273,7 +1297,7 @@ run_test "Audio output device available"               t_audio_sink
 run_test "Audio threads run with real-time priority"   t_audio_realtime
 run_test "AirPlay speaker discovery enabled"           t_airplay_discovery
 run_test "xdg-open available"                          t_xdg_open
-run_test "Terminal workspace (Zellij in foot)"         t_terminal
+run_test "Terminal (Zellij in foot, AstroNvim)"        t_terminal
 run_test "Password storage (Secret Service)"           t_secret_service
 run_test "Sandboxed app store (Flatpak)"               t_app_store_sandbox
 run_test "Package repositories fetched over HTTPS"     t_package_repos_https

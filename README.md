@@ -84,7 +84,12 @@ from a desktop distribution, and keeps it when installed to disk:
   on Ctrl m (Ctrl h in Zellij's defaults) and no tips at startup
   (`/etc/zellij/config.kdl`, which a `~/.config/zellij/config.kdl` of your
   own replaces). foot's own launchers are hidden, so the app grid shows
-  Zellij alone. It is the `cervino-terminal` package, which
+  Zellij alone. With it comes **Neovim** set up as AstroNvim, for users
+  without a `~/.config/nvim` of their own, its launcher running it in
+  foot too. AstroNvim and its plugins download on its first start, so that
+  needs the network. Its Tree-sitter parsers are Alpine's, as the system
+  has no C compiler to build them, so they don't install on demand. All
+  this is the `cervino-terminal` package, which
   `doas apk del cervino-terminal` removes
 
 [`test/features.sh`](test/features.sh) checks all of this on a running
@@ -458,7 +463,9 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
    - the `cervino-terminal` package, built with abuild from
      [`cervino-terminal/APKBUILD`](cervino-terminal/APKBUILD): the Zellij
      launcher and configuration, depending on Alpine's `zellij`, `foot`
-     and `font-droid-sans-mono-nerd`;
+     and `font-droid-sans-mono-nerd`, and Neovim's launcher and AstroNvim
+     configuration ([`cervino-terminal/init.lua`](cervino-terminal/init.lua)),
+     depending on `neovim` and `tree-sitter-grammars`;
    - the `cervino-desktop` package, built with abuild from
      [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
      features' configuration and the AppArmor profiles from

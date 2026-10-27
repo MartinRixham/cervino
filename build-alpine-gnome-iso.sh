@@ -38,8 +38,8 @@
 # two packages, cervino-vlc (vlc and ffmpeg7) and cervino-gstreamer
 # (cervino-vlc/ and cervino-gstreamer/; empty on a PC), which can be deleted
 # for Alpine's; wpa_supplicant and bluez are published with cervino-desktop.
-# The terminal, Zellij in foot, is a package of its own too,
-# cervino-terminal (cervino-terminal/), which can be deleted.
+# The terminal, Zellij in foot, with AstroNvim, is a package of its own
+# too, cervino-terminal (cervino-terminal/), which can be deleted.
 #
 # The container runs the target's architecture, so the packages' scripts
 # run when the root file system is installed: building for another
@@ -511,7 +511,8 @@ builder_main() {
 	# apps stay in world, where they can be removed one by one. Also
 	# cervino-vlc (on the Pi, VLC, with Raspberry Pi OS's patches for its
 	# hardware decoders) and cervino-gstreamer, built below, which can be
-	# removed for Alpine's packages, and cervino-terminal, Zellij in foot.
+	# removed for Alpine's packages, and cervino-terminal, Zellij in foot
+	# and AstroNvim.
 	local world
 	world=$(printf '%s\n' alpine-base doas \
 		elogind polkit-elogind "$BROWSER" \
@@ -607,7 +608,8 @@ builder_main() {
 	# --- cervino-vlc, cervino-gstreamer and cervino-terminal packages --------
 	# The Pi's media packages built above, two of them in each (see
 	# build_bundle); empty elsewhere. The Pi's other packages are published
-	# as they are. cervino-terminal, Zellij in foot, has only its own files.
+	# as they are. cervino-terminal, Zellij in foot and AstroNvim, has only
+	# its own files.
 	local published=()
 	build_bundle cervino-vlc "$VLC_PKGVER" ffmpeg7 vlc
 	build_bundle cervino-gstreamer "$GSTREAMER_PKGVER" gst-plugins-base gst-plugins-bad

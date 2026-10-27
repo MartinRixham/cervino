@@ -4,6 +4,10 @@
 # running zellij with the app id zellij, which GNOME Shell matches to the
 # launcher; /etc/zellij/config.kdl is Zellij's configuration for users who
 # have none of their own. zellij.svg, the launcher's icon, is Zellij's logo.
+# Also the Neovim editor: /etc/xdg/nvim/init.lua, AstroNvim for users who
+# have no Neovim configuration of their own, with the programs AstroNvim
+# runs and Alpine's Tree-sitter parsers; and Neovim's launcher, running it
+# in foot, in the Nerd Font, which has AstroNvim's icons.
 # build-alpine-gnome-iso.sh copies this directory into the build, with
 # cervino-terminal.conf (PKGVER, the version) next to it.
 # abuild sets startdir and pkgdir and reads the variables set here.
@@ -13,13 +17,14 @@
 pkgname=cervino-terminal
 pkgver=$PKGVER
 pkgrel=0
-pkgdesc="Zellij in foot, the terminal of the Cervino GNOME desktop"
+pkgdesc="Zellij in foot and AstroNvim, the terminal of the Cervino GNOME desktop"
 url="https://github.com/MartinRixham/cervino"
 arch="noarch"
 license="Apache-2.0 AND MIT"
-depends="zellij foot font-droid-sans-mono-nerd"
-# foot's launchers, which this package's copies hide.
-replaces="foot"
+depends="zellij foot font-droid-sans-mono-nerd
+	neovim git ripgrep lazygit bottom gdu tree-sitter-grammars"
+# foot's launchers, which this package's copies hide, and Neovim's.
+replaces="foot neovim"
 options="!check"
 
 makefile() {
@@ -31,6 +36,7 @@ makefile() {
 
 package() {
 	makefile root:root 0644 "$pkgdir"/etc/zellij/config.kdl < "$startdir"/config.kdl
+	makefile root:root 0644 "$pkgdir"/etc/xdg/nvim/init.lua < "$startdir"/init.lua
 	makefile root:root 0644 "$pkgdir"/usr/share/icons/hicolor/scalable/apps/zellij.svg \
 		< "$startdir"/zellij.svg
 	makefile root:root 0644 "$pkgdir"/usr/share/applications/zellij.desktop <<'EOF'
@@ -44,6 +50,23 @@ Terminal=false
 Categories=System;TerminalEmulator;
 Keywords=terminal;multiplexer;zellij;
 StartupWMClass=zellij
+EOF
+
+	# Neovim's launcher, running it in foot, in the Nerd Font, rather than
+	# in the terminal GNOME picks. Like Neovim's, it opens text files.
+	makefile root:root 0644 "$pkgdir"/usr/share/applications/nvim.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Neovim
+GenericName=Text Editor
+Comment=Edit text files
+Icon=nvim
+Exec=foot -F --app-id=nvim --font="DroidSansM Nerd Font:size=12" nvim %F
+Terminal=false
+Categories=Utility;TextEditor;Development;
+Keywords=Text;editor;
+StartupWMClass=nvim
+MimeType=text/english;text/plain;text/x-makefile;text/x-c++hdr;text/x-c++src;text/x-chdr;text/x-csrc;text/x-java;text/x-moc;text/x-pascal;text/x-tcl;text/x-tex;application/x-shellscript;text/x-c;text/x-c++;
 EOF
 
 	# foot's own launchers, kept out of the app grid (NoDisplay), so that it

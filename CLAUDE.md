@@ -412,8 +412,9 @@ file already published. That needs the history, so the build job checks
 out with `fetch-depth: 0`. A change elsewhere that changes what they hold
 has to touch one of those paths too.
 
-**`cervino-terminal`.** Zellij in foot, the terminal: `build_bundle` with
-no packages, so it has only its own files, the same on both targets. It
+**`cervino-terminal`.** Zellij in foot, the terminal, and AstroNvim:
+`build_bundle` with no packages, so it has only its own files, the same on
+both targets. It
 depends on Alpine's `zellij`, `foot` and `font-droid-sans-mono-nerd`, and
 holds a "Zellij" launcher (`foot -F --app-id=zellij` with the DroidSansM
 Nerd Font, running `zellij`; GNOME Shell matches the window to it by the
@@ -425,9 +426,38 @@ defaults reach users as Zellij is upgraded. That is move mode on Ctrl m
 "move"`, which it unbinds there) and no startup tips. It also takes over
 foot's three launchers (`replaces="foot"`) with copies that have
 `NoDisplay=true`, so the app grid shows Zellij alone; a change foot makes
-to them has to be copied by hand. `test/features.sh` checks the launcher's
-program, the font, that `zellij setup --check` accepts the configuration,
-and that foot's launchers are hidden.
+to them has to be copied by hand.
+
+It also brings AstroNvim. It depends on `neovim`, the programs AstroNvim
+runs (`git`, `ripgrep`, `lazygit`, `bottom`, `gdu`) and
+`tree-sitter-grammars`, and holds:
+
+- `/etc/xdg/nvim/init.lua` (`init.lua`), which Neovim reads when the user
+  has no `~/.config/nvim`: AstroNvim's template in one file. On first start
+  lazy.nvim downloads AstroNvim (`^6`) and its plugins into
+  `~/.local/share/nvim`, where it also keeps its lock file (in
+  `~/.config/nvim` it would hide this file from Neovim);
+- Neovim's launcher (`replaces="neovim"`), running `nvim %F` in foot with
+  the Nerd Font, for AstroNvim's icons, instead of in the terminal GNOME
+  picks; a change neovim makes to it has to be copied by hand.
+
+nvim-treesitter builds its parsers with a C compiler, which the system
+lacks. So nothing is built (AstroCore's `auto_install` and
+`ensure_installed` are off), and Neovim takes Alpine's parsers from
+`$VIMRUNTIME/parser`. AstroCore only uses parsers nvim-treesitter built, so
+`init.lua` wraps `astrocore.treesitter.installed()` to add Alpine's, and
+puts nvim-treesitter's `runtime/` (its queries) on the runtime path. A
+language whose queries don't load with Alpine's parser (a node type it
+lacks; gomod, kotlin, regex and scala when this was written) is left out,
+keeping Vim's syntax highlighting, as AstroCore would fail on it.
+Mason installs nothing unless asked; most of what it downloads is built for
+glibc.
+
+`test/features.sh` checks the launchers' programs, the font, that
+`zellij setup --check` accepts the configuration, that nvim finds
+`/etc/xdg/nvim/init.lua` and it compiles, that it has a Python parser, and
+that foot's launchers are hidden. It can't start AstroNvim, which needs
+the network.
 
 **`cervino-desktop`.** It builds the package with `abuild -d` in
 `/work/cervino/cervino-desktop`, from a copy of `cervino-desktop/` with,
