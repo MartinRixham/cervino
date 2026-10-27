@@ -52,7 +52,8 @@ from a desktop distribution, and keeps it when installed to disk:
   given real-time priority through RealtimeKit, with AirPlay
   speakers on the network as outputs (playing after 30 s of silence starts
   a new AirPlay session, so a speaker that has dropped the old one
-  recovers), `xdg-utils`, Flatpak
+  recovers, and a speaker whose output went away on an error is found
+  again), `xdg-utils`, Flatpak
   with Flathub, and the SPICE guest agent for VMs
 - `gst-libav` (FFmpeg's decoders for GStreamer): multithreaded H.264 and
   HEVC, and the AC-3, E-AC-3 and DTS sound tracks of most video files, and

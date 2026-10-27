@@ -241,60 +241,24 @@ EOF
 	# from ::). IPv4 has the kernel's rp_filter.
 	makefile root:root 0644 "$pkgdir"/etc/nftables.d/50-desktop.nft < "$startdir"/50-desktop.nft
 
-	# PipeWire adds a sink for each AirPlay speaker Avahi finds. Keep its stream
-	# running while nothing plays: when a player pauses (VLC does while it
-	# buffers), PipeWire would stop the stream and restart it on the same RTSP
-	# session with a jump in the RTP timestamps, and AirPlay 2 speakers then drop
-	# everything that follows in silence. For the same reason, keep it in the
-	# Dummy-Driver's group, so it always runs on that clock: otherwise, while
-	# another sink such as HDMI plays (a GNOME alert sound is enough), PipeWire
-	# moves it onto that sink's clock and back, and its RTP timestamps jump.
-	makefile root:root 0644 "$pkgdir"/etc/pipewire/pipewire.conf.d/50-raop.conf <<'EOF'
-context.modules = [
-	{ name = libpipewire-module-raop-discover
-		condition = [ { module.raop = !false } ]
-		args = {
-			stream.rules = [
-				{ matches = [ { raop.ip = "~.*" } ]
-					actions = {
-						create-stream = {
-							stream.props = {
-								node.pause-on-idle = false
-								node.always-process = true
-								node.group = pipewire.dummy
-							}
-						}
-					}
-				}
-			]
-		}
-	}
-]
-EOF
-
-	# Since those streams never stop, neither does their RTSP session, and a
-	# speaker can drop it without telling PipeWire (a KEF LSX II did), which
-	# then streams into it in silence for good. A WirePlumber hook suspends an
-	# AirPlay sink when a stream starts playing to it after 30 s with none,
-	# which gets it a new session; within those 30 s (a track change) it
-	# keeps the old one.
-	makefile root:root 0644 "$pkgdir"/etc/wireplumber/wireplumber.conf.d/50-raop-refresh.conf \
-		<<'EOF'
+	# WirePlumber looks for AirPlay speakers (PipeWire's module-raop-discover)
+	# and keeps their sinks working: see raop.lua.
+	makefile root:root 0644 "$pkgdir"/etc/wireplumber/wireplumber.conf.d/50-raop.conf <<'EOF'
 wireplumber.components = [
   {
-    name = cervino/raop-refresh.lua, type = script/lua
-    provides = custom.raop-refresh
+    name = cervino/raop.lua, type = script/lua
+    provides = custom.raop
   }
 ]
 
 wireplumber.profiles = {
   main = {
-    custom.raop-refresh = required
+    custom.raop = required
   }
 }
 EOF
-	makefile root:root 0644 "$pkgdir"/usr/share/wireplumber/scripts/cervino/raop-refresh.lua \
-		< "$startdir"/raop-refresh.lua
+	makefile root:root 0644 "$pkgdir"/usr/share/wireplumber/scripts/cervino/raop.lua \
+		< "$startdir"/raop.lua
 
 	# sshd (installed, not enabled) serves sftp with the external sftp-server,
 	# which runs as the user outside sshd's AppArmor profile: Alpine's default,

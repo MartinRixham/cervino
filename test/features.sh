@@ -813,12 +813,14 @@ t_audio_sink() {
 
 # PipeWire's module-rt asks RealtimeKit for real-time scheduling of each
 # daemon's data loop, the thread that drives the audio graph and network
-# streams; with normal scheduling a busy desktop delays it.
+# streams (WirePlumber's, AirPlay's); with normal scheduling a busy desktop
+# delays it.
 t_audio_realtime() {
 	local f comm d t s policy found=0 slow=
 	for f in /proc/[0-9]*/comm; do
 		read -r comm <"$f" 2>/dev/null || continue
-		[[ $comm == pipewire || $comm == pipewire-pulse ]] || continue
+		[[ $comm == pipewire || $comm == pipewire-pulse || $comm == wireplumber ]] ||
+			continue
 		d=${f%/comm}
 		[[ -O $d ]] || continue
 		for t in "$d"/task/*; do
@@ -841,16 +843,18 @@ t_audio_realtime() {
 	}
 }
 
-# PipeWire looks for AirPlay speakers through Avahi only while its
-# module-raop-discover is loaded.
+# AirPlay speakers are found through Avahi only while PipeWire's
+# module-raop-discover is loaded, which the package's raop.lua does in
+# WirePlumber.
 t_airplay_discovery() {
 	local f comm
 	for f in /proc/[0-9]*/comm; do
 		read -r comm <"$f" 2>/dev/null || continue
-		[[ $comm == pipewire ]] || continue
+		[[ $comm == wireplumber ]] || continue
 		grep -qs libpipewire-module-raop-discover "${f%/comm}/maps" && return 0
 	done
-	echo "PipeWire is not looking for AirPlay speakers (module-raop-discover not loaded)"
+	echo "WirePlumber is not looking for AirPlay speakers" \
+		"(module-raop-discover not loaded)"
 	return 1
 }
 
