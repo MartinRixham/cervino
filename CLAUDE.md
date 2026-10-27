@@ -223,7 +223,7 @@ CI (`.github/workflows/build-iso.yml`) runs the script with
 - **The packages**: the build jobs set `APK_REPO` to the repository's GitHub
   Pages URL, and each uploads its `out/repo` (the packages as
   `<branch>/<arch>/*.apk`: `cervino-desktop`, `cervino-vlc`,
-  `cervino-gstreamer`, `cervino-terminal`, `mutter`, `showtime`, and for
+  `cervino-gstreamer`, `cervino-terminal`, `mutter`, and for
   `rpi` `wpa_supplicant`, `bluez` and `mesa`, with their subpackages but
   `-dbg`) as `cervino-repo-<target>`.
 - **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` in an
@@ -396,18 +396,20 @@ versioned Alpine's plus `_p<n>`, our patch set's number:
   video and the sound skipped every few seconds. It queues a second of
   decoded video in front of the sink.
 
-`wpa_supplicant`, `bluez`, `mesa`, `mutter` and `showtime` are published
-as they are (but their `-dbg` packages, too big for GitHub Pages), and so
-replace Alpine's. A change to one of them needs a new `pkgrel`, as
-`ci/publish-repo.sh` keeps a file already published. The four media
-packages are published only inside `cervino-vlc` (`vlc` and `ffmpeg7`) and
-`cervino-gstreamer` (`gst-plugins-base` and `gst-plugins-bad`).
+`wpa_supplicant`, `bluez`, `mesa` and `mutter` are published as they are
+(but their `-dbg` packages, too big for GitHub Pages), and so replace
+Alpine's. A change to one of them needs a new `pkgrel`, as
+`ci/publish-repo.sh` keeps a file already published. The other five are
+published only inside `cervino-vlc` (`vlc` and `ffmpeg7`) and
+`cervino-gstreamer` (`gst-plugins-base` and `gst-plugins-bad` on `rpi`,
+and `showtime` on both), so that deleting those brings Alpine's back.
 
 **`cervino-vlc` and `cervino-gstreamer`.** `build_bundle NAME VERSION
 PACKAGE...` builds each with `abuild -d` in `/work/cervino/<name>`, from a
 copy of `<name>/` with `<name>.conf` (`PKGVER`, `TARGET_ARCH`) next to the
-APKBUILD. On `x86_64` they are empty. For `rpi` each also gets, from its
-pair of packages:
+APKBUILD. Each also gets, from its packages built for the target (for
+`rpi` its pair, plus `showtime` for `cervino-gstreamer`; on `x86_64` only
+`showtime`, so `cervino-vlc` is empty):
 
 - `apks/`: their runtime `.apk`s (not `-dev`, `-doc`, `-dbg`, `-lang` or
   `vlc-daemon`), whose files `package()` unpacks into it;
@@ -424,7 +426,10 @@ Each pair has to stay together: VLC builds against ffmpeg7's patches, and
 gst-plugins-bad's HEVC decoder uses the formats gst-plugins-base adds. The
 pairs don't depend on each other: the GStreamer plug-ins don't use ffmpeg7,
 and VLC, built against our gst-plugins-base, links it only by soname, whose
-ABI only adds to Alpine's.
+ABI only adds to Alpine's. Showtime is in `cervino-gstreamer` because its
+patch, like VLC's caching one, is a playback trade-off (a second of decoded
+video held in memory) that deleting the package should undo; it works with
+Alpine's plug-ins as well as ours.
 
 In world, each takes the place of Alpine's packages of those names (its
 provides make them one name each, so they never install together), and
@@ -438,7 +443,7 @@ it.
 Their version is not `PKGVER` but `VLC_PKGVER` and `GSTREAMER_PKGVER`
 (and `cervino-terminal`'s `TERMINAL_PKGVER`), which `host_main`'s
 `bundle_version` takes from the last commit that changed the package's
-directory, its two packages in `rpi/` or
+directory, its packages in `rpi/` and `patched/` or
 `build_bundle` (`git log -L`), so that a release leaving them as they were
 doesn't make installs download them again; `ci/publish-repo.sh` keeps a
 file already published. That needs the history, so the build job checks

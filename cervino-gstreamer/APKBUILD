@@ -1,21 +1,23 @@
-# GStreamer's base and bad plug-ins, as a package of their own beside
-# cervino-desktop, so that deleting it brings back Alpine's. On the Pi it is
-# Raspberry Pi OS's builds of gst-plugins-base and gst-plugins-bad (rpi/),
-# for the Pi's HEVC decoder in GStreamer (Showtime, GNOME Web, the file
-# previews): the build makes them as Alpine's packages and puts their
-# runtime ones in apks/ next to this, and this package holds their files
-# and provides each of them. While it is installed (it is in
-# /etc/apk/world), apk takes it for those names; once deleted, Alpine's
-# packages come back. The patched packages are not published under their
-# own names, which would rank above Alpine's and so shadow them. Elsewhere
-# it is empty, as the system uses Alpine's.
+# Cervino's GStreamer playback, as a package of its own beside
+# cervino-desktop, so that deleting it brings back Alpine's packages. It is
+# Showtime with our patch (patched/showtime), which queues a second of
+# decoded video so that its sound doesn't skip on an AirPlay speaker, and
+# on the Pi Raspberry Pi OS's builds of GStreamer's base and bad plug-ins
+# (rpi/gst-plugins-base and rpi/gst-plugins-bad), for the Pi's HEVC decoder
+# in GStreamer (Showtime, GNOME Web, the file previews). The build makes
+# them as Alpine's packages and puts their runtime ones in apks/ next to
+# this, and this package holds their files and provides each of them.
+# While it is installed (it is in /etc/apk/world), apk takes it for those
+# names; once deleted, Alpine's packages come back. The patched packages
+# are not published under their own names, which would rank above Alpine's
+# and so shadow them.
 # The bad plug-ins' decoder uses the video formats the base ones add, so
-# the two go together.
+# the two go together. Showtime works with either's plug-ins.
 # build-alpine-gnome-iso.sh copies this directory into the build, with
 # cervino-gstreamer.conf (PKGVER, the version; TARGET_ARCH, the
-# architecture it is for; and for aarch64 PROVIDES, DEPENDS and LICENSE,
-# what the packages provide, what they depend on but each other, and their
-# licenses) and, for aarch64, apks/ next to it.
+# architecture it is for; PROVIDES, DEPENDS and LICENSE, what the packages
+# provide, what they depend on but each other, and their licenses) and
+# apks/ next to it.
 # abuild sets startdir and pkgdir and reads the variables set here.
 # shellcheck shell=sh disable=SC2034,SC2153,SC2154
 . "$startdir"/cervino-gstreamer.conf
@@ -26,18 +28,16 @@ pkgrel=0
 pkgdesc="GStreamer plug-ins of the Cervino GNOME desktop"
 url="https://github.com/MartinRixham/cervino"
 arch="noarch"
-license="Apache-2.0"
+license="$LICENSE"
+provides="$PROVIDES"
+depends="$DEPENDS"
 # The packages' files are stripped already, their debug symbols in their
 # -dbg packages. What they provide and depend on is in the .conf: abuild
 # could only trace it with the libraries they link installed.
 options="!check !strip !tracedeps"
 
-if [ "$TARGET_ARCH" = aarch64 ]; then
-	arch="aarch64"
-	license="$LICENSE"
-	provides="$PROVIDES"
-	depends="$DEPENDS"
-fi
+# Showtime is noarch; the Pi's plug-ins are not.
+[ "$TARGET_ARCH" = aarch64 ] && arch="aarch64"
 
 package() {
 	mkdir -p "$pkgdir"

@@ -145,9 +145,8 @@ and uploads the ISO and the Raspberry Pi image, each with its `SHA256SUMS`, as
 workflow artifacts. You can also start it by hand from the Actions tab and
 choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
-`cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `mutter`,
-`showtime`, and the Pi's `wpa_supplicant`, `bluez` and `mesa`) to the
-update repo (see
+`cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `mutter`, and
+the Pi's `wpa_supplicant`, `bluez` and `mesa`) to the update repo (see
 [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
@@ -387,8 +386,14 @@ doas apk del cervino-gstreamer    # Alpine's GStreamer plug-ins
 ```
 
 Alpine's packages then take their place, without the hardware decoding
-(`doas apk add` switches back). On a PC both packages are empty: the
-system uses Alpine's packages, and the PC image has no VLC.
+(`doas apk add` switches back). On a PC `cervino-vlc` is empty, as the PC
+image has no VLC, and the system uses Alpine's GStreamer plug-ins.
+
+`cervino-gstreamer` also holds Showtime, on both, with a patch of ours
+that keeps its sound from skipping on an AirPlay speaker: it holds a
+second of decoded video (about 75 MB at 1080p), so that the audio can be
+decoded far enough ahead of it. Deleting `cervino-gstreamer` brings back
+Alpine's Showtime too.
 
 The Pi's Wi-Fi and Bluetooth are set up as on Raspberry Pi OS too: the
 Wi-Fi driver leaves roaming and the WPA2/WPA3 handshakes to wpa_supplicant
@@ -468,8 +473,9 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
      [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the
      Pi, the runtime packages of `ffmpeg7` and `vlc`, and of
-     `gst-plugins-base` and `gst-plugins-bad`, each pair in one, providing
-     their names at Alpine's versions; empty on a PC;
+     `gst-plugins-base` and `gst-plugins-bad`, each pair in one, and for
+     both `showtime` in `cervino-gstreamer`, providing their names at
+     Alpine's versions (`cervino-vlc` is empty on a PC);
    - the `cervino-terminal` package, built with abuild from
      [`cervino-terminal/APKBUILD`](cervino-terminal/APKBUILD): the Zellij
      launcher and configuration, depending on Alpine's `zellij`, `foot`

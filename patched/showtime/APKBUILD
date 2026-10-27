@@ -1,9 +1,10 @@
 # Alpine's community/showtime (_alpine below) with video-queue.patch, ours:
 # on an AirPlay speaker, the sound skipped every few seconds, the demuxer
 # stalling on the video while the audio had to be decoded well ahead of it.
-# pkgver is Alpine's, plus _p and our patch set's number, so it ranks above
-# Alpine's. build-alpine-gnome-iso.sh stops when Alpine's showtime is no
-# longer _alpine.
+# pkgver is Alpine's, plus _p and our patch set's number. It is published
+# only inside cervino-gstreamer, which provides it at Alpine's version, so
+# that deleting that brings back Alpine's. build-alpine-gnome-iso.sh stops
+# when Alpine's showtime is no longer _alpine.
 _alpine=50.0-r2
 maintainer="team/gnome <achill@achill.org>"
 pkgname=showtime

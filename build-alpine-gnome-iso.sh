@@ -36,11 +36,11 @@
 # built from rpi/: Alpine's packages with Raspberry Pi OS's patches for the
 # Pi's hardware video decoders, Wi-Fi and Bluetooth. The media ones come in
 # two packages, cervino-vlc (vlc and ffmpeg7) and cervino-gstreamer
-# (cervino-vlc/ and cervino-gstreamer/; empty on a PC), which can be deleted
-# for Alpine's; wpa_supplicant and bluez are published with cervino-desktop,
-# as is the Pi's mesa, with a patch of ours. Both images have mutter and
-# showtime built from patched/: Alpine's with fixes of ours, published the
-# same way.
+# (cervino-vlc/ and cervino-gstreamer/), which can be deleted for Alpine's;
+# wpa_supplicant and bluez are published with cervino-desktop, as is the
+# Pi's mesa, with a patch of ours. Both images have mutter and showtime
+# built from patched/: Alpine's with fixes of ours, mutter published the
+# same way, showtime in cervino-gstreamer (on a PC, all it holds).
 # The terminal, Zellij in foot, with AstroNvim, is a package of its own
 # too, cervino-terminal (cervino-terminal/), which can be deleted.
 #
@@ -68,9 +68,9 @@
 #   SIGNING_KEY     abuild private key (its public key is derived from it,
 #                   named after the file plus .pub) to sign the packages
 #                   built here (cervino-desktop, cervino-vlc,
-#                   cervino-gstreamer, cervino-terminal, mutter, showtime,
-#                   and the Pi's wpa_supplicant, bluez and mesa) and the
-#                   image's repo with (default: a new key each build)
+#                   cervino-gstreamer, cervino-terminal, mutter, and the
+#                   Pi's wpa_supplicant, bluez and mesa) and the image's
+#                   repo with (default: a new key each build)
 #   APK_REPO        URL of the repo those packages are published in, without
 #                   the branch; installs get updates from APK_REPO/<branch>
 #                   (default: none). Its packages must be signed with
@@ -154,14 +154,14 @@ host_main() {
 	pkgver=${pkgver:-$(date -u +%Y%m%d.%H%M%S)}
 	# cervino-vlc's, cervino-gstreamer's and cervino-terminal's: the time of
 	# the last commit that changed what they are made of (their directory,
-	# their packages in rpi/, build_bundle), so that a release that leaves
+	# their packages in rpi/ and patched/, build_bundle), so that a release that leaves
 	# them as they were doesn't make installs download them again
 	# (ci/publish-repo.sh keeps a file already published). git log needs the
 	# history for that: a shallow clone has only the last commit.
 	local vlc_pkgver gstreamer_pkgver terminal_pkgver
 	vlc_pkgver=$(bundle_version cervino-vlc rpi/ffmpeg7 rpi/vlc)
 	gstreamer_pkgver=$(bundle_version cervino-gstreamer rpi/gst-plugins-base \
-		rpi/gst-plugins-bad)
+		rpi/gst-plugins-bad patched/showtime)
 	terminal_pkgver=$(bundle_version cervino-terminal)
 
 	# The signing key goes in as a file, under a fixed path; apk knows a key by
@@ -339,12 +339,13 @@ build_rootfs() {
 
 # build_bundle NAME VERSION PACKAGE...: builds NAME (cervino-vlc,
 # cervino-gstreamer or cervino-terminal) at VERSION from NAME/APKBUILD for
-# builder_main, which has (on the Pi) built each PACKAGE from rpi/ into
-# $repodir, with its files in pkgfiles and the Alpine version it is based
-# on in alpinever, and adds NAME's file to its published. host_main's bundle_version gives VERSION
-# from the commits that changed NAME/, the PACKAGEs or this function.
+# builder_main, which has built each PACKAGE for this target (rpi/'s only on
+# the Pi) from rpi/ or patched/ into $repodir, with its files in pkgfiles
+# and the Alpine version it is based on in alpinever, and adds NAME's file
+# to its published. host_main's bundle_version gives VERSION from the
+# commits that changed NAME/, the PACKAGEs or this function.
 #
-# On the Pi, NAME holds the PACKAGEs' runtime packages (not their -dev,
+# NAME holds the runtime packages of the PACKAGEs built (not their -dev,
 # -doc, -dbg and -lang packages, nor vlc-daemon), which are published only
 # inside it: under their own names they would rank above Alpine's, so that
 # deleting it would not bring those back. It provides each of them, and
@@ -355,8 +356,8 @@ build_rootfs() {
 # license is all of theirs (none has an OR). All that comes from their
 # .PKGINFO: abuild can't trace the libraries again, as those they link
 # aren't installed here. The only install scripts among them are vlc-libs'
-# plug-in cache scripts, which become cervino-vlc's. Elsewhere, and with no
-# PACKAGEs (cervino-terminal), NAME has only its own files.
+# plug-in cache scripts, which become cervino-vlc's. With none built
+# (cervino-vlc on a PC, cervino-terminal), NAME has only its own files.
 build_bundle() {
 	local bundle=$1 version=$2 src=/work/cervino/$1 name file pkg info ver script dep
 	local provides= depends= licenses= dep_name
@@ -365,43 +366,41 @@ build_bundle() {
 	shift 2
 	mkdir -p "$src"
 	cp -R /"$bundle"/. "$src"/
-	if [[ $TARGET == rpi ]]; then
-		mkdir -p "$src"/apks
-		for name; do
-			# shellcheck disable=SC2086
-			for file in ${pkgfiles[$name]}; do
-				info=$(tar -xzOf "$repodir/$file" .PKGINFO 2> /dev/null) ||
-					die "could not read $file's .PKGINFO"
-				pkg=$(sed -n 's/^pkgname = //p' <<< "$info")
-				[[ $pkg =~ -(dev|doc|dbg|lang|daemon)$ ]] && continue
-				cp "$repodir/$file" "$src"/apks/
-				ver=$(sed -n 's/^pkgver = //p' <<< "$info")
-				mapfile -t prov < <(echo "$pkg=$ver" && sed -n 's/^provides = //p' <<< "$info")
-				provs+=("${prov[@]/%=$ver/=${alpinever[$name]}}")
-				mapfile -t -O "${#deps[@]}" deps < <(sed -n 's/^depend = //p' <<< "$info")
-				licenses+=" $(sed -n 's/^license = //p' <<< "$info")"
-				for script in $(tar -tzf "$repodir/$file" 2> /dev/null |
-					grep -E '^\.(pre-|post-|trigger$)'); do
-					case $bundle:$pkg:$script in
-					cervino-vlc:vlc-libs:.trigger | cervino-vlc:vlc-libs:.pre-deinstall) ;;
-					*) die "$pkg has a $script script, which $bundle lacks" ;;
-					esac
-					tar -xzOf "$repodir/$file" "$script" 2> /dev/null > "$src/$bundle$script" ||
-						die "could not take $pkg's $script script"
-					deps+=(/bin/sh)
-				done
+	mkdir -p "$src"/apks
+	for name; do
+		# shellcheck disable=SC2086
+		for file in ${pkgfiles[$name]:-}; do
+			info=$(tar -xzOf "$repodir/$file" .PKGINFO 2> /dev/null) ||
+				die "could not read $file's .PKGINFO"
+			pkg=$(sed -n 's/^pkgname = //p' <<< "$info")
+			[[ $pkg =~ -(dev|doc|dbg|lang|daemon)$ ]] && continue
+			cp "$repodir/$file" "$src"/apks/
+			ver=$(sed -n 's/^pkgver = //p' <<< "$info")
+			mapfile -t prov < <(echo "$pkg=$ver" && sed -n 's/^provides = //p' <<< "$info")
+			provs+=("${prov[@]/%=$ver/=${alpinever[$name]}}")
+			mapfile -t -O "${#deps[@]}" deps < <(sed -n 's/^depend = //p' <<< "$info")
+			licenses+=" $(sed -n 's/^license = //p' <<< "$info")"
+			for script in $(tar -tzf "$repodir/$file" 2> /dev/null |
+				grep -E '^\.(pre-|post-|trigger$)'); do
+				case $bundle:$pkg:$script in
+				cervino-vlc:vlc-libs:.trigger | cervino-vlc:vlc-libs:.pre-deinstall) ;;
+				*) die "$pkg has a $script script, which $bundle lacks" ;;
+				esac
+				tar -xzOf "$repodir/$file" "$script" 2> /dev/null > "$src/$bundle$script" ||
+					die "could not take $pkg's $script script"
+				deps+=(/bin/sh)
 			done
 		done
-		for dep in "${provs[@]}"; do
-			ours[${dep%%=*}]=1
-			provides+=" $dep"
-		done
-		for dep in "${deps[@]}"; do
-			dep_name=${dep#!}
-			dep_name=${dep_name%%[<>=~]*}
-			[[ -n ${ours[$dep_name]:-} ]] || depends+=" $dep"
-		done
-	fi
+	done
+	for dep in "${provs[@]}"; do
+		ours[${dep%%=*}]=1
+		provides+=" $dep"
+	done
+	for dep in "${deps[@]}"; do
+		dep_name=${dep#!}
+		dep_name=${dep_name%%[<>=~]*}
+		[[ -n ${ours[$dep_name]:-} ]] || depends+=" $dep"
+	done
 	# shellcheck disable=SC2086
 	printf '%s=%s\n' PKGVER "$(shquote "$version")" \
 		TARGET_ARCH "$(shquote "$ARCH")" \
@@ -548,9 +547,9 @@ builder_main() {
 	# (patched/): mutter, so that GNOME Shell survives a buffer it can't
 	# import, and showtime, so that its sound doesn't skip on an AirPlay
 	# speaker. mutter comes first, so that it builds with Alpine's mesa-dev.
-	# wpa_supplicant, bluez, mesa, mutter and showtime rank above Alpine's
-	# and so replace them (but for their -dbg packages, too big to
-	# publish); the rest go in cervino-vlc and cervino-gstreamer (below).
+	# wpa_supplicant, bluez, mesa and mutter rank above Alpine's and so
+	# replace them (but for their -dbg packages, too big to publish); the
+	# rest go in cervino-vlc and cervino-gstreamer (below).
 	# Each is Alpine's APKBUILD of one version (its _alpine) with the
 	# patches: stop if Alpine's has moved on, as its changes (security
 	# fixes, rebuilds for libraries' new sonames) would be missing.
@@ -565,7 +564,7 @@ builder_main() {
 	# made them, so they are signed again with this build's key. Packages
 	# built here are left in /work/pkgcache for container_main to keep.
 	local name file repodir=/work/packages/cervino/$ARCH
-	local patched="mutter showtime" replaces="mutter showtime"
+	local patched="mutter showtime" replaces="mutter"
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"
@@ -624,13 +623,15 @@ builder_main() {
 	done
 
 	# --- cervino-vlc, cervino-gstreamer and cervino-terminal packages --------
-	# The Pi's media packages built above, two of them in each (see
-	# build_bundle); empty elsewhere. The other patched packages are
-	# published as they are. cervino-terminal, Zellij in foot and AstroNvim,
+	# The Pi's media packages built above, two of them in each, and
+	# showtime in cervino-gstreamer on both targets (see build_bundle); on a
+	# PC cervino-vlc is empty. The other patched packages are published as
+	# they are. cervino-terminal, Zellij in foot and AstroNvim,
 	# has only its own files.
 	local published=()
 	build_bundle cervino-vlc "$VLC_PKGVER" ffmpeg7 vlc
-	build_bundle cervino-gstreamer "$GSTREAMER_PKGVER" gst-plugins-base gst-plugins-bad
+	build_bundle cervino-gstreamer "$GSTREAMER_PKGVER" gst-plugins-base gst-plugins-bad \
+		showtime
 	build_bundle cervino-terminal "$TERMINAL_PKGVER"
 	for name in $replaces; do
 		# shellcheck disable=SC2086
