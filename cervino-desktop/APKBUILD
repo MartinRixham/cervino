@@ -30,8 +30,7 @@ license="Apache-2.0"
 # enables the services of the -openrc packages.
 depends="/bin/sh doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc avahi-openrc
 	bluez-openrc chrony-openrc cups-openrc earlyoom-openrc networkmanager-openrc
-	nftables-openrc openrc openrc-settingsd-openrc spice-vdagent-openrc
-	zram-init-openrc $DEPENDS"
+	nftables-openrc openrc openrc-settingsd-openrc zram-init-openrc $DEPENDS"
 replaces="alpine-baselayout alpine-baselayout-data busybox-openrc dbus-openrc
 	earlyoom-openrc openrc shadow zram-init-openrc"
 install="$pkgname.post-install"

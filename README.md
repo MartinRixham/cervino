@@ -54,7 +54,7 @@ from a desktop distribution:
   a new AirPlay session, so a speaker that has dropped the old one
   recovers, and a speaker whose output went away on an error is found
   again), `xdg-utils`, Flatpak
-  with Flathub, and the SPICE guest agent for VMs
+  with Flathub, and the SPICE guest agent for VMs (installed only in a VM)
 - `gst-libav` (FFmpeg's decoders for GStreamer): multithreaded H.264 and
   HEVC, and the AC-3, E-AC-3 and DTS sound tracks of most video files, and
   dav1d's AV1 decoder (`gst-plugins-rs-dav1d`)
@@ -329,6 +329,9 @@ puts a wrapper in front of it that:
   installed system when you create an admin user (the default), who gets
   root with `doas` instead,
 - leaves the live session out of the installed system,
+- leaves the SPICE guest agent (`spice-vdagent`) out of the installed system
+  unless it is installed in a VM (`apk add spice-vdagent
+  spice-vdagent-openrc` adds it back),
 - offers an atomic install, a system kept as versions (see below).
 
 An answer file passed with `-f` still overrides these defaults.

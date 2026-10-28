@@ -46,8 +46,12 @@ case $disks in *" "*) stock=1 ;; esac
 [ -d "${disks:-/nonexistent}" ] && stock=1
 
 # Alpine's setup-disk, for what it does, copies the system (see the apk shim
-# in genapkovl-gnomelive.sh).
-export CERVINO_COPY_ROOT=1
+# in genapkovl-gnomelive.sh). Both leave out the SPICE guest agent but in a
+# VM, which a hypervisor shows with the CPU flag (the Pi's image never runs
+# in one).
+CERVINO_VM=
+grep -qw hypervisor /proc/cpuinfo && CERVINO_VM=1
+export CERVINO_COPY_ROOT=1 CERVINO_VM
 [ -z "$stock" ] || exec /usr/sbin/setup-disk "$@"
 [ "$mode" != none ] && [ "$disks" != none ] || exit 0
 
@@ -372,10 +376,13 @@ if mount --bind /proc "$mnt"/proc && mount --bind /dev "$mnt"/dev; then
 	# keeps Flatpak, and update-alpine add installs packages.
 	apk del --root "$mnt" --quiet gnome-software-plugin-apk2 ||
 		echo "GNOME Software's apk plugin could not be removed." >&2
+	[ -n "$CERVINO_VM" ] || apk del --root "$mnt" --quiet spice-vdagent spice-vdagent-openrc ||
+		echo "The SPICE guest agent could not be removed." >&2
 	umount "$mnt"/dev "$mnt"/proc
 fi
 
 rm -f "$mnt"/etc/runlevels/default/apk-polkit-server
+[ -e "$mnt"/etc/init.d/spice-vdagentd ] || rm -f "$mnt"/etc/runlevels/default/spice-vdagentd
 
 # Firefox's Widevine, as the apk shim gets it for a sys install.
 if [ -x /usr/libexec/cervino/widevine ]; then

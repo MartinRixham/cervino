@@ -29,6 +29,13 @@ for a; do
 done
 /usr/sbin/apk "$@" || exit
 
+# The SPICE guest agent only in a VM (see the setup-disk shim).
+if [ -z "$CERVINO_VM" ]; then
+	/usr/sbin/apk del --root "$root" --quiet spice-vdagent spice-vdagent-openrc ||
+		echo "The SPICE guest agent could not be removed." >&2
+	rm -f "$root"/etc/runlevels/default/spice-vdagentd
+fi
+
 # Firefox's Widevine where Firefox cannot download it (the Pi): see
 # cervino-desktop's widevine. Its weekly job tries again, first soon after
 # the system starts.

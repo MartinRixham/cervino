@@ -397,7 +397,7 @@ builder_main() {
 		pipewire-alsa pipewire-spa-bluez pipewire-zeroconf xdg-utils flatpak umount
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium gst-libav
-		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim
+		gst-plugins-rs-dav1d gcompat fstrim
 		iproute2-minimal cronie cronie-openrc earlyoom earlyoom-openrc iw wireless-regdb"
 	# The installer's setup-disk shim (see live/setup-disk) offers an
 	# atomic install: the system on a btrfs volume, optionally encrypted,
@@ -424,11 +424,14 @@ builder_main() {
 	# the package later reaches installed systems with it, while GNOME's
 	# apps stay in world, where they can be removed one by one. Also
 	# cervino-vlc, built below, which can be removed; not cervino-gstreamer
-	# or cervino-terminal, which users add from the repo.
+	# or cervino-terminal, which users add from the repo. And the SPICE
+	# guest agent, which the installer leaves out but in a VM (see
+	# live/setup-disk).
 	local world
 	world=$(printf '%s\n' alpine-base doas \
 		elogind polkit-elogind "$BROWSER" \
 		eudev udev-init-scripts udev-init-scripts-openrc \
+		spice-vdagent spice-vdagent-openrc \
 		$gnome_deps cervino-desktop cervino-vlc |
 		sort -u)
 

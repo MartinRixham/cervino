@@ -11,7 +11,7 @@ rc-update -q add apparmor sysinit
 rc-update -q add cervino-atomic shutdown
 rc-update -q add zram-init boot
 for svc in networkmanager chronyd earlyoom openrc-settingsd bluetooth cupsd \
-	avahi-daemon nftables spice-vdagentd apk-polkit-server wifi-region local; do
+	avahi-daemon nftables apk-polkit-server wifi-region local; do
 	rc-update -q add "$svc" default
 done
 

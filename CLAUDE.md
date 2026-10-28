@@ -355,7 +355,8 @@ architecture (e.g. the Intel VA-API drivers), and `iproute2-minimal` is for
 its IPv6 reverse path filter test, which needs `ip netns`.
 
 `/etc/apk/world` is what `setup-desktop gnome` would put there plus
-`cervino-desktop`, which depends on `$features`: a feature added later
+`spice-vdagent` (which the installer leaves out but in a VM, so it is not
+one of the features) and `cervino-desktop`, which depends on `$features`: a feature added later
 reaches installed systems with the package, while GNOME's apps stay
 removable from world. It also has `cervino-vlc` (VLC, on the Pi, below),
 which can be removed for Alpine's packages. `cervino-gstreamer` and
@@ -833,9 +834,11 @@ It:
 3. runs apk without `--initdb`, which adds only what the image lacks: the
    boot loader, from the disc, firmware for hardware the image has none for,
    and packages added in the live session;
-4. runs the package's `widevine` into the target where it exists
+4. outside a VM (`CERVINO_VM`, see the setup-disk shim) deletes
+   `spice-vdagent` and its runlevel link;
+5. runs the package's `widevine` into the target where it exists
    (`aarch64`);
-5. runs `update-extlinux` or `grub-mkconfig` in the target, which the
+6. runs `update-extlinux` or `grub-mkconfig` in the target, which the
    packages' triggers would have run when the kernel was installed
    (`setup-disk`'s chroot mounts are up then).
 
@@ -845,7 +848,8 @@ under `/usr/local` don't reach installs.
 ### The setup-disk shim
 
 The apkovl's `setup-disk` shim asks whether to install `atomic` (the
-default) or `sys` (`-m atomic`/`-m sys` in answer files).
+default) or `sys` (`-m atomic`/`-m sys` in answer files). For both it
+exports `CERVINO_VM=1` when `/proc/cpuinfo` has the `hypervisor` flag.
 
 - `sys`, when chosen at its question (after it has asked for the disk and
   whether to encrypt, as `-m sys [-e] <disk>`, so Alpine's doesn't ask its
@@ -887,7 +891,7 @@ packages:
    from the image's) with `apk add --root` from the repositories;
 6. removes `gnome-software-plugin-apk2` (in world from `gnome-apps-core`)
    and the `apk-polkit-server` runlevel link, as apk cannot write to the
-   system;
+   system, and outside a VM `spice-vdagent` and its runlevel link;
 7. runs the package's `widevine` into it where it exists (`aarch64`);
 8. moves `/root` to `/var/roothome` (a symlink) and makes the root subvolume
    read-only;
