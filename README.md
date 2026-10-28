@@ -90,7 +90,9 @@ from a desktop distribution:
   needs the network. Its Tree-sitter parsers are Alpine's, as the system
   has no C compiler to build them, so they don't install on demand. The
   command line tools bat, ripgrep (`rg`), fd and GNU less come with it, and
-  Fedora's green bash prompt. All this is the `cervino-terminal` package,
+  Fedora's bash: its green prompt, history kept from every shell rather
+  than the last one closed overwriting it, `ls` and `grep` in colour, and
+  `user@host:dir` as the pane's and window's title. All this is the `cervino-terminal` package,
   which the image leaves out: `doas apk add cervino-terminal` adds it from
   the update repo, and `doas apk del cervino-terminal` removes it
 
@@ -515,7 +517,7 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      and `font-droid-sans-mono-nerd`, and Neovim's launcher and AstroNvim
      configuration ([`cervino-terminal/init.lua`](cervino-terminal/init.lua)),
      depending on `neovim` and `tree-sitter-grammars`, and on `bat`,
-     `ripgrep`, `fd` and `less`, and Fedora's bash prompt;
+     `ripgrep`, `fd` and `less`, and Fedora's bash prompt and settings;
    - the `cervino-desktop` package, built with abuild from
      [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
      features' configuration and the AppArmor profiles from

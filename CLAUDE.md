@@ -515,7 +515,10 @@ foot's three launchers (`replaces="foot"`) with copies that have
 to them has to be copied by hand. And it holds
 `/etc/bash/50-prompt.sh`, Fedora's bash prompt (bold `user@host:dir`,
 in the terminal palette's green, magenta for root, as Fedora's
-`bash-color-prompt` writes it).
+`bash-color-prompt` writes it), and `/etc/bash/50-interactive.sh`, the
+rest of Fedora's interactive bash: `histappend`, `ls` and `grep` in
+colour, and the window title (plus OSC 7, the directory) at each prompt
+in foot and Zellij.
 
 It also brings AstroNvim. It depends on `neovim`, the programs AstroNvim
 runs (`git`, `ripgrep`, `lazygit`, `bottom`, `gdu`),

@@ -50,6 +50,22 @@ fi
 PS1="$_c"'\u@\h\[\e[0m\]:'"$_c"'\w\[\e[0m\]\$ '
 unset _c
 EOF
+	# Interactive bash as Fedora's: history appended, so the shell that
+	# closes last (one per Zellij pane) doesn't overwrite the others'; ls and
+	# grep in colour (busybox's take --color); and the title user@host:dir,
+	# which Zellij names the pane by, at each prompt, with the directory
+	# (OSC 7) for foot's new windows. GNOME Console's vte.sh sends its own.
+	makefile root:root 0644 "$pkgdir"/etc/bash/50-interactive.sh <<'EOF'
+shopt -s histappend
+alias ls='ls --color=auto' grep='grep --color=auto'
+if [ -z "$VTE_VERSION" ] && [[ $TERM == @(foot|xterm)* ]]; then
+	_cervino_title() {
+		printf '\e]0;%s@%s:%s\a\e]7;file://%s%s\a' "$USER" "${HOSTNAME%%.*}" \
+			"${PWD/#"$HOME"/\~}" "$HOSTNAME" "$PWD"
+	}
+	PROMPT_COMMAND+=(_cervino_title)
+fi
+EOF
 
 	makefile root:root 0644 "$pkgdir"/usr/share/applications/zellij.desktop <<'EOF'
 [Desktop Entry]
