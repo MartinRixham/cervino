@@ -4,12 +4,10 @@
 # running zellij with the app id zellij, which GNOME Shell matches to the
 # launcher; /etc/zellij/config.kdl is Zellij's configuration for users who
 # have none of their own. zellij.svg, the launcher's icon, is Zellij's logo.
-# Also the Neovim editor: /etc/xdg/nvim/init.lua, AstroNvim for users who
-# have no Neovim configuration of their own, with the programs AstroNvim
-# runs and Alpine's Tree-sitter parsers; and Neovim's launcher, running it
-# in foot, in the Nerd Font, which has AstroNvim's icons. And the command
-# line tools bat, ripgrep, fd and GNU less (busybox's lacks most options),
-# and Fedora's bash prompt.
+# Also Neovim, set up as AstroNvim (see init.lua), with the programs
+# AstroNvim runs, Alpine's Tree-sitter parsers and its own launcher; the
+# command line tools bat, ripgrep, fd and GNU less (busybox's lacks most
+# options); and Fedora's bash prompt.
 # build-alpine-gnome-iso.sh copies this directory into the build, with
 # cervino-terminal.conf (PKGVER, the version) next to it.
 # abuild sets startdir and pkgdir and reads the variables set here.

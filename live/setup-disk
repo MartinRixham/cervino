@@ -7,35 +7,14 @@
 # setup-disk offers an atomic install (-m atomic, and the default answer)
 # besides Alpine's standard one (-m sys, and the other modes, RAID, several
 # disks or a mounted root, which go to Alpine's setup-disk; sys chosen at
-# its question goes there too once the disk and encryption are asked). As in
-# Fedora Silverblue, an atomic install's system is read-only, and
-# update-alpine updates it as a whole (see cervino-desktop's atomic.sh). On
-# a PC, only one started with UEFI, it goes to one disk: GPT with the EFI
-# system partition, swap sized as Alpine's setup-disk sizes it (or by -s; on
-# an encrypted disk, dmcrypt opens it with a random key at each boot) and a
-# btrfs volume, on LUKS if the disk is to be encrypted. The volume holds the
-# system in roots/<id> (the install's date and time) with a nested subvolume
-# for its /etc, and @var and @home, which later versions share. The system
-# is the root file system image the live system runs from (as built, not as
-# the live session changed it), copied into it, with the live /etc that
-# differs from it over that (lbu package, through the apkovl's lbu shim, as
-# Alpine's setup-disk does); packages added in the live session are
-# installed from the repositories. Then this shim writes fstab,
-# /etc/kernel/cmdline (the kernel arguments, but for the subvolume) and
-# mkinitfs.conf (the features Alpine's setup-disk picks, with the trigger
-# off: the kernel hook builds the initramfs instead, before copying it) and
-# builds the initramfs, removes GNOME Software's apk plugin, moves /root to
-# /var/roothome, makes the system read-only and runs cervino-desktop's
-# update-boot, which puts the kernel, initramfs and command line on the boot
-# partition as a unified kernel image, with a UEFI boot entry.
-# On a Raspberry Pi, only one whose firmware has tryboot (which also starts
-# from GPT disks), the disk is GPT, with three FAT partitions first: the
-# one the firmware reads autoboot.txt from, mounted on /boot/firmware, and
-# boot partitions A and B, which update-boot fills (each starts one version,
-# and autoboot.txt names the one that starts); then swap only with -s, as
-# Alpine's setup-disk does on the Pi, and the btrfs volume. The disk the
-# live system started from can't be installed to: the live system runs
-# from it.
+# its question goes there too once the disk and encryption are asked).
+# README.md (Installing to disk, Raspberry Pi) describes an atomic
+# install's disk; cervino-desktop's atomic.sh and update-boot, how it is
+# updated and started. This shim partitions the disk, copies the root file
+# system image the live system runs from (as built, not as the live
+# session changed it) into a new version with the live /etc that differs
+# from it over that, as Alpine's setup-disk does, and makes it the one
+# that starts with update-boot.
 
 . /usr/lib/libalpine.sh
 
@@ -398,9 +377,7 @@ fi
 
 rm -f "$mnt"/etc/runlevels/default/apk-polkit-server
 
-# Firefox's Widevine where Firefox cannot download it (the Pi): see
-# cervino-desktop's widevine. Its weekly job tries again, first soon after
-# the system starts.
+# Firefox's Widevine, as the apk shim gets it for a sys install.
 if [ -x /usr/libexec/cervino/widevine ]; then
 	echo "Downloading Widevine, for DRM video in Firefox..."
 	/usr/libexec/cervino/widevine "$mnt" ||

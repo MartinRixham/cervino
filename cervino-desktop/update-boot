@@ -8,24 +8,13 @@
 # /usr/libexec/cervino/boot-trial); with UPDATE_BOOT_COMMIT=1 that one
 # starts from now on instead.
 #
-# On a PC (UEFI only) the boot partition is the EFI system partition,
-# mounted on ROOT/boot/efi: each version is a unified kernel image (UKI)
-# there, cervino/<id>/linux.efi, with a UEFI boot entry of its own. The
-# version that starts is first in BootOrder, and also the firmware's
-# fallback, EFI/BOOT/BOOTX64.EFI, for when the boot entries are lost; the one
-# on trial is BootNext.
-#
-# On a Raspberry Pi the disk is GPT, with three FAT partitions. The first,
-# mounted on ROOT/boot/firmware, holds only autoboot.txt and usercfg.txt:
-# autoboot.txt has the firmware start from partition 2 or 3 (A or B), and at
-# a restart with the tryboot flag from the other one (tryboot_a_b). Each of
-# those holds one version: the firmware, the version's kernel, initramfs,
-# device trees and overlays in cervino/<id>/, usercfg.txt, and config.txt,
-# which starts it (os_prefix). The partition that starts is never rewritten
-# (but for cmdline.txt and usercfg.txt, when they change): a version goes to
-# the other one, formatted anew, and becomes the one that starts by
-# autoboot.txt naming that partition, so a write cut short by a power cut
-# leaves the version that started before to start.
+# README.md (Installing to disk, Raspberry Pi) describes the boot
+# partitions on a PC and on a Pi. On a Pi, autoboot.txt's tryboot_a_b has
+# the firmware start from the other of partitions A and B (2 and 3) at a
+# restart with the tryboot flag, and each one's config.txt starts its
+# version through os_prefix. The partition that starts is never rewritten
+# but for cmdline.txt and usercfg.txt when they change: a version goes to
+# the other one, formatted anew.
 #
 # Does nothing but on an atomic install.
 

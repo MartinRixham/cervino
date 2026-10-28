@@ -205,12 +205,9 @@ pref("media.gmp-widevinecdm.visible", true);
 pref("media.gmp-widevinecdm.enabled", true);
 EOF
 	done
-	# Mozilla offers no Widevine for Linux on aarch64, so Firefox cannot
-	# download it on the Pi: the widevine script gets it from Google, into
-	# /var (shared by an atomic install's versions), for the installer's
-	# setup-disk and weekly, and login shells, which start the GNOME session,
-	# point Firefox at it. The image does not have it, so as not to pass on
-	# Google's CDM.
+	# Widevine where Firefox cannot download it (see the widevine script),
+	# in /var, shared by an atomic install's versions. The image does not
+	# have it, so as not to pass on Google's CDM.
 	if [ "$TARGET_ARCH" = aarch64 ]; then
 		makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/widevine \
 			< "$startdir"/widevine
@@ -504,24 +501,11 @@ EOF
 setsid /etc/periodic/daily/alpine-appstream </dev/null >/dev/null 2>&1 &
 EOF
 
-	# Atomic installs (the live image's installer, setup-disk shim, "atomic"):
-	# a btrfs volume, encrypted or not, holds each version of the system as a
-	# read-only subvolume, roots/<id> (the date and time it was made, so
-	# newest last), with a writable /etc of its own as a nested subvolume,
-	# beside @var and @home, which all versions share (and /root is
-	# /var/roothome). update-alpine makes a new version from a snapshot of the
-	# running one and upgrades that, then stages it; at shutdown the
-	# cervino-atomic service brings the /etc changes made since into it and
-	# makes it the one to boot, once on trial first. The firmware starts the
-	# versions from the FAT boot partition (on a PC, UEFI's, mounted on
-	# /boot/efi), which holds each one's kernel, initramfs and CPU microcode,
-	# as the firmware cannot read an encrypted volume. update-boot keeps that
-	# partition in step with the volume: the kernel hook below runs it after
-	# building an initramfs, the package trigger when a package changes /boot
-	# (microcode), and the service after switching. Each version's kernel
-	# command line, but for the subvolume to mount, is its
-	# /etc/kernel/cmdline, which only atomic installs have. These all share
-	# atomic.sh.
+	# Atomic installs (README.md, Updates); these scripts share atomic.sh.
+	# update-boot keeps the boot partition in step with the volume:
+	# the kernel hook below runs it after building an initramfs, the package
+	# trigger when a package changes /boot (microcode), and the
+	# cervino-atomic service after switching.
 	makefile root:root 0644 "$pkgdir"/usr/libexec/cervino/atomic.sh < "$startdir"/atomic.sh
 	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/update-boot < "$startdir"/update-boot
 	# kernel-hooks runs this when a kernel, or a package with modules for one,
@@ -592,28 +576,12 @@ EOF
 exec /sbin/reboot "$@"
 EOF
 
-	# apk on an atomic install: apk cannot change the read-only system, so
-	# this wrapper, found before /sbin/apk in PATH (/etc/profile's and doas's
-	# alike), hands apk add, del and upgrade to update-alpine, which makes them
-	# in a new version of the system, and turns down other changes. Anywhere
-	# else (the live system, sys installs, update-alpine's chroot of a new
-	# version), for anything that only reads, and for another root (--root),
-	# it is apk itself.
+	# The apk wrapper, found before /sbin/apk in PATH (/etc/profile's and
+	# doas's alike).
 	makefile root:root 0755 "$pkgdir"/usr/sbin/apk < "$startdir"/apk-wrapper
 
-	# "Update Alpine Linux" in the app grid: upgrades the packages, then offers
-	# a newer stable Alpine release, if there is one, the way Alpine's release
-	# notes say to upgrade (repositories moved to the new branch, apk-tools
-	# first, then everything with --available). cervino-desktop's repo, where
-	# it is configured, moves along with them, so the release is only offered
-	# once that repo has it. Root's shell can run it as update-alpine, which
-	# also adds and removes packages (update-alpine add/del), as apk cannot on
-	# an atomic install's read-only system, and goes back to the version
-	# before (update-alpine rollback), lists the versions (update-alpine list)
-	# and deletes ones (update-alpine delete), with bash completion of those
-	# commands, packages and versions. On an atomic install it does all that
-	# to a new version of the system, made from the running one and upgraded
-	# in a chroot (which shares /var), and stages it for the next start.
+	# "Update Alpine Linux" in the app grid, and update-alpine in root's
+	# shell (README.md, Updates), with its bash completion.
 	makefile root:root 0755 "$pkgdir"/usr/sbin/update-alpine < "$startdir"/update-alpine
 	makefile root:root 0644 "$pkgdir"/usr/share/bash-completion/completions/update-alpine \
 		< "$startdir"/update-alpine.bash

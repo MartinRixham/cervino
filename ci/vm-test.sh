@@ -2,29 +2,13 @@
 #
 # ci/vm-test.sh ISO [PACKAGES]
 #
-# Tests the ISO end to end in QEMU/KVM, driven over the serial console:
+# Tests the ISO end to end in QEMU/KVM, driven over the serial console, in
+# the boots README.md (Prebuilt ISOs) describes: install (as an atomic or a
+# sys install, $INSTALL_MODE), packages (adds the build's packages the image
+# leaves out, from PACKAGES, the build's out/repo; default: repo next to the
+# ISO), test and, for atomic installs, upgrade (ci/guest/upgrade.sh).
 #
-#   1. install: boots the ISO and installs it to a blank virtual disk with
-#      setup-alpine (through the ISO's wrapper, as a user would), as an
-#      atomic or a sys install ($INSTALL_MODE)
-#   2. packages: boots the installed system and adds the build's packages
-#               the image leaves out (cervino-gstreamer), from PACKAGES,
-#               the build's out/repo (default: repo next to the ISO); an
-#               atomic install stages them, to start with at the next boot
-#   3. test:    boots the installed system into GNOME, logged in as the
-#               user created during the install, and runs
-#               test/features.sh in that desktop session and
-#               test/apparmor.sh as root, then logs out and checks
-#               that GDM's login screen comes back
-#   4. upgrade: (atomic installs only) four more boots, in which
-#               ci/guest/upgrade.sh has
-#               update-alpine stage an update of the atomic install,
-#               checks that the system switched to it at the restart,
-#               that a rollback goes back, that update-alpine
-#               list and delete work, and that an update that does
-#               not start falls back to the version before
-#
-# Exits non-zero if either stage fails or any test fails. The serial console
+# Exits non-zero if any boot or any test fails. The serial console
 # output of each boot is streamed to stdout and kept in $WORKDIR/<stage>.log.
 #
 # The guest gets test/ and ci/guest/, and the packages in pkgs/, as a tar

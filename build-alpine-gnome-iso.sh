@@ -4,86 +4,10 @@
 # host, through the container's environment.
 # shellcheck disable=SC2086,SC2046,SC2116,SC2153
 #
-# build-alpine-gnome-iso.sh
-#
-# Builds an x86_64 ISO that is Alpine's "standard" ISO plus everything that
-# `setup-desktop gnome` would install and enable, so the live system boots
-# straight to the GNOME desktop without running setup-alpine first, or
-# (TARGET=rpi) the same as an aarch64 Raspberry Pi SD card image, built on
-# Alpine's "rpiimg" image instead of the standard ISO. On top
-# of that it adds and configures what test/features.sh expects of a
-# desktop (bash, NetworkManager, PipeWire, CUPS, AppArmor, Flatpak, ...),
-# both on the live system and on systems installed from it, and confines
-# the system daemons with the AppArmor profiles in apparmor.d/.
-#
-# Uses Alpine's own image tooling (aports/scripts/mkimage.sh) with a custom
-# profile that extends profile_standard, run inside an Alpine container, so
-# the host only needs podman or docker.
-#
-# How it works: the desktop features' configuration is built into a package,
-# cervino-desktop (cervino-desktop/APKBUILD), which depends on the features'
-# packages. It and the GNOME packages, with the kernel and firmware, are
-# installed once into a root file system, which goes on the image as a
-# squashfs (cervino/rootfs.squashfs), with an apkovl (the same overlay
-# mechanism `lbu` uses) for what only the live system has. At boot the
-# initramfs (with initramfs-live.patch) mounts the squashfs read-only with a
-# tmpfs over it as the root, unpacks the apkovl into it, and OpenRC starts
-# udev, dbus, gdm etc. exactly as setup-desktop would have configured them.
-# Installs copy the system from the squashfs too; the image's on-disc apk
-# repository only has the disk tools and boot loaders Alpine's setup-disk
-# adds. For the Pi, VLC and the ffmpeg7 libraries it plays through,
-# GStreamer's base and bad plug-ins, wpa_supplicant and bluez are built
-# from rpi/: Alpine's packages with Raspberry Pi OS's patches for the Pi's
-# hardware video decoders, Wi-Fi and Bluetooth. The media ones come in two
-# packages, cervino-vlc (vlc and ffmpeg7) and cervino-gstreamer
-# (cervino-vlc/ and cervino-gstreamer/): cervino-vlc is in the image and
-# can be deleted for Alpine's, while cervino-gstreamer is only in the repo,
-# to be added; wpa_supplicant and bluez are published with cervino-desktop, as is the
-# Pi's mesa, with a patch of ours. mutter and showtime are built from
-# patched/ for both: Alpine's with fixes of ours, mutter published the same
-# way, showtime in cervino-gstreamer (on a PC, all it holds).
-# The terminal, Zellij in foot, with AstroNvim, is a package of its own
-# too, cervino-terminal (cervino-terminal/), which can be deleted.
-#
-# The container runs the target's architecture, so the packages' scripts
-# run when the root file system is installed: building for another
-# architecture needs QEMU user emulation (binfmt_misc, e.g. qemu-user-static).
-#
-# Usage:
-#   ./build-alpine-gnome-iso.sh
-#
-# Environment overrides:
-#   TARGET          iso: an x86_64 ISO; rpi: an aarch64 Raspberry Pi
-#                   (4, 400, 5, 500) SD card image (default: iso)
-#   ALPINE_BRANCH   Alpine release branch, e.g. v3.24 (default: latest-stable)
-#   OUTDIR          where the image is written (default: ./out)
-#   LIVE_USER       desktop user created on boot (default: alpine)
-#   LIVE_PASSWORD   that user's password (default: none; the user logs in,
-#                   unlocks the screen and uses doas and polkit without one)
-#   AUTOLOGIN       0 to stop at the GDM login screen instead of logging
-#                   LIVE_USER straight in to GNOME (default: 1)
-#   BROWSER         browser package, as setup-desktop (default: firefox)
-#   CONTAINER       container runtime to use (default: podman, else docker)
-#   MIRROR          Alpine package mirror
-#                   (default: https://dl-cdn.alpinelinux.org/alpine)
-#   SIGNING_KEY     abuild private key (its public key is derived from it,
-#                   named after the file plus .pub) to sign the packages
-#                   built here (cervino-desktop, cervino-vlc,
-#                   cervino-gstreamer, cervino-terminal, mutter, and the
-#                   Pi's wpa_supplicant, bluez and mesa) and the image's
-#                   repo with (default: a new key each build)
-#   APK_REPO        URL of the repo those packages are published in, without
-#                   the branch; installs get updates from APK_REPO/<branch>
-#                   (default: none). Its packages must be signed with
-#                   SIGNING_KEY.
-#   CACHEDIR        where the packages built from rpi/ and patched/ are
-#                   kept, to be taken from there by later builds while
-#                   their sources, Alpine's version and the release are the
-#                   same
-#                   (default: none, each build builds them)
-#
-# Note: the live system runs from the root file system image on the boot
-# media, with only its changes in RAM: it boots to the desktop in 2 GB.
+# build-alpine-gnome-iso.sh: builds Cervino's GNOME live image, an x86_64
+# ISO or (TARGET=rpi) an aarch64 Raspberry Pi SD card image. README.md
+# describes what it holds, its settings (environment variables) and how it
+# is built; CLAUDE.md, this script's phases.
 
 set -euo pipefail
 
@@ -153,12 +77,11 @@ host_main() {
 	pkgver=$(TZ=UTC0 git -C "$here" log -1 --date=format-local:%Y%m%d.%H%M%S \
 		--format=%cd 2>/dev/null) || pkgver=
 	pkgver=${pkgver:-$(date -u +%Y%m%d.%H%M%S)}
-	# cervino-vlc's, cervino-gstreamer's and cervino-terminal's: the time of
-	# the last commit that changed what they are made of (their directory,
-	# their packages in rpi/ and patched/, build_bundle), so that a release that leaves
-	# them as they were doesn't make installs download them again
-	# (ci/publish-repo.sh keeps a file already published). git log needs the
-	# history for that: a shallow clone has only the last commit.
+	# cervino-vlc's, cervino-gstreamer's and cervino-terminal's (see
+	# bundle_version), so that a release that leaves them as they were
+	# doesn't make installs download them again (ci/publish-repo.sh keeps a
+	# file already published). git log needs the history for that: a shallow
+	# clone has only the last commit.
 	local vlc_pkgver gstreamer_pkgver terminal_pkgver
 	vlc_pkgver=$(bundle_version cervino-vlc rpi/ffmpeg7 rpi/vlc)
 	gstreamer_pkgver=$(bundle_version cervino-gstreamer rpi/gst-plugins-base \
@@ -453,31 +376,16 @@ builder_main() {
 	[[ -n $gnome_deps ]] || die "could not resolve gnome dependencies"
 
 	# --- Desktop features on top of that ------------------------------------
-	# What test/features.sh checks for: a full shell and the usual CLI
-	# tools, man pages, a UTF-8 locale, spell checking, emoji and CJK fonts,
-	# NetworkManager (with dnsmasq as the local DNS server, built with the
-	# D-Bus support NetworkManager configures it through), NTP, the
-	# hostname1/timedate1/locale1 D-Bus services,
-	# Bluetooth, printing, mDNS, a firewall, an SSH client and server (not
-	# enabled), power profiles, AppArmor, zram swap, PipeWire (with AirPlay
-	# speakers found over mDNS: pipewire-zeroconf), xdg-utils,
-	# Flatpak, Alpine's packages in GNOME Software
-	# (apk-polkit-server and the AppStream catalog), VA-API (libva with the
-	# Mesa, Intel (x86_64 only) and vainfo packages), gst-libav (FFmpeg's
-	# decoders: multithreaded H.264, and the E-AC-3 and DTS sound tracks
-	# GStreamer has no other decoder for), dav1d's AV1 decoder (much faster
-	# than libaom's, the only other one), the SPICE guest agent,
-	# gcompat (the glibc loader, for programs built for glibc), fstrim,
-	# cronie (cron with anacron, for periodic jobs missed while off),
-	# earlyoom (kills a process before running out of memory freezes the
-	# desktop), iw and wireless-regdb (the Wi-Fi region, set from the time
-	# zone) and
-	# (x86_64 only) the CPU microcode.
+	# What test/features.sh checks for (README.md lists the features).
 	# Their configuration is in the cervino-desktop package, which depends on
 	# them (built below), and their services are set up in the apkovl.
-	# pipewire-pulse provides the pulseaudio that gnome-settings-daemon
-	# depends on, so PulseAudio itself is not installed. rtkit gives
-	# PipeWire's audio threads real-time scheduling.
+	# dnsmasq is built with the D-Bus support NetworkManager configures it
+	# through. pipewire-pulse provides the pulseaudio that
+	# gnome-settings-daemon depends on, so PulseAudio itself is not
+	# installed; pipewire-zeroconf finds AirPlay speakers over mDNS. dav1d's
+	# AV1 decoder is much faster than libaom's, the only other one.
+	# iproute2-minimal is for features.sh's IPv6 reverse path filter test,
+	# which needs ip netns.
 	local features="bash bash-completion file xz zstd pciutils dmidecode rsync
 		mandoc mandoc-apropos mandoc-doc man-pages command-not-found nano
 		musl-locales musl-locales-lang hunspell-en font-noto-emoji font-noto-cjk
@@ -514,11 +422,8 @@ builder_main() {
 	# cervino-desktop, which brings in the features. So a feature added to
 	# the package later reaches installed systems with it, while GNOME's
 	# apps stay in world, where they can be removed one by one. Also
-	# cervino-vlc (on the Pi, VLC, with Raspberry Pi OS's patches for its
-	# hardware decoders), built below, which can be removed for Alpine's
-	# packages, and cervino-terminal, Zellij in foot and AstroNvim.
-	# cervino-gstreamer, also built below, is not: users add it from the
-	# repo.
+	# cervino-vlc and cervino-terminal, built below, which can be removed;
+	# not cervino-gstreamer, which users add from the repo.
 	local world
 	world=$(printf '%s\n' alpine-base doas \
 		elogind polkit-elogind "$BROWSER" \
@@ -540,15 +445,9 @@ builder_main() {
 	esac
 
 	# --- Patched packages ----------------------------------------------------
-	# Alpine's, with patches. On the Pi, Raspberry Pi OS's (rpi/): ffmpeg7
-	# and vlc for the Pi's hardware video decoders, gst-plugins-base and
-	# gst-plugins-bad for its HEVC decoder in GStreamer (Showtime, WebKit,
-	# the file previews), wpa_supplicant for WPA3 with its Wi-Fi, bluez for
-	# audio over its Bluetooth, which shares the radio; and ours, mesa, so
-	# that programs don't inherit the GPU's render node. On both, ours
-	# (patched/): mutter, so that GNOME Shell survives a buffer it can't
-	# import, and showtime, so that its sound doesn't skip on an AirPlay
-	# speaker. mutter comes first, so that it builds with Alpine's mesa-dev.
+	# Alpine's, with patches (README.md says what for): Raspberry Pi OS's
+	# and ours from rpi/ on the Pi, ours from patched/ on both. mutter
+	# comes first, so that it builds with Alpine's mesa-dev.
 	# wpa_supplicant, bluez, mesa and mutter rank above Alpine's and so
 	# replace them (but for their -dbg packages, too big to publish); the
 	# rest go in cervino-vlc and cervino-gstreamer (below).
@@ -625,11 +524,8 @@ builder_main() {
 	done
 
 	# --- cervino-vlc, cervino-gstreamer and cervino-terminal packages --------
-	# The Pi's media packages built above, two of them in each, and
-	# showtime in cervino-gstreamer on both targets (see build_bundle); on a
-	# PC cervino-vlc is empty. The other patched packages are published as
-	# they are. cervino-terminal, Zellij in foot and AstroNvim,
-	# has only its own files.
+	# See build_bundle. The other patched packages are published as they
+	# are.
 	local published=()
 	build_bundle cervino-vlc "$VLC_PKGVER" ffmpeg7 vlc
 	build_bundle cervino-gstreamer "$GSTREAMER_PKGVER" gst-plugins-base gst-plugins-bad \

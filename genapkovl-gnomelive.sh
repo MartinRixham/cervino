@@ -8,19 +8,13 @@
 # Pi, usercfg.txt next to it, and mkimage runs it with the hostname as its
 # argument.
 #
-# The apkovl holds what only the live system has: the live user, autologin,
-# the installer's wrappers and the runlevels. The live system boots from the
-# root file system image on the boot media, with /etc/apk/world (WORLD, the
-# image's packages) installed; the initramfs unpacks the apkovl over it. The
-# desktop features' configuration is in the cervino-desktop package
-# (cervino-desktop/APKBUILD), which the world installs, on the live system
-# and on installs alike.
+# The apkovl holds what only the live system has (README.md, How it
+# works); the initramfs unpacks it over the root file system image.
 #
 # The runlevels are those the initramfs sets up on the standard ISO, changed
-# as setup-desktop gnome would change them: mdev/hwdrivers swapped for udev
-# (setup-devd udev), plus cgroups, dbus and gdm in default. The desktop
-# features add their services on top, and AppArmor to sysinit. modloop is
-# left out: the image has the kernel's modules and firmware.
+# as setup-desktop gnome would change them (setup-devd udev), plus the
+# desktop features' services. modloop is left out: the image has the
+# kernel's modules and firmware.
 
 HOSTNAME="$1"
 [ -n "$HOSTNAME" ] || { echo "usage: $0 hostname"; exit 1; }
@@ -88,30 +82,14 @@ EOF
 # rules.d keeps the ownership the polkit package gives it.
 makefile root:root 0755 "$tmp"/etc/init.d/live-user < "$here"/live/live-user
 
-# setup-alpine switches OpenRC to the boot runlevel and back, which stops
-# gdm and dbus and so kills the desktop (and the terminal running it). It
-# also swaps udev for mdev unless DEVDOPTS says otherwise, leaves the
-# community repo (where GNOME lives) disabled and configures interfaces
-# for ifupdown, which would fight NetworkManager. This wrapper, found
-# first in PATH, makes those runlevel switches start services without
-# stopping any, skips the interface and DNS steps, keeps udev, which GNOME
-# needs, and defaults community to enabled. It also defaults the user step
-# to the plugdev (network settings) and lpadmin (printers) groups and the
-# installed kernel command line to one with AppArmor enabled (and on the
-# Pi, NVMe drives' host memory buffer cap raised and the memory cgroup
-# controller back on), offers only mirrors
-# reached over HTTPS (setup-apkrepos picks from $MIRRORS, else from
-# mirrors.txt, which lists http:// URLs only; mirrors.json lists each
-# mirror's https:// URL too, the CDN first), installs no
-# SSH server, skips the NTP step (its default, busybox ntpd, would run
-# next to the chronyd the install already has from the live runlevels),
-# leaves acpid out of the runlevels (its only handler, for the power
-# button, powers off at once; elogind handles the button and lets GNOME
-# decide what it does), enables cronie, whose anacron runs the periodic
-# jobs a laptop was off for, where it would enable busybox crond,
-# and skips the root password (-e): the lbu shim below locks root on the installed
-# system, whose admin user gets root through doas. An answer file passed
-# with -f still overrides these defaults.
+# The setup-alpine wrapper, found first in PATH. README.md (Installing to
+# disk) lists what it changes and why; how, where that isn't plain:
+# setup-alpine switches OpenRC to the boot runlevel and back, which would
+# stop gdm and dbus, so the openrc shim starts services without stopping
+# any. setup-apkrepos picks mirrors from $MIRRORS, else from mirrors.txt,
+# which lists http:// URLs only; mirrors.json lists each mirror's https://
+# URL too, the CDN first. -e skips the root password: the lbu shim below
+# locks root on the installed system.
 # Its hostname step restarts the hostname service and stops and starts
 # networking, which stops what depends on them (avahi, chronyd, crond,
 # syslog) and has OpenRC start them again in the background; there they
@@ -129,10 +107,8 @@ makefile root:root 0755 "$tmp"/etc/init.d/live-user < "$here"/live/live-user
 # /etc/profile puts first.
 makefile root:root 0755 "$tmp"/usr/local/sbin/setup-alpine < "$here"/live/setup-alpine
 
-# An app grid entry that runs the wrapper above in a terminal. GLib's
-# fallback terminal list has no GNOME Console, so Terminal=true would not
-# work; kgx is run directly. The window stays open so the last messages can
-# be read. /usr/local/share is not in lbu.list, so installs don't get it.
+# An app grid entry that runs the wrapper above in GNOME Console, as
+# cervino-desktop's "Update Alpine Linux" launcher runs update-alpine.
 makefile root:root 0644 "$tmp"/usr/local/share/applications/alpine-install.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
@@ -154,20 +130,16 @@ Name=Update Alpine Linux
 Hidden=true
 EOF
 
-# setup-disk copies the live /etc to the new system with "lbu package -",
-# and so would carry over the live user (with its known or empty password,
-# and its doas and polkit rules), its home directory (setup-alpine adds
-# every /home/* to lbu), its init script and GDM autologin. This shim
-# drops those from the copy; the user created in setup-alpine's user step
-# is the one to log in as. If that user is an admin (in wheel, so doas lets
-# them in), root's password is locked in the copy, as setup-alpine was told
-# not to set one; without an admin, root is left as it is so the system can
-# still be logged in to. The serial console's getty that the initramfs
-# added to inittab is started under its AppArmor profile, as the others
-# are. On the Pi it also adds boot/usercfg.txt (GNOME needs the GPU's KMS
-# driver): setup-disk unpacks the archive into the new system with its boot
-# partition mounted, and the bootloader package's config.txt includes that
-# file.
+# setup-disk copies the live /etc to the new system with "lbu package -".
+# This shim drops the live session from the copy (README.md, Installing to
+# disk; setup-alpine adds every /home/* to lbu). If wheel has a member,
+# root's password is locked in the copy, as setup-alpine was told not to
+# set one; without an admin, root is left as it is so the system can still
+# be logged in to. The serial console's getty that the initramfs added to
+# inittab is started under its AppArmor profile, as the others are. On the
+# Pi it also adds boot/usercfg.txt: setup-disk unpacks the archive into the
+# new system with its boot partition mounted, and the bootloader package's
+# config.txt includes that file.
 makefile root:root 0755 "$tmp"/usr/local/sbin/lbu < "$here"/live/lbu
 
 # The Pi image's usercfg.txt (see build-alpine-gnome-iso.sh), for the lbu
@@ -178,15 +150,14 @@ if [ -f "$here"/usercfg.txt ]; then
 fi
 
 # busybox adduser gives new users /bin/sh and a home directory everyone can
-# read; give desktop users bash and a home only they can read instead
-# (system users, created with -S, are left alone, and so are an explicit
-# -s and -H). With two names, adduser adds an existing user to a group.
-# setup-user asks for a user again if adduser fails, so a user that an
-# earlier setup-alpine run made (one that was abandoned before or after
-# writing the disk; the live /etc keeps the user) would only be refused as
-# taken. Users made under the setup-alpine wrapper are listed in
-# /run/gnomelive-setup-users, and the wrapper's next runs get them back,
-# with the full name now given.
+# read; this shim gives desktop users bash and a home only they can read
+# (but system users, created with -S, and an explicit -s or -H). With two
+# names, adduser adds an existing user to a group. setup-user asks for a
+# user again if adduser fails, so a user that an earlier setup-alpine run
+# made (one that was abandoned before or after writing the disk; the live
+# /etc keeps the user) would only be refused as taken. Users made under the
+# setup-alpine wrapper are listed in /run/gnomelive-setup-users, and the
+# wrapper's next runs get them back, with the full name now given.
 makefile root:root 0755 "$tmp"/usr/local/sbin/adduser < "$here"/live/adduser
 
 # Alpine's setup-disk installs a sys install's system with "apk add --root

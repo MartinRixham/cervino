@@ -1,21 +1,14 @@
 # VLC, with the FFmpeg it plays through, as a package of its own beside
-# cervino-desktop. On the Pi it is Raspberry Pi OS's builds of ffmpeg7 and
-# vlc (rpi/), for the Pi's hardware video decoders: the build makes them as
-# Alpine's packages and puts their runtime ones in apks/ next to this, and
-# this package holds their files and provides each of them. While it is
-# installed (it is in /etc/apk/world), apk takes it for those names; once
-# deleted (cervino-desktop's apk wrapper rules it out with !cervino-vlc in
-# world first), VLC is gone and what else uses ffmpeg7 gets Alpine's. The patched
-# packages are not published under their own names, which would rank above
-# Alpine's and so shadow them. Elsewhere it is empty: the PC's image has no
-# VLC.
+# cervino-desktop. On the Pi it holds Raspberry Pi OS's builds of ffmpeg7
+# and vlc (rpi/), for the Pi's hardware video decoders, in place of
+# Alpine's (see build_bundle in build-alpine-gnome-iso.sh, which puts
+# their runtime packages in apks/ next to this, with cervino-vlc.conf and
+# VLC's plug-in cache scripts). Once it is deleted (through the apk
+# wrapper), VLC is gone and what else uses ffmpeg7 gets Alpine's.
+# Elsewhere it only depends on Alpine's VLC (vlc-qt), so the PC's image has
+# VLC too, gone once this is deleted.
 # VLC builds against ffmpeg7's patches, so the two go together; it uses
 # GStreamer's libraries too, but cervino-gstreamer's only add to Alpine's.
-# build-alpine-gnome-iso.sh copies this directory into the build, with
-# cervino-vlc.conf (PKGVER, the version; TARGET_ARCH, the architecture it
-# is for; and for aarch64 PROVIDES, DEPENDS and LICENSE, what the packages
-# provide, what they depend on but each other, and their licenses) and, for
-# aarch64, apks/ and VLC's plug-in cache scripts next to it.
 # abuild sets startdir and pkgdir and reads the variables set here.
 # shellcheck shell=sh disable=SC2034,SC2153,SC2154
 . "$startdir"/cervino-vlc.conf
@@ -28,8 +21,7 @@ url="https://github.com/MartinRixham/cervino"
 arch="noarch"
 license="Apache-2.0"
 # The packages' files are stripped already, their debug symbols in their
-# -dbg packages. What they provide and depend on is in the .conf: abuild
-# could only trace it with the libraries they link installed.
+# -dbg packages; what they provide and depend on is in the .conf.
 options="!check !strip !tracedeps"
 
 if [ "$TARGET_ARCH" = aarch64 ]; then
@@ -40,6 +32,8 @@ if [ "$TARGET_ARCH" = aarch64 ]; then
 	# vlc-libs': VLC's plug-in cache, made when the plug-ins change.
 	install="$pkgname.pre-deinstall"
 	triggers="$pkgname.trigger=/usr/lib/vlc/plugins"
+else
+	depends="vlc-qt"
 fi
 
 package() {

@@ -1,17 +1,15 @@
 #!/bin/sh
 # boot-trial boot|shutdown|reboot: a new version of an atomic install starts
 # once on trial, with the version that last started to fall back on.
-# update-boot keeps the firmware starting the running version (it started),
-# and starting the newest one once, if it is newer and did not fail to start
-# before: on a PC as UEFI's BootNext, which the firmware clears as it starts
-# it, on a Raspberry Pi as the boot partition the firmware starts from at a
-# restart with the tryboot flag.
-# It notes that version in boot-trying on the volume and in
-# /run/cervino-trial. Once the default runlevel has started (boot, run by
-# init), a version on trial that is running has started, and update-boot
-# makes it the one that starts; one that is not has failed (the machine was
-# switched off and on, and started the version before), and is noted in
-# boot-failed on the volume, and not tried again.
+# update-boot (see there) puts the newest version on trial, if it is newer
+# and did not fail to start before (UEFI's BootNext, which the firmware
+# clears as it starts it, or the Pi's tryboot), and notes that version in
+# boot-trying on the volume and in /run/cervino-trial. Once the default
+# runlevel has started (boot, run by init), a version on trial that is
+# running has started, and update-boot makes it the one that starts; one
+# that is not has failed (the machine was switched off and on, and started
+# the version before), and is noted in boot-failed on the volume, and not
+# tried again.
 #
 # The Pi's kernel passes the tryboot flag to the firmware only with a
 # restart's argument (reboot "0 tryboot"), which busybox init cannot give:

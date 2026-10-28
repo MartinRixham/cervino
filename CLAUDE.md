@@ -30,8 +30,9 @@ Besides the script, the repo holds:
 `README.md` documents the user-facing behaviour and the environment
 variables (`TARGET`, `ALPINE_BRANCH`, `OUTDIR`, `LIVE_USER`,
 `LIVE_PASSWORD`, `AUTOLOGIN`, `BROWSER`, `CONTAINER`, `MIRROR`,
-`SIGNING_KEY`, `APK_REPO`, `CACHEDIR`). Keep the README table, the script's
-header comment and the workflow in sync when you add or change a setting.
+`SIGNING_KEY`, `APK_REPO`, `CACHEDIR`). Keep the README table and the
+workflow in sync when you add or change a setting; the script's header
+comment only points to the README.
 
 ## Build and test
 
@@ -199,6 +200,25 @@ from each other, and the steps of a script (a group of commands with the
 comment that explains them); a lone `#` separates paragraphs of one comment.
 A file that started as a heredoc keeps none of this unless it is added, so
 add it when moving one into a source file of its own.
+
+### Comments
+
+Say each thing once:
+
+- A fact goes in one comment, where the code it explains is. Elsewhere,
+  point to it ("see build_bundle", "see the widevine script") rather than
+  saying it again. A script's own header describes the script; the comment
+  where another file installs or runs it says only what that file adds
+  (how it is installed, who runs it, why there).
+- Comments don't repeat `README.md`. What the user sees (the features, the
+  settings, the installer's defaults, the disk layouts, how updates and
+  the VM test behave) is the README's; a comment points to its section
+  ("README.md, Installing to disk") and adds only how it is done and why,
+  where the code doesn't make that plain. A fact a comment held that the
+  README lacks goes into the README when the comment is cut.
+- Don't list things a comment can point to: the published packages, the
+  features, a package's contents. Such lists go stale (one in the
+  workflow still left out `mutter` and `mesa`).
 
 ### CI
 
@@ -424,7 +444,8 @@ PACKAGE...` builds each with `abuild -d` in `/work/cervino/<name>`, from a
 copy of `<name>/` with `<name>.conf` (`PKGVER`, `TARGET_ARCH`) next to the
 APKBUILD. Each also gets, from its packages built for the target (for
 `rpi` its pair, plus `showtime` for `cervino-gstreamer`; on `x86_64` only
-`showtime`, so `cervino-vlc` is empty):
+`showtime`, so `cervino-vlc` holds nothing and only depends on Alpine's
+`vlc-qt`):
 
 - `apks/`: their runtime `.apk`s (not `-dev`, `-doc`, `-dbg`, `-lang` or
   `vlc-daemon`), whose files `package()` unpacks into it;

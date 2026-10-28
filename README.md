@@ -133,9 +133,9 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 | `BROWSER`       | `firefox`                                  | Browser package to install, as in `setup-desktop`                   |
 | `CONTAINER`     | `podman`, else `docker`                    | Container runtime to use                                            |
 | `MIRROR`        | `https://dl-cdn.alpinelinux.org/alpine`    | Alpine package mirror                                               |
-| `SIGNING_KEY`   | a new key each build                       | abuild private key to sign the packages built here and the image's repo |
+| `SIGNING_KEY`   | a new key each build                       | abuild private key to sign the packages built here and the image's repo; its public key, derived from it, is named after its file plus `.pub` |
 | `APK_REPO`      | none                                       | URL (without the branch) of the repo installs get updates of the packages built here from; its packages must be signed with `SIGNING_KEY` |
-| `CACHEDIR`      | none                                       | Where the Raspberry Pi's packages built from `rpi/` are kept; later builds take them from there (signed again with their own key) while their sources, Alpine's version of them and the release are the same |
+| `CACHEDIR`      | none                                       | Where the patched packages built from `rpi/` and `patched/` are kept; later builds take them from there (signed again with their own key) while their sources, Alpine's version of them and the release are the same |
 
 ### Prebuilt ISOs
 
@@ -163,7 +163,8 @@ in parallel on two runners: once as a sys install, and once as an atomic
 install, which it then restarts three more times: `update-alpine add` stages a new version with a package
 added and leaves the running one alone, the restart switches to it with
 the changes made to `/etc` meanwhile, `update-alpine rollback` goes
-back, and `update-alpine delete` removes the updated version. Both the live system and the installed one must
+back, `update-alpine delete` removes the updated version, and an update
+that doesn't start falls back to the version before. Both the live system and the installed one must
 get through all this without a single AppArmor denial. The build fails, and no release is
 published, unless every test passes. The Raspberry Pi image is built but not
 tested this way: QEMU can't emulate a Pi that runs GNOME. To run the same
@@ -396,8 +397,8 @@ doas apk add cervino-gstreamer    # GStreamer's plug-ins with the patches
 
 Without them, Alpine's packages take their place, without the hardware
 decoding (`doas apk add` and `doas apk del` switch between them). On a PC
-`cervino-vlc` is empty, as the PC image has no VLC, and the system uses
-Alpine's GStreamer plug-ins.
+`cervino-vlc` brings in Alpine's VLC (`vlc-qt`), and can be removed the
+same way, and the system uses Alpine's GStreamer plug-ins.
 
 `cervino-gstreamer` also holds Showtime, on both, with a patch of ours
 that keeps its sound from skipping on an AirPlay speaker: it holds a
@@ -485,7 +486,8 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      Pi, the runtime packages of `ffmpeg7` and `vlc`, and of
      `gst-plugins-base` and `gst-plugins-bad`, each pair in one, and for
      both `showtime` in `cervino-gstreamer`, providing their names at
-     Alpine's versions (`cervino-vlc` is empty on a PC);
+     Alpine's versions (on a PC `cervino-vlc` only depends on Alpine's
+     `vlc-qt`);
    - the `cervino-terminal` package, built with abuild from
      [`cervino-terminal/APKBUILD`](cervino-terminal/APKBUILD): the Zellij
      launcher and configuration, depending on Alpine's `zellij`, `foot`

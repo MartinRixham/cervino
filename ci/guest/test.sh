@@ -1,15 +1,8 @@
 #!/bin/sh
 # ci/guest/test.sh MODE: runs as root on the installed system, an atomic or
-# a sys install (MODE, setup-disk's -m): checks that the live session was
-# left behind and that packages.sh added cervino-gstreamer, logs the user
-# created during the install in to GNOME, then
-# runs test/features.sh as that user with the session's environment
-# (taken from gnome-shell), as if from a terminal in the desktop, and
-# test/apparmor.sh as root. Then it runs a runaway app in the session and
-# checks that earlyoom kills it (and nothing else) before the kernel's OOM
-# killer would, logs the user out and checks that GDM's login screen comes
-# back, and last that the kernel log has no AppArmor denials. Exits with
-# the number of failed tests.
+# a sys install (MODE, setup-disk's -m), the checks below, in order, the
+# user created during the install logged in to GNOME. Exits with the number
+# of failed tests.
 
 set -eu
 
