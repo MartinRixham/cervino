@@ -35,6 +35,11 @@ on:
       - test/**
       - ci/**
       - .github/workflows/build-iso.yml
+  # Daily, so that a change in Alpine (a new version of a package patched
+  # in rpi/ or patched/, a patch that no longer applies) shows up without a
+  # push.
+  schedule:
+    - cron: "17 4 * * *"
   workflow_dispatch:
     inputs:
       alpine_branch:
@@ -42,8 +47,9 @@ on:
         required: false
         default: ""
 
+# By event too, so the daily run and a push to main don't cancel each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

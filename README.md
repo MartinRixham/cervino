@@ -8,7 +8,7 @@ would install and enable, so you don't need to run `setup-alpine` first.
 Boot it and you land in GNOME, logged in as a live user.
 
 On top of plain `setup-desktop gnome`, the ISO comes with what you'd expect
-from a desktop distribution, and keeps it when installed to disk:
+from a desktop distribution:
 
 - bash as the login shell, with completion and a command-not-found handler,
   `nano` as `EDITOR`, `~/.local/bin` first in `PATH`, man pages and the usual
@@ -142,8 +142,10 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 The [Build ISO](.github/workflows/build-iso.yml) GitHub Actions workflow runs
 the script on every push and pull request that touches it, for both targets,
 and uploads the ISO and the Raspberry Pi image, each with its `SHA256SUMS`, as
-workflow artifacts. You can also start it by hand from the Actions tab and
-choose an Alpine branch there. Pushing a `v*` tag also publishes both images
+workflow artifacts. It also runs once a day on `main`, so a change in Alpine
+that breaks the build (a patched package that Alpine updated, a patch that no
+longer applies) shows up without a push. You can also start it by hand from
+the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `mutter`, and
 the Pi's `wpa_supplicant`, `bluez` and `mesa`) to the update repo (see

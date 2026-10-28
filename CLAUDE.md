@@ -226,7 +226,10 @@ CI (`.github/workflows/build-iso.yml`) runs the script with
 `CONTAINER=docker` on pushes and PRs that touch the script, the generator,
 `live/`, `mkimg.gnomelive.sh`, `cervino-desktop/`, `cervino-vlc/`,
 `cervino-gstreamer/`, `cervino-terminal/`, `apparmor.d/`, `rpi/`,
-`patched/`, `ci/`, `test/` or the workflow.
+`patched/`, `ci/`, `test/` or the workflow, and daily on `main` (`schedule`),
+to catch Alpine changes that break the patched packages. Its concurrency
+group includes the event, so the daily run and a push don't cancel each
+other.
 
 - **Build jobs**: one per `TARGET`, a matrix of `iso` on `ubuntu-latest` and
   `rpi` on `ubuntu-24.04-arm`. They free runner disk space first because
