@@ -385,7 +385,8 @@ builder_main() {
 	# installed; pipewire-zeroconf finds AirPlay speakers over mDNS. dav1d's
 	# AV1 decoder is much faster than libaom's, the only other one.
 	# iproute2-minimal is for features.sh's IPv6 reverse path filter test,
-	# which needs ip netns.
+	# which needs ip netns. util-linux's umount: some Flatpak installs fail
+	# with busybox's.
 	local features="bash bash-completion file xz zstd pciutils dmidecode rsync
 		mandoc mandoc-apropos mandoc-doc man-pages command-not-found nano
 		musl-locales musl-locales-lang hunspell-en font-noto-emoji font-noto-cjk
@@ -393,7 +394,7 @@ builder_main() {
 		openrc-settingsd bluez cups cups-client cups-filters avahi avahi-tools
 		nftables openssh power-profiles-daemon apparmor apparmor-utils apparmor-profiles
 		zram-init zram-init-openrc pipewire wireplumber pipewire-pulse rtkit
-		pipewire-alsa pipewire-spa-bluez pipewire-zeroconf xdg-utils flatpak
+		pipewire-alsa pipewire-spa-bluez pipewire-zeroconf xdg-utils flatpak umount
 		gnome-software-plugin-flatpak apk-polkit-rs-openrc
 		alpine-appstream-downloader libva libva-utils mesa-va-gallium gst-libav
 		gst-plugins-rs-dav1d spice-vdagent spice-vdagent-openrc gcompat fstrim

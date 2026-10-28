@@ -958,6 +958,8 @@ t_app_store_sandbox() {
 		echo "no Flatpak remote configured"
 		return 1
 	}
+	umount -V 2>/dev/null | grep -q util-linux ||
+		{ echo "umount is not util-linux's"; return 1; }
 }
 
 # apk checks package signatures, but over plain HTTP anyone on the path
