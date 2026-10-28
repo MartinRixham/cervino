@@ -227,7 +227,9 @@ on: the version before starts again, and the new one is not tried again
 firmware does that (UEFI's `BootNext`), on a Raspberry Pi its tryboot (see
 [Raspberry Pi](#raspberry-pi)). The four newest versions before are kept,
 and `doas update-alpine rollback` makes the version before the running one
-the one that starts again (as a new copy of it, with its `/etc` as it was).
+the one that starts again (as a new copy of it, with its `/etc` as it was),
+or `doas update-alpine rollback ID` any other complete version, newer ones
+too.
 `doas update-alpine list` lists the versions, newest first, with which one
 is running and which the system starts with next time, and `doas
 update-alpine delete ID...` deletes versions you no longer want (a staged

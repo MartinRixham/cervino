@@ -2,8 +2,8 @@
 # update-alpine: upgrades the installed packages, then offers to upgrade the
 # system to a newer stable Alpine release when one is out.
 # update-alpine add|del PACKAGE...: adds or removes packages.
-# update-alpine rollback: goes back to the version of the system before the
-# running one (atomic installs only).
+# update-alpine rollback [ID]: goes back to the version of the system before
+# the running one, or to version ID (atomic installs only).
 # update-alpine list: lists the versions of the system, newest first, and
 # update-alpine delete ID...: deletes versions (atomic installs only).
 #
@@ -33,11 +33,12 @@ die() {
 [ "$(id -u)" = 0 ] || { echo "update-alpine: run it as root (doas update-alpine)" >&2; exit 1; }
 cmd=${1:-upgrade}
 case $cmd in
-upgrade|rollback|list) [ $# -le 1 ] ;;
+upgrade|list) [ $# -le 1 ] ;;
+rollback) [ $# -le 2 ] ;;
 add|del|delete) [ $# -ge 2 ] ;;
 *) false ;;
-esac || die "usage: update-alpine [add PACKAGE... | del PACKAGE... | rollback | list |" \
-	"delete ID...]"
+esac || die "usage: update-alpine [add PACKAGE... | del PACKAGE... | rollback [ID] |" \
+	"list | delete ID...]"
 [ $# = 0 ] || shift
 
 # On an atomic install, $R is the new version, and run runs a command in it.
@@ -193,6 +194,25 @@ if [ -n "$atomic" ]; then
 	trap cleanup EXIT
 	atomic_staged
 
+	# A rollback copies version ID, or the newest complete version older
+	# than the running one: chosen before a staged update is deleted, so a
+	# rollback refused here leaves it.
+	if [ "$cmd" = rollback ] && [ $# = 1 ]; then
+		src=$1
+		case $src in ''|*[!0-9]*) false ;; *) [ -d "$top/roots/$src" ] ;; esac ||
+			die "there is no version $src (update-alpine list shows them)"
+		[ "$src" != "$atomic_id" ] || die "$src is the running version"
+		atomic_ready "$src" ||
+			die "$src is not a complete version (update-alpine list says why)"
+	elif [ "$cmd" = rollback ]; then
+		src= seen=
+		for id in $(ls -r "$top"/roots); do
+			[ -n "$seen" ] && atomic_ready "$id" && { src=$id; break; }
+			[ "$id" != "$atomic_id" ] || seen=1
+		done
+		[ -n "$src" ] || die "there is no earlier version to go back to"
+	fi
+
 	# Staged from another version (which the machine started with since,
 	# before that one's shutdown could switch to it), or replaced by a
 	# rollback: deleted.
@@ -206,17 +226,10 @@ if [ -n "$atomic" ]; then
 	# The new version is a copy of the staged one, if any (so updates add
 	# up until the next start), else of the running one, whose /etc is
 	# snapshotted for the shutdown to bring later changes into it. A
-	# rollback copies the newest complete version older than the running
-	# one, /etc as it was.
+	# rollback copies its version (above), /etc as it was.
 	merge=merge
 	if [ "$cmd" = rollback ]; then
-		src= merge= seen=
-		for id in $(ls -r "$top"/roots); do
-			[ -n "$seen" ] && atomic_ready "$id" && { src=$id; break; }
-			[ "$id" != "$atomic_id" ] || seen=1
-		done
-		[ -n "$src" ] || die "there is no earlier version to go back to"
-		etc=$top/roots/$src/etc
+		merge= etc=$top/roots/$src/etc
 	elif [ -n "$staged_id" ]; then
 		src=$staged_id merge=$staged_merge etc=$top/roots/$staged_id/etc
 	else

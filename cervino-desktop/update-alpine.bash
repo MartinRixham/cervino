@@ -1,9 +1,10 @@
 # bash completion for update-alpine: its commands; for add, the packages
 # in the repositories; for del, those in world; for delete, the versions
-# update-alpine list shows. rollback, list and delete are only offered on an
-# atomic install (/etc/kernel/cmdline). Listing the versions needs root: as
-# another user (doas update-alpine delete ...) it runs doas -n, which only
-# works where doas would not ask for a password.
+# update-alpine list shows but the running one; for rollback, one of those
+# that is complete (not the update or incomplete). rollback, list and delete
+# are only offered on an atomic install (/etc/kernel/cmdline). Listing the
+# versions needs root: as another user (doas update-alpine delete ...) it
+# runs doas -n, which only works where doas would not ask for a password.
 
 _update_alpine() {
 	local cur=${COMP_WORDS[COMP_CWORD]} cmds='add del' words
@@ -17,13 +18,18 @@ _update_alpine() {
 			words=$(apk list --quiet --available -- "$cur*" 2>/dev/null) ;;
 		del)
 			words=$(sed '/^!/d; s/[@<>=~].*//' /etc/apk/world 2>/dev/null) ;;
-		delete)
+		delete|rollback)
+			[ "${COMP_WORDS[1]}" = delete ] || [ "$COMP_CWORD" = 2 ] || return
 			if [ "$(id -u)" = 0 ]; then
 				words=$(update-alpine list 2>/dev/null)
 			else
 				words=$(doas -n update-alpine list 2>/dev/null)
 			fi
-			words=$(echo "$words" | awk '!/running/ { print $1 }') ;;
+			if [ "${COMP_WORDS[1]}" = delete ]; then
+				words=$(echo "$words" | awk '!/running/ { print $1 }')
+			else
+				words=$(echo "$words" | awk '!/running|update|incomplete/ { print $1 }')
+			fi ;;
 		*)
 			return ;;
 		esac

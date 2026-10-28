@@ -11,7 +11,9 @@
 #             BootNext), which has the package and the /etc changes, those
 #             made after staging too, and which is then made the one that
 #             starts (first in BootOrder), with the old version kept; then
-#             update-alpine rollback stages a copy of the old version
+#             update-alpine rollback turns down the running version and one
+#             that does not exist, and stages a copy of the old version,
+#             given by its ID
 #   rollback  the system started with that copy: no package; then
 #             update-alpine list shows the versions, and update-alpine
 #             delete removes the updated one, from the volume, the boot
@@ -107,7 +109,11 @@ check)
 	! update-alpine list | grep -q "did not start" ||
 		die "update-alpine list shows a version that did not start"
 	echo "$atomic_id" > "$notes"/second
-	update-alpine rollback < /dev/null || die "update-alpine rollback failed"
+	! update-alpine rollback "$atomic_id" < /dev/null 2> /dev/null ||
+		die "update-alpine rollback went back to the running version"
+	! update-alpine rollback 19700101000000 < /dev/null 2> /dev/null ||
+		die "update-alpine rollback went back to a version that does not exist"
+	update-alpine rollback "$first" < /dev/null || die "update-alpine rollback failed"
 	;;
 
 rollback)

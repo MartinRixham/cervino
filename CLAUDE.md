@@ -145,13 +145,15 @@ between the boots are kept in `/var/lib/cervino-ci`.
   Once started it must become first in `BootOrder` and the fallback
   `BOOTX64.EFI` (waiting for the inittab `::once:` commit, which can race
   the console login), keeping the old version's entry.
-- `rollback`: `update-alpine rollback` must make a new copy of the old
-  version the default, which `update-alpine list` must show as running and
-  next to start; `update-alpine delete` must remove the updated version from
-  the volume, the boot partition and the boot entries but refuse the running
-  one. Then another `apk add` is staged with a test-only shutdown service,
-  `ci-break`, that overwrites the version on trial's `linux.efi` after
-  `cervino-atomic`, so the firmware can't load it and falls back.
+- `rollback`: `update-alpine rollback` must turn down the running version
+  and one that doesn't exist (in `check`), and with the old version's ID
+  make a new copy of it the default, which `update-alpine list` must show
+  as running and next to start; `update-alpine delete` must remove the
+  updated version from the volume, the boot partition and the boot entries
+  but refuse the running one. Then another `apk add` is staged with a
+  test-only shutdown service, `ci-break`, that overwrites the version on
+  trial's `linux.efi` after `cervino-atomic`, so the firmware can't load it
+  and falls back.
 - `fallback`: must find the version from before running and still the
   default, with the broken one listed as "did not start when tried".
 
@@ -770,8 +772,8 @@ builds the initramfs and then runs `update-boot`.
   commands). Then, if the installed database, world or repositories changed,
   it makes it read-only and stages it.
 - `add`/`del` run `apk add`/`del` instead.
-- `rollback` stages a copy of the newest complete version older than the
-  running one, with no merge.
+- `rollback [ID]` stages a copy of version ID, or of the newest complete
+  version older than the running one, with no merge.
 - `list` prints each version (id, date, running, staged, incomplete, next to
   start).
 - `delete ID...` (under the same lock) deletes versions, never the running
