@@ -482,7 +482,8 @@ builder_main() {
 		dir=/patched/$name
 		[[ -d $dir ]] || dir=/rpi/$name
 		base=$(sed -n 's/^_alpine=//p' "$dir"/APKBUILD)
-		alpine=$(apk --root "$apkroot" search --exact "$name") ||
+		# --exact also lists other providers of the name (dnsmasq-dnssec).
+		alpine=$(apk --root "$apkroot" search --exact "$name" | grep "^$name-[0-9]") ||
 			die "Alpine $ALPINE_BRANCH has no $name"
 		[[ $alpine == "$name-$base" ]] ||
 			die "Alpine's $name is $alpine, ${dir#/}/APKBUILD is based on" \
