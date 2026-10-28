@@ -253,6 +253,22 @@ tags can use. To set this up for a fork:
 3. Push a `v*` tag. The first release creates the `gh-pages` branch.
 4. In Settings → Pages, serve the `gh-pages` branch (root).
 
+To replace the key (if it leaked, say), make a new one as in step 1 and
+save it over the old `APK_SIGNING_KEY` secret, from the environment's
+settings page or with:
+
+```sh
+openssl genrsa -out cervino.rsa 2048
+gh secret set APK_SIGNING_KEY -e release < cervino.rsa
+```
+
+Before the first release has been published, that is all. After it, delete
+the `gh-pages` branch too, so the next release publishes every package
+signed with the new key (a package already published would stay signed
+with the old one). Installed systems trust only the old public key, so they
+won't take packages signed with the new one: each has to be given the new
+`cervino.rsa.pub` from the `gh-pages` branch in `/etc/apk/keys` by hand.
+
 Images built without `SIGNING_KEY` and `APK_REPO`, such as CI builds of pushes and pull
 requests, get no update repository: only tag builds are signed for it.
 
