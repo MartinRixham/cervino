@@ -150,9 +150,9 @@ that breaks the build (a patched package that Alpine updated, a patch that no
 longer applies) shows up without a push. You can also start it by hand from
 the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
-`cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `mutter`, and
-the Pi's `wpa_supplicant`, `bluez` and `mesa`) to the update repo (see
-[Updates](#updates)).
+`cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `mutter`,
+`dnsmasq`, and the Pi's `wpa_supplicant`, `bluez` and `mesa`) to the update
+repo (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -501,11 +501,12 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      stops when Alpine's packages are no longer the versions those are
      based on), and `mesa`, with a patch of ours that stops programs
      inheriting the GPU's render node, and the GPU memory with it;
-   - for both, `mutter` and `showtime`, built from [`patched/`](patched):
-     Alpine's, with patches of ours that keep GNOME Shell from crashing
-     when a window's buffer can't be loaded onto the GPU (as can happen
-     going fullscreen on the Pi), and Showtime's sound from skipping on an
-     AirPlay speaker;
+   - for both, `mutter`, `showtime` and `dnsmasq`, built from
+     [`patched/`](patched): Alpine's, with patches of ours that keep GNOME
+     Shell from crashing when a window's buffer can't be loaded onto the
+     GPU (as can happen going fullscreen on the Pi), Showtime's sound from
+     skipping on an AirPlay speaker, and names from failing to resolve
+     through a VPN after switching between VPN connections;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
      [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the

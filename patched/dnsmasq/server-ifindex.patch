@@ -1,0 +1,30 @@
+add_update_server() reuses a server entry that NetworkManager's D-Bus
+update (or a new resolv.conf) left marked, matching it only by domain, and
+gives it the new server's address and interface name but leaves the
+interface index cached for the old one. With --bind-interfaces (as
+NetworkManager runs it) that index is only refreshed by a TCP query, and
+local_bind() sends with IP_UNICAST_IF on it instead of SO_BINDTODEVICE by
+name. NetworkManager makes a WireGuard connection's interface anew, with a
+new index, each time it connects, so once a TCP query has cached the
+tunnel's index, every query after the next switch fails with "failed to
+bind server socket to <interface>: Address not available": through the
+tunnel nothing resolves. Without an interface, the old one's name was
+kept too. Reset both: an index of 0 binds by name, as a new entry does.
+
+--- a/src/domain-match.c
++++ b/src/domain-match.c
+@@ -759,8 +759,14 @@
+       serv->uid = rand32();
+ #endif      
+ 	  
++      /* The entry reused above may have been another server's: keep
++	 neither its interface nor the index cached for it, which may
++	 be of an interface since deleted (a VPN's). */
+       if (interface)
+ 	safe_strncpy(serv->interface, interface, sizeof(serv->interface));
++      else
++	serv->interface[0] = 0;
++      serv->ifindex = 0;
+       if (addr)
+ 	serv->addr = *addr;
+       if (source_addr)

@@ -128,6 +128,14 @@ jobs:
           key: ${{ matrix.target }}-showtime-${{ github.sha }}
           restore-keys: ${{ matrix.target }}-showtime-
 
+      - name: Restore dnsmasq
+        id: restore-dnsmasq
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/dnsmasq
+          key: ${{ matrix.target }}-dnsmasq-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-dnsmasq-
+
       - name: Restore ffmpeg7
         id: restore-ffmpeg7
         if: matrix.target == 'rpi'
@@ -303,6 +311,16 @@ jobs:
         with:
           path: ${{ runner.temp }}/pkgcache/showtime
           key: ${{ steps.keys.outputs.showtime }}
+
+      - name: Save dnsmasq
+        if: >-
+          always() && steps.keys.outputs.dnsmasq &&
+          steps.keys.outputs.dnsmasq !=
+          steps.restore-dnsmasq.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/dnsmasq
+          key: ${{ steps.keys.outputs.dnsmasq }}
 
       - name: Checksum
         working-directory: out

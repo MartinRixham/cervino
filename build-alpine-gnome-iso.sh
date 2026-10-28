@@ -452,9 +452,9 @@ builder_main() {
 	# Alpine's, with patches (README.md says what for): Raspberry Pi OS's
 	# and ours from rpi/ on the Pi, ours from patched/ on both. mutter
 	# comes first, so that it builds with Alpine's mesa-dev.
-	# wpa_supplicant, bluez, mesa and mutter rank above Alpine's and so
-	# replace them (but for their -dbg packages, too big to publish); the
-	# rest go in cervino-vlc and cervino-gstreamer (below).
+	# wpa_supplicant, bluez, mesa, mutter and dnsmasq rank above Alpine's
+	# and so replace them (but for their -dbg packages, too big to
+	# publish); the rest go in cervino-vlc and cervino-gstreamer (below).
 	# Each is Alpine's APKBUILD of one version (its _alpine) with the
 	# patches: stop if Alpine's has moved on, as its changes (security
 	# fixes, rebuilds for libraries' new sonames) would be missing.
@@ -469,7 +469,7 @@ builder_main() {
 	# made them, so they are signed again with this build's key. Packages
 	# built here are left in /work/pkgcache for container_main to keep.
 	local name file repodir=/work/packages/cervino/$ARCH
-	local patched="mutter showtime" replaces="mutter"
+	local patched="mutter showtime dnsmasq" replaces="mutter dnsmasq"
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"
