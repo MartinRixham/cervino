@@ -130,7 +130,8 @@ vm_run() {
 	wait_for 'login: ' 1200
 	vm_user=$1
 	send "$1"
-	# bash's prompt (cervino-terminal's) has colour sequences after the ~.
+	# bash's prompt (cervino-terminal's, once packages.sh has added it) has
+	# colour sequences after the ~.
 	wait_for '~('$'\e''\[[0-9;]*m)*[#$] ' 120
 	# The marker is printed with printf so that the echoed command line
 	# cannot match it.
@@ -171,8 +172,10 @@ fi
 qemu-img create -q -f qcow2 "$WORKDIR"/disk.qcow2 32G
 rm -rf "$WORKDIR"/pkgs
 mkdir "$WORKDIR"/pkgs
-find "$PACKAGES" -path '*/x86_64/cervino-gstreamer-[0-9]*.apk' -exec cp {} "$WORKDIR"/pkgs/ \;
-[[ -n $(ls "$WORKDIR"/pkgs) ]] || die "no x86_64 cervino-gstreamer package in $PACKAGES"
+for p in cervino-gstreamer cervino-terminal; do
+	find "$PACKAGES" -path "*/x86_64/$p-[0-9]*.apk" -exec cp {} "$WORKDIR"/pkgs/ \;
+	[[ -n $(ls "$WORKDIR"/pkgs/"$p"-* 2>/dev/null) ]] || die "no x86_64 $p package in $PACKAGES"
+done
 tar -C "$REPO" -cf "$WORKDIR"/share.tar --owner=0 --group=0 \
 	test ci/guest
 tar -C "$WORKDIR" -rf "$WORKDIR"/share.tar --owner=0 --group=0 pkgs

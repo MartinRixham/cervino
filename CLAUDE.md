@@ -53,7 +53,8 @@ INSTALL_MODE=sys ci/vm-test.sh out/*.iso            # the same with a sys instal
 console, keeping the logs in `$WORKDIR` (default `./vm-test`). The only
 setup between install and test is the packages boot (below): otherwise the
 ISO itself must make every test pass. The guest gets the repo's `test/` and
-`ci/guest/`, and in `pkgs/` the x86_64 `cervino-gstreamer` `.apk` from
+`ci/guest/`, and in `pkgs/` the x86_64 `cervino-gstreamer` and
+`cervino-terminal` `.apk`s from
 `PACKAGES` (the build's `out/repo`; default `repo` next to the ISO), as a
 tar archive on `/dev/vdb`, and each command's exit status comes back as an
 `@@RC=n@@` marker on the console.
@@ -83,7 +84,8 @@ loaders have no serial console), and installs to `/dev/vda` with
 
 **The packages boot.** It boots the disk, logs in as `tester` (root is
 locked there) and runs `ci/guest/packages.sh` through doas, which adds
-what the image leaves out but the tests need, `cervino-gstreamer`, from
+what the image leaves out but the tests need, `cervino-gstreamer` and
+`cervino-terminal`, from
 `pkgs/` (signed with the build's key, which the system trusts): `apk add`
 of the files on a sys install, and on an atomic one `update-alpine add` of
 copies in `/var/lib/cervino-ci/pkgs` (the chroot of the new version has
@@ -97,7 +99,7 @@ together. In order, it:
 
 1. fails if anything of the live session (live user, its home, `live-user`
    script or runlevel link, autologin) reached the install, or if
-   `cervino-gstreamer` is not installed;
+   `cervino-gstreamer` or `cervino-terminal` is not installed;
 2. turns on GDM autologin for `tester`, restarts gdm and runs
    `test/features.sh` as `tester` with the environment of the user's
    `gnome-shell`;
@@ -243,7 +245,8 @@ other.
   prefix), and after it, even if it failed, save each package whose `key`
   file is not the restored one's as `<target>-<package>-<key>`.
 - **`vm-test`** (after both builds): downloads the ISO and
-  `cervino-repo-iso` (into `out/repo`, for `cervino-gstreamer`) and runs
+  `cervino-repo-iso` (into `out/repo`, for `cervino-gstreamer` and
+  `cervino-terminal`) and runs
   `ci/vm-test.sh` once per `INSTALL_MODE` (a matrix of `atomic` and `sys`,
   on separate runners, since a runner's 16 GB can't hold two 8 GB VMs),
   failing unless every OS feature test passes. The console logs are uploaded
@@ -353,9 +356,9 @@ its IPv6 reverse path filter test, which needs `ip netns`.
 `cervino-desktop`, which depends on `$features`: a feature added later
 reaches installed systems with the package, while GNOME's apps stay
 removable from world. It also has `cervino-vlc` (VLC, on the Pi, below),
-which can be removed for Alpine's packages, and `cervino-terminal`
-(below). `cervino-gstreamer` (below) is not in world, so not in the image:
-users add it from the repo, and the VM test adds it before the tests.
+which can be removed for Alpine's packages. `cervino-gstreamer` and
+`cervino-terminal` (below) are not in world, so not in the image: users add
+them from the repo, and the VM test adds them before the tests.
 
 **The patched packages.** It first builds `patched/mutter` and
 `patched/showtime`, then for `rpi` `rpi/ffmpeg7`, `rpi/vlc`,

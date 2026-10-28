@@ -422,13 +422,13 @@ builder_main() {
 	# cervino-desktop, which brings in the features. So a feature added to
 	# the package later reaches installed systems with it, while GNOME's
 	# apps stay in world, where they can be removed one by one. Also
-	# cervino-vlc and cervino-terminal, built below, which can be removed;
-	# not cervino-gstreamer, which users add from the repo.
+	# cervino-vlc, built below, which can be removed; not cervino-gstreamer
+	# or cervino-terminal, which users add from the repo.
 	local world
 	world=$(printf '%s\n' alpine-base doas \
 		elogind polkit-elogind "$BROWSER" \
 		eudev udev-init-scripts udev-init-scripts-openrc \
-		$gnome_deps cervino-desktop cervino-vlc cervino-terminal |
+		$gnome_deps cervino-desktop cervino-vlc |
 		sort -u)
 
 	# The image's on-disc apk repo, for Alpine's setup-disk (sys installs,

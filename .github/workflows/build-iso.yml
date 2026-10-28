@@ -352,8 +352,8 @@ jobs:
           name: alpine-gnome-iso
           path: out
 
-      # The packages the image leaves out (cervino-gstreamer), which the VM
-      # test adds before running the tests.
+      # The packages the image leaves out (cervino-gstreamer and
+      # cervino-terminal), which the VM test adds before running the tests.
       - uses: actions/download-artifact@v7
         with:
           name: cervino-repo-iso

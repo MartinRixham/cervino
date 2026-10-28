@@ -91,7 +91,8 @@ from a desktop distribution:
   has no C compiler to build them, so they don't install on demand. The
   command line tools bat, ripgrep (`rg`), fd and GNU less come with it, and
   Fedora's green bash prompt. All this is the `cervino-terminal` package,
-  which `doas apk del cervino-terminal` removes
+  which the image leaves out: `doas apk add cervino-terminal` adds it from
+  the update repo, and `doas apk del cervino-terminal` removes it
 
 [`test/features.sh`](test/features.sh) checks all of this on a running
 system. [`test/apparmor.sh`](test/apparmor.sh) checks that AppArmor confines
@@ -154,8 +155,8 @@ the Pi's `wpa_supplicant`, `bluez` and `mesa`) to the update repo (see
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
 virtual disk with `setup-alpine`, restarts it to add `cervino-gstreamer`
-from the packages just built (the image leaves it out; see
-[the Pi](#raspberry-pi)), checks that nothing of the live session
+and `cervino-terminal` from the packages just built (the image leaves them
+out; see [the Pi](#raspberry-pi)), checks that nothing of the live session
 was copied to the installed system, runs `test/features.sh` in the
 installed user's GNOME session and `test/apparmor.sh` as root, runs an app
 in the session that takes memory until something kills it and checks that
@@ -178,8 +179,8 @@ ci/vm-test.sh out/*.iso                     # an atomic install
 INSTALL_MODE=sys ci/vm-test.sh out/*.iso    # a sys install
 ```
 
-It takes `cervino-gstreamer` from `out/repo`, next to the ISO, or from the
-directory given as a second argument.
+It takes `cervino-gstreamer` and `cervino-terminal` from `out/repo`, next
+to the ISO, or from the directory given as a second argument.
 
 Before that, [`ci/update-test.sh`](ci/update-test.sh) tests `update-alpine`
 from the package just built, in Alpine containers: it has to upgrade the

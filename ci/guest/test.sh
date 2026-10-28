@@ -26,8 +26,9 @@ fi
 
 # The packages the image leaves out, which packages.sh added in the boot
 # before (on an atomic install, to the version this one started with).
-apk info -e cervino-gstreamer > /dev/null ||
-	{ echo "cervino-gstreamer is not installed" >&2; exit 1; }
+for p in cervino-gstreamer cervino-terminal; do
+	apk info -e "$p" > /dev/null || { echo "$p is not installed" >&2; exit 1; }
+done
 
 cat > /etc/gdm/custom.conf <<EOF
 [daemon]

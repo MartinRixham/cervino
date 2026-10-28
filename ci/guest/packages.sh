@@ -1,11 +1,12 @@
 #!/bin/sh
 # ci/guest/packages.sh MODE: runs as root on the installed system, an atomic
 # or a sys install (MODE, setup-disk's -m): adds the packages of this build
-# that the image leaves out (cervino-gstreamer), whose .apk files are in
-# pkgs/ of the shared archive, as a user would add them from the repo. They
-# are signed with the build's key, which the system trusts. On an atomic
-# install update-alpine adds them to a new version of the system, which it
-# starts with next time; ci/vm-test.sh restarts it before the tests.
+# that the image leaves out (cervino-gstreamer, cervino-terminal), whose
+# .apk files are in pkgs/ of the shared archive, as a user would add them
+# from the repo. They are signed with the build's key, which the system
+# trusts. On an atomic install update-alpine adds them to a new version of
+# the system, which it starts with next time; ci/vm-test.sh restarts it
+# before the tests.
 
 set -eu
 
