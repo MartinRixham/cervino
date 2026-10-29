@@ -412,11 +412,9 @@ builder_main() {
 	# with a boot entry of its own.
 	iso) features="$features intel-media-driver libva-intel-driver amd-ucode intel-ucode
 		$atomic efibootmgr ukify" ;;
-	# vcgencmd, pinctrl etc. raspberrypi-utils-raspinfo needs a sudo-virt
-	# other than sudo itself, which mkimage's fetch would otherwise pick.
 	# The firmware's package, so that each version of an atomic install
 	# brings the firmware it is to start with.
-	rpi) features="$features raspberrypi-utils doas-sudo-shim $atomic raspberrypi-bootloader" ;;
+	rpi) features="$features $atomic raspberrypi-bootloader" ;;
 	esac
 
 	# /etc/apk/world: what setup-desktop gnome puts there, plus
