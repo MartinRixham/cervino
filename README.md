@@ -100,6 +100,16 @@ from a desktop distribution:
 system. [`test/apparmor.sh`](test/apparmor.sh) checks that AppArmor confines
 the system daemons.
 
+The update repo also has packages that Alpine lacks, built from
+[`extra/`](extra), which the image leaves out and nothing depends on:
+
+- `tui-torrent`, a terminal interface that searches YTS and The Pirate Bay
+  and downloads with aria2, which it starts itself when it isn't running.
+  Its downloads go to `~/Downloads`. aria2's RPC interface, which it drives,
+  listens only on the machine itself and takes a secret that changes each
+  run (tui-torrent opened it to the network, with no secret).
+  `doas apk add tui-torrent` adds it.
+
 ## Requirements
 
 - Linux host with `podman` or `docker`
@@ -138,7 +148,7 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 | `MIRROR`        | `https://dl-cdn.alpinelinux.org/alpine`    | Alpine package mirror                                               |
 | `SIGNING_KEY`   | a new key each build                       | abuild private key to sign the packages built here and the image's repo; its public key, derived from it, is named after its file plus `.pub` |
 | `APK_REPO`      | none                                       | URL (without the branch) of the repo installs get updates of the packages built here from; its packages must be signed with `SIGNING_KEY` |
-| `CACHEDIR`      | none                                       | Where the patched packages built from `rpi/` and `patched/` are kept; later builds take them from there (signed again with their own key) while their sources, Alpine's version of them and the release are the same |
+| `CACHEDIR`      | none                                       | Where the packages built from `rpi/`, `patched/` and `extra/` are kept; later builds take them from there (signed again with their own key) while their sources, Alpine's version of them and the release are the same |
 
 ### Prebuilt ISOs
 
@@ -151,8 +161,8 @@ longer applies) shows up without a push. You can also start it by hand from
 the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `mutter`,
-`dnsmasq`, and the Pi's `wpa_supplicant`, `bluez` and `mesa`) to the update
-repo (see [Updates](#updates)).
+`dnsmasq`, `tui-torrent`, and the Pi's `wpa_supplicant`, `bluez` and
+`mesa`) to the update repo (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -508,6 +518,8 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      GPU (as can happen going fullscreen on the Pi), Showtime's sound from
      skipping on an AirPlay speaker, and names from failing to resolve
      through a VPN after switching between VPN connections;
+   - for both, the packages in [`extra/`](extra), which Alpine lacks
+     (`tui-torrent`), built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
      [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the

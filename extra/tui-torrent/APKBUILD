@@ -1,0 +1,43 @@
+# tui-torrent from crates.io, which Alpine doesn't package, with
+# aria2-rpc-secret.patch, ours: aria2c's RPC interface, which tui-torrent
+# starts, was open to the network and to web pages. Published to the update
+# repo but not in world, so installs add it with apk. A change here needs a
+# new pkgrel, as ci/publish-repo.sh keeps a file already published.
+pkgname=tui-torrent
+pkgver=1.1.0
+pkgrel=0
+pkgdesc="Terminal user interface for searching torrents and downloading them with aria2"
+url="https://crates.io/crates/tui-torrent"
+arch="all"
+license="MIT"
+depends="aria2"
+makedepends="cargo cargo-auditable openssl-dev"
+source="$pkgname-$pkgver.tar.gz::https://crates.io/api/v1/crates/$pkgname/$pkgver/download
+	aria2-rpc-secret.patch
+	"
+# cargo fetches the crates in prepare().
+options="net"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	# Not search_test, which searches the torrent sites.
+	cargo test --frozen --lib --test app_tests --test utils_tests
+}
+
+package() {
+	install -Dm755 target/release/tui-torrent -t "$pkgdir"/usr/bin
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+sha512sums="
+40cdc6e2a9c84f8074001c4aa0dc5b51d235887521b71f886a4bdfa1e234778a2adeb75eb105e333d3be01169e017228462c46b85843f0b7a71fd5025e2777d9  tui-torrent-1.1.0.tar.gz
+ee53581a7e23f06cc3a111dd556a85a3cdccd221cb13b40a32241fbb203c12cc2ff0618943feaa2fc904dee9331966508730d022c21c4fe8457d99de3bcdd305  aria2-rpc-secret.patch
+"

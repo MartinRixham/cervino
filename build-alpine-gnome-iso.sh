@@ -129,6 +129,7 @@ host_main() {
 		-v "$here"/apparmor.d:/apparmor.d:ro \
 		-v "$here"/rpi:/rpi:ro \
 		-v "$here"/patched:/patched:ro \
+		-v "$here"/extra:/extra:ro \
 		-v "$OUTDIR":/out \
 		-e TARGET="$TARGET" \
 		-e ALPINE_BRANCH="$ALPINE_BRANCH" \
@@ -456,6 +457,8 @@ builder_main() {
 	# Each is Alpine's APKBUILD of one version (its _alpine) with the
 	# patches: stop if Alpine's has moved on, as its changes (security
 	# fixes, rebuilds for libraries' new sonames) would be missing.
+	# Built the same way, those in extra/ are packages Alpine lacks, with
+	# no _alpine: published as they are, but not in world.
 	# abuild -r installs what they build with (abuild-apk, which the abuild
 	# group may run) and adds the packages it built before to the repos, so
 	# vlc builds with ffmpeg7-dev and gst-plugins-bad with
@@ -467,7 +470,7 @@ builder_main() {
 	# made them, so they are signed again with this build's key. Packages
 	# built here are left in /work/pkgcache for container_main to keep.
 	local name file repodir=/work/packages/cervino/$ARCH
-	local patched="mutter showtime dnsmasq" replaces="mutter dnsmasq"
+	local patched="mutter showtime dnsmasq" replaces="mutter dnsmasq" extra="tui-torrent"
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"
@@ -476,16 +479,21 @@ builder_main() {
 	local dir base alpine dep key tmp files
 	local -A keys after=([vlc]=ffmpeg7 [gst-plugins-bad]=gst-plugins-base)
 	mkdir -p /work/cervino /work/pkgcache
-	for name in $patched; do
+	for name in $patched $extra; do
 		dir=/patched/$name
 		[[ -d $dir ]] || dir=/rpi/$name
+		[[ -d $dir ]] || dir=/extra/$name
 		base=$(sed -n 's/^_alpine=//p' "$dir"/APKBUILD)
-		# --exact also lists other providers of the name (dnsmasq-dnssec).
-		alpine=$(apk --root "$apkroot" search --exact "$name" | grep "^$name-[0-9]") ||
-			die "Alpine $ALPINE_BRANCH has no $name"
-		[[ $alpine == "$name-$base" ]] ||
-			die "Alpine's $name is $alpine, ${dir#/}/APKBUILD is based on" \
-				"$name-$base: update it"
+		alpine=
+		if [[ $dir != /extra/* ]]; then
+			# --exact also lists other providers of the name (dnsmasq-dnssec).
+			alpine=$(apk --root "$apkroot" search --exact "$name" |
+				grep "^$name-[0-9]") ||
+				die "Alpine $ALPINE_BRANCH has no $name"
+			[[ $alpine == "$name-$base" ]] ||
+				die "Alpine's $name is $alpine, ${dir#/}/APKBUILD is based on" \
+					"$name-$base: update it"
+		fi
 		cp -R "$dir" /work/cervino/
 		cd /work/cervino/"$name"
 		dep=${after[$name]:-}
@@ -527,14 +535,14 @@ builder_main() {
 	done
 
 	# --- cervino-vlc, cervino-gstreamer and cervino-terminal packages --------
-	# See build_bundle. The other patched packages are published as they
-	# are.
+	# See build_bundle. The other patched packages, and extra/'s, are
+	# published as they are.
 	local published=()
 	build_bundle cervino-vlc "$VLC_PKGVER" ffmpeg7 vlc
 	build_bundle cervino-gstreamer "$GSTREAMER_PKGVER" gst-plugins-base gst-plugins-bad \
 		showtime
 	build_bundle cervino-terminal "$TERMINAL_PKGVER"
-	for name in $replaces; do
+	for name in $replaces $extra; do
 		# shellcheck disable=SC2086
 		for file in ${pkgfiles[$name]}; do
 			[[ $file == *-dbg-[0-9]* ]] && continue

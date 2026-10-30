@@ -16,6 +16,7 @@ on:
       - apparmor.d/**
       - rpi/**
       - patched/**
+      - extra/**
       - test/**
       - ci/**
       - .github/workflows/build-iso.yml
@@ -32,6 +33,7 @@ on:
       - apparmor.d/**
       - rpi/**
       - patched/**
+      - extra/**
       - test/**
       - ci/**
       - .github/workflows/build-iso.yml
@@ -107,7 +109,7 @@ jobs:
           pages=https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}
           echo "APK_REPO=$pages" >> "$GITHUB_ENV"
 
-      # The patched packages built from rpi/ and patched/ take most of the
+      # The packages built from rpi/, patched/ and extra/ take most of the
       # build, so each is kept in a cache of its own (CACHEDIR), keyed on
       # the target and the hash the build writes next to it: the newest of
       # each is restored, and the build takes it from there while that hash
@@ -135,6 +137,14 @@ jobs:
           path: ${{ runner.temp }}/pkgcache/dnsmasq
           key: ${{ matrix.target }}-dnsmasq-${{ github.sha }}
           restore-keys: ${{ matrix.target }}-dnsmasq-
+
+      - name: Restore tui-torrent
+        id: restore-tui_torrent
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/tui-torrent
+          key: ${{ matrix.target }}-tui-torrent-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-tui-torrent-
 
       - name: Restore ffmpeg7
         id: restore-ffmpeg7
@@ -321,6 +331,16 @@ jobs:
         with:
           path: ${{ runner.temp }}/pkgcache/dnsmasq
           key: ${{ steps.keys.outputs.dnsmasq }}
+
+      - name: Save tui-torrent
+        if: >-
+          always() && steps.keys.outputs.tui_torrent &&
+          steps.keys.outputs.tui_torrent !=
+          steps.restore-tui_torrent.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/tui-torrent
+          key: ${{ steps.keys.outputs.tui_torrent }}
 
       - name: Checksum
         working-directory: out

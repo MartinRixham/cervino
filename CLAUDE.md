@@ -26,6 +26,7 @@ Besides the script, the repo holds:
   `wpa_supplicant`, `bluez` and `mesa` packages in `rpi/`
 - the patched `mutter`, `showtime` and `dnsmasq` packages, for both
   targets, in `patched/`
+- packages Alpine lacks (`tui-torrent`), for both targets, in `extra/`
 
 `README.md` documents the user-facing behaviour and the environment
 variables (`TARGET`, `ALPINE_BRANCH`, `OUTDIR`, `LIVE_USER`,
@@ -231,7 +232,7 @@ CI (`.github/workflows/build-iso.yml`) runs the script with
 `CONTAINER=docker` on pushes and PRs that touch the script, the generator,
 `live/`, `mkimg.gnomelive.sh`, `cervino-desktop/`, `cervino-vlc/`,
 `cervino-gstreamer/`, `cervino-terminal/`, `apparmor.d/`, `rpi/`,
-`patched/`, `ci/`, `test/` or the workflow, and daily on `main` (`schedule`),
+`patched/`, `extra/`, `ci/`, `test/` or the workflow, and daily on `main` (`schedule`),
 to catch Alpine changes that break the patched packages. Its concurrency
 group includes the event, so the daily run and a push don't cancel each
 other.
@@ -266,7 +267,8 @@ other.
 - **The packages**: the build jobs set `APK_REPO` to the repository's GitHub
   Pages URL, and each uploads its `out/repo` (the packages as
   `<branch>/<arch>/*.apk`: `cervino-desktop`, `cervino-vlc`,
-  `cervino-gstreamer`, `cervino-terminal`, `mutter`, `dnsmasq`, and for
+  `cervino-gstreamer`, `cervino-terminal`, `mutter`, `dnsmasq`, `extra/`'s
+  packages, and for
   `rpi` `wpa_supplicant`, `bluez` and `mesa`, with their subpackages but
   `-dbg`) as `cervino-repo-<target>`.
 - **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` in an
@@ -297,11 +299,12 @@ The same file runs in four phases, selected by its first argument.
 - Re-runs itself in `alpine:<release>`, mounting itself at `/build.sh`;
   `genapkovl-gnomelive.sh`, `live/`, `mkimg.gnomelive.sh`,
   `initramfs-live.patch`, `cervino-desktop/`, `cervino-vlc/`,
-  `cervino-gstreamer/`, `cervino-terminal/`, `apparmor.d/`, `rpi/` and
-  `patched/` (from the script's directory) at `/genapkovl-gnomelive.sh`,
-  `/live`, `/mkimg.gnomelive.sh`, `/initramfs-live.patch`,
-  `/cervino-desktop`, `/cervino-vlc`, `/cervino-gstreamer`,
-  `/cervino-terminal`, `/apparmor.d`, `/rpi` and `/patched`; `$OUTDIR` at
+  `cervino-gstreamer/`, `cervino-terminal/`, `apparmor.d/`, `rpi/`,
+  `patched/` and `extra/` (from the script's directory) at
+  `/genapkovl-gnomelive.sh`, `/live`, `/mkimg.gnomelive.sh`,
+  `/initramfs-live.patch`, `/cervino-desktop`, `/cervino-vlc`,
+  `/cervino-gstreamer`, `/cervino-terminal`, `/apparmor.d`, `/rpi`,
+  `/patched` and `/extra`; `$OUTDIR` at
   `/out`; and `CACHEDIR`, if set, at `/cache`.
 - Passes `PKGVER`, the package's version: the last commit's time
   (`YYYYMMDD.HHMMSS`, UTC), or the build time outside git, so each commit's
@@ -367,7 +370,8 @@ them from the repo, and the VM test adds them before the tests.
 **The patched packages.** It first builds `patched/mutter`,
 `patched/showtime` and `patched/dnsmasq`, then for `rpi` `rpi/ffmpeg7`, `rpi/vlc`,
 `rpi/gst-plugins-base`, `rpi/gst-plugins-bad`, `rpi/wpa_supplicant`,
-`rpi/bluez` and `rpi/mesa`, in that order, with `abuild -r`. mutter comes
+`rpi/bluez` and `rpi/mesa`, in that order, then `extra/`'s, with
+`abuild -r`. mutter comes
 first so that it builds with Alpine's `mesa-dev`.
 
 - abuild-apk installs their makedepends. `vlc` builds with the
@@ -375,7 +379,7 @@ first so that it builds with Alpine's `mesa-dev`.
   built before them, which abuild's repo `/work/packages/cervino` offers.
 - Before building, it checks that Alpine's version of each
   (`apk search --exact` in the apk root) is still the APKBUILD's `_alpine`,
-  the one it was made from.
+  the one it was made from; not for `extra/`'s, which Alpine lacks.
 - With `/cache`, a package whose `key` there matches is taken from there
   instead (the files `abuild listpkg` names). The key is a hash of the
   branch, `ARCH`, Alpine's version, the files of the package's directory
@@ -457,6 +461,12 @@ replace Alpine's. A change to one of them needs a new `pkgrel`, as
 published only inside `cervino-vlc` (`vlc` and `ffmpeg7`) and
 `cervino-gstreamer` (`gst-plugins-base` and `gst-plugins-bad` on `rpi`,
 and `showtime` on both), so that deleting those brings Alpine's back.
+
+`extra/`'s packages (Alpine has none of those names) are published as
+they are too, needing a new `pkgrel` the same way, but are in neither
+world nor any package's depends: users add them. `tui-torrent`
+(`aria2-rpc-secret.patch`): it started aria2c with its RPC interface open
+to the network and to web pages, with no secret.
 
 **`cervino-vlc` and `cervino-gstreamer`.** `build_bundle NAME VERSION
 PACKAGE...` builds each with `abuild -d` in `/work/cervino/<name>`, from a
