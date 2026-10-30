@@ -2,6 +2,9 @@
 
 ::sysinit:/sbin/openrc sysinit
 ::sysinit:/sbin/openrc boot
+# A new version of an atomic install on a Pi, not tried at the restart
+# (switched off instead): restarts to try it, before the desktop starts.
+::sysinit:/usr/libexec/cervino/boot-trial retry
 ::wait:/sbin/openrc default
 # A new version of an atomic install, on trial, has started.
 ::once:/usr/libexec/cervino/boot-trial boot

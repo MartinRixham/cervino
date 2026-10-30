@@ -1,6 +1,6 @@
 #!/bin/sh
-# boot-trial boot|shutdown|reboot: a new version of an atomic install starts
-# once on trial, with the version that last started to fall back on.
+# boot-trial boot|retry|shutdown|reboot: a new version of an atomic install
+# starts once on trial, with the version that last started to fall back on.
 # update-boot (see there) puts the newest version on trial, if it is newer
 # and did not fail to start before (UEFI's BootNext, which the firmware
 # clears as it starts it, or the Pi's tryboot), and notes that version in
@@ -16,9 +16,12 @@
 # after the shutdown runlevel, with the file systems read-only, init runs
 # reboot, which restarts so. Init does not tell it whether it is to restart
 # or power off, so elogind's shutdown hook and the reboot wrapper note a
-# restart in /run/cervino-reboot. The firmware cannot try a version after a
-# power off, so then (shutdown, run by the cervino-atomic service) the new
-# version is made the one that starts, with nothing to fall back on.
+# restart in /run/cervino-reboot, and then (shutdown, run by the
+# cervino-atomic service) "tried" is added to boot-trying. The firmware
+# cannot try a version after a power off or a restart without the flag, so
+# then the version before starts again, and with the version on trial not
+# tried, retry (run by init after the boot runlevel, before the default
+# one) restarts at once to try it.
 
 # shellcheck source=atomic.sh
 . /usr/libexec/cervino/atomic.sh
@@ -30,7 +33,7 @@ boot)
 	flock 9
 	atomic_mount || exit 1
 	if [ -f "$top"/boot-trying ]; then
-		read -r trying < "$top"/boot-trying
+		read -r trying _ < "$top"/boot-trying
 		if [ "$trying" != "$atomic_id" ]; then
 			echo "$trying" >> "$top"/boot-failed
 			logger -t cervino \
@@ -43,15 +46,37 @@ boot)
 	/usr/libexec/cervino/update-boot 2>&1 | logger -t update-boot
 	;;
 
+retry)
+	atomic_detect && atomic_pi && atomic_trial || exit 0
+	exec 9> /run/cervino-update.lock
+	flock 9
+	atomic_mount || exit 1
+	trying= tried=
+	[ ! -f "$top"/boot-trying ] || read -r trying tried < "$top"/boot-trying
+	atomic_umount
+	[ -n "$trying" ] && [ "$trying" != "$atomic_id" ] && [ -z "$tried" ] || exit 0
+	# For shutdown and reboot: update-boot, which writes it, does not run at
+	# this shutdown, as nothing is staged.
+	echo "$trying" > /run/cervino-trial
+	logger -t cervino "The updated system ($trying) was not tried: restarting to try it"
+	echo "Restarting to try the updated system"
+	exec 9>&-
+	exec /usr/sbin/reboot
+	;;
+
 shutdown)
 	[ -f /run/cervino-trial ] && atomic_detect && atomic_pi && atomic_trial || exit 0
 	# Restarting (and /etc/inittab, unless changed and kept from before,
-	# has reboot): tried.
+	# has reboot): tried. Else retry tries it at the next start.
 	[ -f /run/cervino-reboot ] &&
-		grep -q '^::shutdown:/usr/libexec/cervino/boot-trial reboot$' /etc/inittab && exit 0
+		grep -q '^::shutdown:/usr/libexec/cervino/boot-trial reboot$' /etc/inittab || exit 0
 	exec 9> /run/cervino-update.lock
 	flock 9
-	UPDATE_BOOT_COMMIT=1 /usr/libexec/cervino/update-boot
+	atomic_mount || exit 1
+	read -r trying < /run/cervino-trial
+	echo "$trying tried" > "$top"/boot-trying
+	sync
+	atomic_umount
 	;;
 
 reboot)

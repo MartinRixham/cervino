@@ -5,8 +5,7 @@
 # those of versions that are gone, and chooses the version that starts.
 # That is the version on ROOT, which has started, and a newer one, if there
 # is one that did not fail to start before, is started once on trial (see
-# /usr/libexec/cervino/boot-trial); with UPDATE_BOOT_COMMIT=1 that one
-# starts from now on instead.
+# /usr/libexec/cervino/boot-trial).
 #
 # README.md (Installing to disk, Raspberry Pi) describes the boot
 # partitions on a PC and on a Pi. On a Pi, autoboot.txt's tryboot_a_b has
@@ -169,7 +168,6 @@ case " $keep " in *" $atomic_id "*)
 			[ "$id" -gt "$start" ] || break
 			atomic_failed "$id" || { try=$id; break; }
 		done
-		[ "${UPDATE_BOOT_COMMIT:-}" != 1 ] || [ -z "$try" ] || start=$try try=
 	fi
 esac
 

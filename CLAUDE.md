@@ -763,7 +763,6 @@ This is shared with the Pi (below). Where versions start on trial
 - the version `update-boot` runs on starts (it started);
 - the newest one, if newer and not in the volume's `boot-failed`, is on
   trial, noted in the volume's `boot-trying` and in `/run/cervino-trial`.
-  With `UPDATE_BOOT_COMMIT=1` that one starts instead.
 
 `/usr/libexec/cervino/boot-trial boot` (an inittab `::once:` line, after the
 default runlevel) adds `boot-trying` to `boot-failed` if another version is
@@ -944,11 +943,20 @@ them itself and:
 Without `autoboot.txt` on `/boot/firmware`, `update-boot` stops.
 
 The firmware has no menu, and only switches to the version on trial at a
-restart with the tryboot flag, so `boot-trial` has two more steps on the Pi:
+restart with the tryboot flag, so `boot-trial` has three more steps on the
+Pi:
 
 - `shutdown` (from the `cervino-atomic` service, after `atomic-finalize`)
-  commits the version on trial with `UPDATE_BOOT_COMMIT=1` unless the
-  machine restarts;
+  adds `tried` to `boot-trying` when the machine restarts. Nothing commits
+  a version that has not started: after a power off, or a restart without
+  the flag, the firmware starts the version before;
+- `retry` (an inittab `::sysinit:` line after `openrc boot`) restarts at
+  once when `boot-trying` names another version, not `tried`. Busybox init
+  holds the reboot signal until the `sysinit` lines are done, so the
+  restart comes before the default runlevel (GDM). It writes
+  `/run/cervino-trial` itself, as `atomic-finalize` (and so `update-boot`)
+  does nothing at that shutdown, with nothing staged. Its restart is a
+  proper one, so a version is tried at most once more;
 - `reboot` (an inittab `::shutdown:` line after `openrc shutdown`, when the
   file systems are read-only) restarts with `reboot(2)`'s `RESTART2` and
   `"0 tryboot"` through `/usr/libexec/cervino/tryboot`, as busybox init
@@ -960,8 +968,8 @@ restart with the tryboot flag, so `boot-trial` has two more steps on the Pi:
 Busybox init doesn't tell a restart from a power off, so the package's
 elogind `system-shutdown` hook (its `$1` is `reboot`) and its
 `/usr/sbin/reboot` wrapper (ahead of busybox's in `PATH`; also inittab's
-Ctrl-Alt-Del) write `/run/cervino-reboot`. Without it, a restart commits
-like a power off.
+Ctrl-Alt-Del, and `retry`'s restart) write `/run/cervino-reboot`. Without
+it, a restart is taken for a power off, and `retry` restarts again.
 
 ## The live system's boot
 

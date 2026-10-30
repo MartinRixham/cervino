@@ -475,7 +475,8 @@ leaves the version before to start. If it doesn't start, switching the Pi
 off and on starts the version before again, and the new one is not tried
 again (`update-alpine list` shows it as "did not start when tried").
 Switching off instead of restarting can't use tryboot, so the next start
-goes straight to the new version, with nothing to fall back on. Going back
+begins with the version before, which restarts at once, before the
+desktop, to try the new one. Going back
 from a version that starts is `doas update-alpine rollback`, or, from one
 that doesn't, swapping the two partition numbers in `autoboot.txt` on
 another computer, which starts the version in the other partition.
