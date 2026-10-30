@@ -444,6 +444,14 @@ NoDisplay=true
 EOF
 	done
 
+	# AccountsService (GNOME Settings' automatic login) tells which display
+	# manager writes the autologin by the name systemd's display-manager.service
+	# link points to, and without one it crashes (it reads the message of an
+	# error it never set). It only reads the link, so it need not resolve.
+	mkdir -p "$pkgdir"/etc/systemd/system
+	ln -s /usr/lib/systemd/system/gdm.service \
+		"$pkgdir"/etc/systemd/system/display-manager.service
+
 	# The SPICE agent needs uinput.
 	makefile root:root 0644 "$pkgdir"/etc/modules-load.d/uinput.conf <<'EOF'
 uinput

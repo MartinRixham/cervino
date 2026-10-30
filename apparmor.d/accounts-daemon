@@ -35,8 +35,11 @@ profile accounts-daemon /usr/libexec/accounts-daemon flags=(attach_disconnected)
   /usr/share/accountsservice/{,**} r,
   /usr/share/dbus-1/interfaces/{,**} r,
   /var/lib/AccountsService/{,**} rw,
-  # Automatic login, which it sets in GDM's configuration
+  # Automatic login, which it sets in GDM's configuration (written to a
+  # custom.conf.XXXXXX and renamed), for the display manager the link names
+  /etc/systemd/system/display-manager.service r,
   /etc/gdm/custom.conf rw,
+  /etc/gdm/custom.conf.* rw,
   /etc/gdm/.goutputstream-* rw,
   /var/log/wtmp r,
   @{run}/systemd/{,**} r,

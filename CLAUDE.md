@@ -100,7 +100,8 @@ together. In order, it:
 1. fails if anything of the live session (live user, its home, `live-user`
    script or runlevel link, autologin) reached the install, or if
    `cervino-gstreamer` or `cervino-terminal` is not installed;
-2. turns on GDM autologin for `tester`, restarts gdm and runs
+2. turns on GDM autologin for `tester` through AccountsService (as GNOME
+   Settings does), restarts gdm and runs
    `test/features.sh` as `tester` with the environment of the user's
    `gnome-shell`;
 3. runs `test/apparmor.sh` as root (see below);

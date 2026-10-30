@@ -30,11 +30,17 @@ for p in cervino-gstreamer cervino-terminal; do
 	apk info -e "$p" > /dev/null || { echo "$p is not installed" >&2; exit 1; }
 done
 
-cat > /etc/gdm/custom.conf <<EOF
-[daemon]
-AutomaticLoginEnable=True
-AutomaticLogin=$user
-EOF
+# Automatic login, set through AccountsService as GNOME Settings sets it.
+gdbus call --system --dest org.freedesktop.Accounts \
+	--object-path /org/freedesktop/Accounts/User"$uid" \
+	--method org.freedesktop.Accounts.User.SetAutomaticLogin true > /dev/null || {
+	echo "AccountsService could not turn on automatic login" >&2
+	exit 1
+}
+grep -qx "AutomaticLogin=$user" /etc/gdm/custom.conf || {
+	echo "AccountsService did not write the automatic login to GDM's custom.conf" >&2
+	exit 1
+}
 rc-service gdm restart
 
 # pgrep differs between busybox and procps (which setup/ installs), so look
