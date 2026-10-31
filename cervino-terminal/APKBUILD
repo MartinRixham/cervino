@@ -73,7 +73,7 @@ Type=Application
 Name=Zellij
 Comment=Zellij terminal workspace
 Icon=zellij
-Exec=foot -F --app-id=zellij --font="DroidSansM Nerd Font:size=12" zellij
+Exec=foot -F --app-id=zellij --font="DroidSansM Nerd Font:size=11" zellij
 Terminal=false
 Categories=System;TerminalEmulator;
 Keywords=terminal;multiplexer;zellij;
@@ -89,7 +89,7 @@ Name=Neovim
 GenericName=Text Editor
 Comment=Edit text files
 Icon=nvim
-Exec=foot -F --app-id=nvim --font="DroidSansM Nerd Font:size=12" nvim %F
+Exec=foot -F --app-id=nvim --font="DroidSansM Nerd Font:size=11" nvim %F
 Terminal=false
 Categories=Utility;TextEditor;Development;
 Keywords=Text;editor;
