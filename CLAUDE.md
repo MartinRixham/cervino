@@ -476,8 +476,9 @@ APKBUILD. Each also gets, from its packages built for the target (for
 `showtime`, so `cervino-vlc` holds nothing and only depends on Alpine's
 `vlc-qt`):
 
-- `apks/`: their runtime `.apk`s (not `-dev`, `-doc`, `-dbg`, `-lang` or
-  `vlc-daemon`), whose files `package()` unpacks into it;
+- `apks/`: their runtime `.apk`s (not `-dev`, `-doc`, `-dbg`, `-lang`,
+  `vlc-daemon` or `ffmpeg7` itself, the commands, which would conflict with
+  Alpine's `ffmpeg`), whose files `package()` unpacks into it;
 - in the `.conf`, from their `.PKGINFO`s: `PROVIDES`, each package's name
   and `cmd:` provides at Alpine's version (`_alpine`) rather than ours, and
   its `so:` provides; `DEPENDS`, their depends but those they provide each

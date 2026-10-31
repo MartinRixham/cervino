@@ -271,11 +271,13 @@ build_rootfs() {
 # commits that changed NAME/, the PACKAGEs or this function.
 #
 # NAME holds the runtime packages of the PACKAGEs built (not their -dev,
-# -doc, -dbg and -lang packages, nor vlc-daemon), which are published only
-# inside it: under their own names they would rank above Alpine's, so that
-# deleting it would not bring those back. It provides each of them, and
-# what they provide (their libraries' so: names, commands), with Alpine's
-# version in place of theirs: where world names one (gst-plugins-base), apk
+# -doc, -dbg and -lang packages, nor vlc-daemon, nor ffmpeg7 itself: VLC
+# doesn't need its commands, and Alpine's ffmpeg, which yt-dlp depends on,
+# has them too), which are published only inside it: under their own names
+# they would rank above Alpine's, so that deleting it would not bring those
+# back. It provides each of them, and what they provide (their libraries'
+# so: names, commands), with Alpine's version in place of theirs: where
+# world names one (gst-plugins-base), apk
 # keeps a provider of a higher version than Alpine's even once its package
 # is deleted. It depends on what they depend on but each other, and its
 # license is all of theirs (none has an OR). All that comes from their
@@ -298,7 +300,7 @@ build_bundle() {
 			info=$(tar -xzOf "$repodir/$file" .PKGINFO 2> /dev/null) ||
 				die "could not read $file's .PKGINFO"
 			pkg=$(sed -n 's/^pkgname = //p' <<< "$info")
-			[[ $pkg =~ -(dev|doc|dbg|lang|daemon)$ ]] && continue
+			[[ $pkg =~ -(dev|doc|dbg|lang|daemon)$ || $pkg == ffmpeg7 ]] && continue
 			cp "$repodir/$file" "$src"/apks/
 			ver=$(sed -n 's/^pkgver = //p' <<< "$info")
 			mapfile -t prov < <(echo "$pkg=$ver" && sed -n 's/^provides = //p' <<< "$info")
