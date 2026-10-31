@@ -1,6 +1,7 @@
 // Zellij's configuration for users without one of their own in
 // ~/.config/zellij: its defaults, but with move mode on Ctrl m rather than
-// Ctrl h, and no tips at startup.
+// Ctrl h, no tips at startup, and a selection copied to the primary
+// selection (pasted with the middle button) rather than the clipboard.
 
 keybinds {
     move {
@@ -14,3 +15,5 @@ keybinds {
 }
 
 show_startup_tips false
+
+copy_clipboard "primary"

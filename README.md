@@ -81,12 +81,14 @@ from a desktop distribution:
   in user sessions and in the login screen, does both for it)
 - a **Zellij** launcher in the app grid: the Zellij terminal multiplexer
   in the foot terminal, in the Droid Sans Mono Nerd Font, with move mode
-  on Ctrl m (Ctrl h in Zellij's defaults) and no tips at startup
-  (`/etc/zellij/config.kdl`, which a `~/.config/zellij/config.kdl` of your
-  own replaces). foot's own launchers are hidden, so the app grid shows
-  Zellij alone. With it comes **Neovim** set up as AstroNvim, for users
-  without a `~/.config/nvim` of their own, its launcher running it in
-  foot too. AstroNvim and its plugins download on its first start, so that
+  on Ctrl m (Ctrl h in Zellij's defaults), no tips at startup and
+  selections copied to the primary selection, pasted with the middle
+  button, rather than the clipboard (`/etc/zellij/config.kdl`, which a
+  `~/.config/zellij/config.kdl` of your own replaces). foot's own
+  launchers are hidden, so the app grid shows Zellij alone. With it
+  comes **Neovim** set up as AstroNvim, for users without a
+  `~/.config/nvim` of their own, its launcher running it in foot too.
+  AstroNvim and its plugins download on its first start, so that
   needs the network. Its Tree-sitter parsers are Alpine's, as the system
   has no C compiler to build them, so they don't install on demand. The
   command line tools bat, ripgrep (`rg`), fd and GNU less come with it, and

@@ -530,7 +530,8 @@ app id), its icon (Zellij's logo, `zellij.svg`) and
 `~/.config/zellij`: only what differs from Zellij's defaults, so new
 defaults reach users as Zellij is upgraded. That is move mode on Ctrl m
 (the defaults bind Ctrl h only in `move` and `shared_except "locked"
-"move"`, which it unbinds there) and no startup tips. It also takes over
+"move"`, which it unbinds there), no startup tips and
+`copy_clipboard "primary"`. It also takes over
 foot's three launchers (`replaces="foot"`) with copies that have
 `NoDisplay=true`, so the app grid shows Zellij alone; a change foot makes
 to them has to be copied by hand. And it holds
