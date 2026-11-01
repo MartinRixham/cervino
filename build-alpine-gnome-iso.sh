@@ -476,7 +476,8 @@ builder_main() {
 	# made them, so they are signed again with this build's key. Packages
 	# built here are left in /work/pkgcache for container_main to keep.
 	local name file repodir=/work/packages/cervino/$ARCH
-	local patched="mutter showtime dnsmasq" replaces="mutter dnsmasq" extra="tui-torrent"
+	local patched="mutter showtime dnsmasq" replaces="mutter dnsmasq"
+	local extra="tui-torrent bapk"
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"

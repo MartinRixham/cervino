@@ -122,6 +122,12 @@ The update repo also has packages that Alpine lacks, built from
   listens only on the machine itself and takes a secret that changes each
   run (tui-torrent opened it to the network, with no secret).
   `doas apk add tui-torrent` adds it.
+- `bapk` ([Bold APK](https://github.com/martinrixham/bold-apk)), a
+  terminal interface for apk: search, install, upgrade and remove
+  packages, and look up their known vulnerabilities in Alpine's security
+  database. On an atomic install what it installs, removes or upgrades
+  goes into a new version of the system, as with `apk` (see
+  [Updates](#updates)). `doas apk add bapk` adds it.
 
 ## Requirements
 
@@ -174,8 +180,8 @@ longer applies) shows up without a push. You can also start it by hand from
 the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
-`mutter`, `dnsmasq`, `tui-torrent`, and the Pi's `wpa_supplicant`, `bluez` and
-`mesa`) to the update repo (see [Updates](#updates)).
+`mutter`, `dnsmasq`, `tui-torrent`, `bapk`, and the Pi's `wpa_supplicant`,
+`bluez` and `mesa`) to the update repo (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -234,7 +240,8 @@ upgrade the system to it: it moves `/etc/apk/repositories` (and
 with `apk upgrade --available`, and offers to restart. The release is only
 offered once this project's repository has a package for it. The live
 system hides the launcher, since it runs from RAM. `doas update-alpine add
-PACKAGE...` and `doas update-alpine del PACKAGE...` add and remove packages.
+PACKAGE...` and `doas update-alpine del PACKAGE...` add and remove packages;
+`add --upgrade` also upgrades those already installed.
 bash completes its commands, and the packages to add or remove.
 
 On an atomic install, all of that happens to a new version of the system,
@@ -532,7 +539,7 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      skipping on an AirPlay speaker, and names from failing to resolve
      through a VPN after switching between VPN connections;
    - for both, the packages in [`extra/`](extra), which Alpine lacks
-     (`tui-torrent`), built the same way;
+     (`tui-torrent`, `bapk`), built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
      [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the

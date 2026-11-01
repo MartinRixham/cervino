@@ -1,7 +1,8 @@
 #!/bin/sh
 # update-alpine: upgrades the installed packages, then offers to upgrade the
 # system to a newer stable Alpine release when one is out.
-# update-alpine add|del PACKAGE...: adds or removes packages.
+# update-alpine add|del PACKAGE...: adds or removes packages; add --upgrade
+# also upgrades those already installed.
 # update-alpine rollback [ID]: goes back to the version of the system before
 # the running one, or to version ID (atomic installs only).
 # update-alpine list: lists the versions of the system, newest first, and
@@ -35,10 +36,11 @@ cmd=${1:-upgrade}
 case $cmd in
 upgrade|list) [ $# -le 1 ] ;;
 rollback) [ $# -le 2 ] ;;
-add|del|delete) [ $# -ge 2 ] ;;
+add) [ $# -ge 2 ] && { [ "$2" != --upgrade ] || [ $# -ge 3 ]; } ;;
+del|delete) [ $# -ge 2 ] ;;
 *) false ;;
-esac || die "usage: update-alpine [add PACKAGE... | del PACKAGE... | rollback [ID] |" \
-	"list | delete ID...]"
+esac || die "usage: update-alpine [add [--upgrade] PACKAGE... | del PACKAGE... |" \
+	"rollback [ID] | list | delete ID...]"
 [ $# = 0 ] || shift
 
 # On an atomic install, $R is the new version, and run runs a command in it.

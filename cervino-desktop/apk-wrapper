@@ -9,7 +9,7 @@ refuse() {
 	cat >&2 <<MSG
 apk: this system is read-only (an atomic install), so apk cannot $1 it.
 Instead, as root:
-  update-alpine add PACKAGE...   adds packages
+  update-alpine add PACKAGE...   adds packages (--upgrade: upgrades them)
   update-alpine del PACKAGE...   removes them
   update-alpine                  upgrades everything
 Each makes a new version of the system, which it starts with next time.
@@ -20,13 +20,15 @@ MSG
 # The applet is the first argument that is not an option (or an option's
 # value). Options that only change what apk prints, or refresh the indexes
 # (in /var, which is writable), can be passed on; any other one is turned
-# down, as update-alpine would not do what it asks.
-applet= pkgs= odd=
+# down, as update-alpine would not do what it asks. add's --upgrade is
+# passed on to update-alpine add.
+applet= pkgs= odd= upgrade=
 skip=
 for a; do
 	if [ -n "$skip" ]; then skip=; continue; fi
 	case $a in
 	-s|--simulate|-p|--root|--root=*|-h|--help) exec "$real" "$@" ;;
+	-u|--upgrade) upgrade=--upgrade ;;
 	-U|--update-cache|-q|--quiet|-v|--verbose|--progress|--no-progress|--interactive|-i) ;;
 	-X|--repository|-t|--virtual|--arch|--cache-dir|--keys-dir|--repositories-file|--from|\
 	--cache-max-age)
@@ -41,6 +43,7 @@ for a; do
 		fi ;;
 	esac
 done
+[ -z "$upgrade" ] || [ "$applet" = add ] || odd=1
 
 atomic=
 # shellcheck source=atomic.sh
@@ -71,7 +74,7 @@ add|del)
 	echo "apk: this system is read-only (an atomic install): update-alpine $applet makes" \
 		"the change in a new version of it, which it starts with next time." >&2
 	# shellcheck disable=SC2086
-	exec update-alpine "$applet" $pkgs ;;
+	exec update-alpine "$applet" $upgrade $pkgs ;;
 
 upgrade)
 	[ -z "$odd" ] && [ -z "$pkgs" ] || refuse "upgrade"

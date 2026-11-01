@@ -27,7 +27,8 @@ Besides the script, the repo holds:
   `wpa_supplicant`, `bluez` and `mesa` packages in `rpi/`
 - the patched `mutter`, `showtime` and `dnsmasq` packages, for both
   targets, in `patched/`
-- packages Alpine lacks (`tui-torrent`), for both targets, in `extra/`
+- packages Alpine lacks (`tui-torrent`, `bapk`), for both targets, in
+  `extra/`
 
 `README.md` documents the user-facing behaviour and the environment
 variables (`TARGET`, `ALPINE_BRANCH`, `OUTDIR`, `LIVE_USER`,
@@ -471,7 +472,8 @@ and `showtime` on both), so that deleting those brings Alpine's back.
 they are too, needing a new `pkgrel` the same way, but are in neither
 world nor any package's depends: users add them. `tui-torrent`
 (`aria2-rpc-secret.patch`): it started aria2c with its RPC interface open
-to the network and to web pages, with no secret.
+to the network and to web pages, with no secret. `bapk` (Bold APK) is
+built unpatched from its GitHub release tag.
 
 **`cervino-vlc` and `cervino-gstreamer`.** `build_bundle NAME VERSION
 PACKAGE...` builds each with `abuild -d` in `/work/cervino/<name>`, from a
@@ -852,7 +854,8 @@ and doas's `PATH` (Alpine has no `/usr` merge yet; with one they would be
 the same file). It is a wrapper:
 
 - on an atomic install's running system it hands `apk add`/`del` (plain
-  package names, harmless options only) to `update-alpine add`/`del` and
+  package names, harmless options only, and `add`'s `--upgrade`, which
+  bapk uses to upgrade one package) to `update-alpine add`/`del` and
   `apk upgrade` to `update-alpine`, and turns down `fix` and other options;
 - everything else, `--simulate`, `--root`, and any other system (including
   `update-alpine`'s chroot) gets `/sbin/apk` unchanged, but that a `del`
