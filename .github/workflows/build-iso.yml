@@ -156,6 +156,14 @@ jobs:
           key: ${{ matrix.target }}-bapk-${{ github.sha }}
           restore-keys: ${{ matrix.target }}-bapk-
 
+      - name: Restore qstop
+        id: restore-qstop
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/qstop
+          key: ${{ matrix.target }}-qstop-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-qstop-
+
       - name: Restore ffmpeg7
         id: restore-ffmpeg7
         if: matrix.target == 'rpi'
@@ -361,6 +369,16 @@ jobs:
         with:
           path: ${{ runner.temp }}/pkgcache/bapk
           key: ${{ steps.keys.outputs.bapk }}
+
+      - name: Save qstop
+        if: >-
+          always() && steps.keys.outputs.qstop &&
+          steps.keys.outputs.qstop !=
+          steps.restore-qstop.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/qstop
+          key: ${{ steps.keys.outputs.qstop }}
 
       - name: Checksum
         working-directory: out

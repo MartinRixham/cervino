@@ -128,6 +128,10 @@ The update repo also has packages that Alpine lacks, built from
   database. On an atomic install what it installs, removes or upgrades
   goes into a new version of the system, as with `apk` (see
   [Updates](#updates)). `doas apk add bapk` adds it.
+- `qstop` ([gnome-qstop](https://github.com/MartinRixham/gnome-qstop)),
+  GNOME's quick settings menu in the terminal: volume, microphone and
+  brightness, Wi-Fi, Bluetooth, VPN and the other toggles, and lock, log
+  out, suspend, restart and power off. `doas apk add qstop` adds it.
 
 ## Requirements
 
@@ -180,8 +184,9 @@ longer applies) shows up without a push. You can also start it by hand from
 the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
-`mutter`, `dnsmasq`, `tui-torrent`, `bapk`, and the Pi's `wpa_supplicant`,
-`bluez` and `mesa`) to the update repo (see [Updates](#updates)).
+`mutter`, `dnsmasq`, `tui-torrent`, `bapk`, `qstop`, and the Pi's
+`wpa_supplicant`, `bluez` and `mesa`) to the update repo (see
+[Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -539,7 +544,7 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      skipping on an AirPlay speaker, and names from failing to resolve
      through a VPN after switching between VPN connections;
    - for both, the packages in [`extra/`](extra), which Alpine lacks
-     (`tui-torrent`, `bapk`), built the same way;
+     (`tui-torrent`, `bapk`, `qstop`), built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
      [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the

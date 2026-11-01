@@ -1,0 +1,32 @@
+# qstop, GNOME's quick settings menu as a terminal interface, which Alpine
+# doesn't package. Published to the update repo but not in world, so
+# installs add it with apk. A change here needs a new pkgrel, as
+# ci/publish-repo.sh keeps a file already published.
+pkgname=qstop
+pkgver=1.0.2
+pkgrel=0
+pkgdesc="GNOME's quick settings menu as a terminal user interface"
+url="https://github.com/MartinRixham/gnome-qstop"
+arch="all"
+license="GPL-3.0-or-later AND Apache-2.0"
+makedepends="gtest-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/MartinRixham/gnome-qstop/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/gnome-qstop-$pkgver"
+
+build() {
+	make QUIET=true
+}
+
+check() {
+	make QUIET=true test
+}
+
+package() {
+	install -Dm755 bin/qstop -t "$pkgdir"/usr/bin
+	mkdir -p "$pkgdir"/usr/share/qstop
+	cp -r themes "$pkgdir"/usr/share/qstop/
+}
+
+sha512sums="
+f4be310073e68dea1d8e2644214e1375c66cd6e2fc9abf95b3b0de772619c8f65242694c2ca039a38c107dc105f7a1b9caf0dc397affee5c11181134aab1097f  qstop-1.0.2.tar.gz
+"

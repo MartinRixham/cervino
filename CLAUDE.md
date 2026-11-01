@@ -27,8 +27,8 @@ Besides the script, the repo holds:
   `wpa_supplicant`, `bluez` and `mesa` packages in `rpi/`
 - the patched `mutter`, `showtime` and `dnsmasq` packages, for both
   targets, in `patched/`
-- packages Alpine lacks (`tui-torrent`, `bapk`), for both targets, in
-  `extra/`
+- packages Alpine lacks (`tui-torrent`, `bapk`, `qstop`), for both
+  targets, in `extra/`
 
 `README.md` documents the user-facing behaviour and the environment
 variables (`TARGET`, `ALPINE_BRANCH`, `OUTDIR`, `LIVE_USER`,
@@ -472,8 +472,8 @@ and `showtime` on both), so that deleting those brings Alpine's back.
 they are too, needing a new `pkgrel` the same way, but are in neither
 world nor any package's depends: users add them. `tui-torrent`
 (`aria2-rpc-secret.patch`): it started aria2c with its RPC interface open
-to the network and to web pages, with no secret. `bapk` (Bold APK) is
-built unpatched from its GitHub release tag.
+to the network and to web pages, with no secret. `bapk` (Bold APK)
+and `qstop` are built unpatched from their GitHub release tags.
 
 **`cervino-vlc` and `cervino-gstreamer`.** `build_bundle NAME VERSION
 PACKAGE...` builds each with `abuild -d` in `/work/cervino/<name>`, from a
