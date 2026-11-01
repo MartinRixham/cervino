@@ -132,6 +132,11 @@ The update repo also has packages that Alpine lacks, built from
   GNOME's quick settings menu in the terminal: volume, microphone and
   brightness, Wi-Fi, Bluetooth, VPN and the other toggles, and lock, log
   out, suspend, restart and power off. `doas apk add qstop` adds it.
+- `bijiben`, GNOME Notes built from a commit of its `master` branch,
+  which is GTK 4 and libadwaita, so unlike the Flathub app (the 40.2
+  release, GTK 3) it follows GNOME's dark style. It is unreleased code:
+  back up your notes before pointing it at the same Nextcloud account.
+  `doas apk add bijiben` adds it.
 
 ## Requirements
 
@@ -184,8 +189,8 @@ longer applies) shows up without a push. You can also start it by hand from
 the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
-`mutter`, `dnsmasq`, `tui-torrent`, `bapk`, `qstop`, and the Pi's
-`wpa_supplicant`, `bluez` and `mesa`) to the update repo (see
+`mutter`, `dnsmasq`, `tui-torrent`, `bapk`, `qstop`, `bijiben`, and the
+Pi's `wpa_supplicant`, `bluez` and `mesa`) to the update repo (see
 [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
@@ -544,7 +549,7 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      skipping on an AirPlay speaker, and names from failing to resolve
      through a VPN after switching between VPN connections;
    - for both, the packages in [`extra/`](extra), which Alpine lacks
-     (`tui-torrent`, `bapk`, `qstop`), built the same way;
+     (`tui-torrent`, `bapk`, `qstop`, `bijiben`), built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
      [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the

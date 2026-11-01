@@ -164,6 +164,14 @@ jobs:
           key: ${{ matrix.target }}-qstop-${{ github.sha }}
           restore-keys: ${{ matrix.target }}-qstop-
 
+      - name: Restore bijiben
+        id: restore-bijiben
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/bijiben
+          key: ${{ matrix.target }}-bijiben-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-bijiben-
+
       - name: Restore ffmpeg7
         id: restore-ffmpeg7
         if: matrix.target == 'rpi'
@@ -379,6 +387,16 @@ jobs:
         with:
           path: ${{ runner.temp }}/pkgcache/qstop
           key: ${{ steps.keys.outputs.qstop }}
+
+      - name: Save bijiben
+        if: >-
+          always() && steps.keys.outputs.bijiben &&
+          steps.keys.outputs.bijiben !=
+          steps.restore-bijiben.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/bijiben
+          key: ${{ steps.keys.outputs.bijiben }}
 
       - name: Checksum
         working-directory: out
