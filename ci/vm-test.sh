@@ -172,7 +172,7 @@ fi
 qemu-img create -q -f qcow2 "$WORKDIR"/disk.qcow2 32G
 rm -rf "$WORKDIR"/pkgs
 mkdir "$WORKDIR"/pkgs
-for p in cervino-gstreamer cervino-terminal; do
+for p in cervino-gstreamer cervino-terminal cervino-upnp; do
 	find "$PACKAGES" -path "*/x86_64/$p-[0-9]*.apk" -exec cp {} "$WORKDIR"/pkgs/ \;
 	[[ -n $(ls "$WORKDIR"/pkgs/"$p"-* 2>/dev/null) ]] || die "no x86_64 $p package in $PACKAGES"
 done

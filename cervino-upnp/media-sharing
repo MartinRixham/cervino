@@ -1,0 +1,118 @@
+#!/usr/bin/gjs
+// Starts and stops Rygel, the UPnP/DLNA media server, as GNOME Settings'
+// Media Sharing switch asks. gsd-sharing, which would, does it only as a
+// systemd user unit, and fails without systemd. The rule is gsd-sharing's:
+// Rygel runs while sharing is possible on the current network (its
+// SharingStatus) and the switch is on for that network (its connection is
+// in the rygel service's enabled-connections).
+//
+// Rygel serves only on the network the switch is on for, the primary
+// connection's interface, not on every interface (VPNs, container
+// bridges); on a fixed port, which the package's firewall rules open; and
+// without its LocalSearch plugin. GNOME Settings writes the folders to
+// share to MediaExport's settings and turns off the Tracker plugins, the
+// names LocalSearch had before Rygel 45, so with it LocalSearch would stay
+// on and share all of Music, Videos and Pictures whatever the folders.
+// (Alpine's rygel has LocalSearch's .plugin file but not its module.)
+
+const {Gio, GLib, GLibUnix, NM} = imports.gi;
+
+const PORT = 8200;
+const SHARING = 'org.gnome.SettingsDaemon.Sharing';
+const SHARING_AVAILABLE = 3; // GSD_SHARING_STATUS_AVAILABLE
+const SIGHUP = 1, SIGINT = 2, SIGTERM = 15;
+const RETRY_SECONDS = 10;
+
+const settings = new Gio.Settings({
+    schema_id: 'org.gnome.settings-daemon.plugins.sharing.service',
+    path: '/org/gnome/settings-daemon/plugins/sharing/rygel/',
+});
+const nm = NM.Client.new(null);
+// Its properties are empty while gsd-sharing isn't running.
+const sharing = Gio.DBusProxy.new_for_bus_sync(Gio.BusType.SESSION,
+    Gio.DBusProxyFlags.DO_NOT_AUTO_START, null, SHARING, '/org/gnome/SettingsDaemon/Sharing',
+    SHARING, null);
+let rygel = null, rygelIface = null, stopping = false, retry = 0;
+
+// The interface Rygel should serve on, or null if it should not run.
+// gsd-sharing's current network is the primary connection's UUID.
+function wantedInterface() {
+    const status = sharing.get_cached_property('SharingStatus')?.unpack();
+    const network = sharing.get_cached_property('CurrentNetwork')?.unpack();
+    if (status !== SHARING_AVAILABLE || !network ||
+        !settings.get_strv('enabled-connections').includes(network))
+        return null;
+    const primary = nm.get_primary_connection();
+    if (primary?.get_uuid() !== network)
+        return null;
+    return primary.get_devices()[0]?.get_ip_iface() || null;
+}
+
+// Rygel is a GApplication: one started while another still runs hands over
+// to it and exits, so a new one starts only once the old one has exited.
+function sync() {
+    const iface = wantedInterface();
+    if (rygel) {
+        if (iface !== rygelIface && !stopping) {
+            stopping = true;
+            rygel.send_signal(SIGTERM);
+        }
+        return;
+    }
+    if (iface)
+        start(iface);
+}
+
+function start(iface) {
+    if (retry) {
+        GLib.source_remove(retry);
+        retry = 0;
+    }
+    const argv = ['rygel', `--port=${PORT}`, `--network-interface=${iface}`,
+        '--disable-plugin=LocalSearch'];
+    let proc;
+    try {
+        proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.NONE);
+    } catch (e) {
+        logError(e, 'starting Rygel');
+        return;
+    }
+    rygel = proc;
+    rygelIface = iface;
+    proc.wait_async(null, (_p, res) => {
+        proc.wait_finish(res);
+        const asked = stopping;
+        rygel = rygelIface = null;
+        stopping = false;
+        // Exited on its own: after a failure, start it again a little later
+        // (as rygel.service's Restart=on-failure); after a clean exit (Rygel
+        // was told to shut down, or another one was running), only when
+        // something changes.
+        if (asked) {
+            sync();
+        } else if (!proc.get_successful()) {
+            log(`Rygel failed; starting it again in ${RETRY_SECONDS} seconds`);
+            retry = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, RETRY_SECONDS, () => {
+                retry = 0;
+                sync();
+                return GLib.SOURCE_REMOVE;
+            });
+        }
+    });
+}
+
+settings.connect('changed::enabled-connections', sync);
+sharing.connect('g-properties-changed', sync);
+sharing.connect('notify::g-name-owner', sync);
+nm.connect('notify::primary-connection', sync);
+sync();
+
+const loop = new GLib.MainLoop(null, false);
+for (const signal of [SIGHUP, SIGINT, SIGTERM]) {
+    GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal, () => {
+        rygel?.send_signal(SIGTERM);
+        loop.quit();
+        return GLib.SOURCE_REMOVE;
+    });
+}
+loop.run();

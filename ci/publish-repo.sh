@@ -25,9 +25,9 @@ for dir in "$new/$branch"/*/; do
 	out=$pages/$branch/$arch
 	mkdir -p "$out"
 	# Every release builds the Pi's packages, cervino-vlc,
-	# cervino-gstreamer and cervino-terminal again, mostly at a version
-	# already published: that one stays (installs have it already, and the
-	# branch's history doesn't get a copy of it each time).
+	# cervino-gstreamer, cervino-terminal and cervino-upnp again, mostly at
+	# a version already published: that one stays (installs have it
+	# already, and the branch's history doesn't get a copy of it each time).
 	for apk in "$dir"/*.apk; do
 		[ -e "$out/${apk##*/}" ] || cp "$apk" "$out"/
 	done

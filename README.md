@@ -97,6 +97,17 @@ from a desktop distribution:
   `user@host:dir` as the pane's and window's title. All this is the `cervino-terminal` package,
   which the image leaves out: `doas apk add cervino-terminal` adds it from
   the update repo, and `doas apk del cervino-terminal` removes it
+- **Media Sharing** in GNOME Settings (Sharing): Rygel shares the folders
+  listed there with UPnP/DLNA players (TVs, Kodi, VLC) on the networks
+  it is turned on for. GNOME starts Rygel only through systemd, which
+  Alpine lacks, so a session helper starts and stops it as the switch and
+  the network change. Rygel serves only on the interface of the network
+  the switch is on for, on port 8200, which the firewall opens, with UPnP
+  discovery (SSDP, UDP 1900). As Rygel ships, it also plays media other
+  devices send it (a UPnP renderer). This is the `cervino-upnp` package,
+  which the image leaves out: `doas apk add cervino-upnp` adds it, and it
+  works from the next login (on an atomic install, once the restart has
+  started the new version)
 
 [`test/features.sh`](test/features.sh) checks all of this on a running
 system. [`test/apparmor.sh`](test/apparmor.sh) checks that AppArmor confines
@@ -162,14 +173,14 @@ that breaks the build (a patched package that Alpine updated, a patch that no
 longer applies) shows up without a push. You can also start it by hand from
 the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publishes both images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
-`cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `mutter`,
-`dnsmasq`, `tui-torrent`, and the Pi's `wpa_supplicant`, `bluez` and
+`cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
+`mutter`, `dnsmasq`, `tui-torrent`, and the Pi's `wpa_supplicant`, `bluez` and
 `mesa`) to the update repo (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
-virtual disk with `setup-alpine`, restarts it to add `cervino-gstreamer`
-and `cervino-terminal` from the packages just built (the image leaves them
+virtual disk with `setup-alpine`, restarts it to add `cervino-gstreamer`,
+`cervino-terminal` and `cervino-upnp` from the packages just built (the image leaves them
 out; see [the Pi](#raspberry-pi)), checks that nothing of the live session
 was copied to the installed system, runs `test/features.sh` in the
 installed user's GNOME session and `test/apparmor.sh` as root, runs an app
@@ -193,8 +204,8 @@ ci/vm-test.sh out/*.iso                     # an atomic install
 INSTALL_MODE=sys ci/vm-test.sh out/*.iso    # a sys install
 ```
 
-It takes `cervino-gstreamer` and `cervino-terminal` from `out/repo`, next
-to the ISO, or from the directory given as a second argument.
+It takes `cervino-gstreamer`, `cervino-terminal` and `cervino-upnp` from
+`out/repo`, next to the ISO, or from the directory given as a second argument.
 
 Before that, [`ci/update-test.sh`](ci/update-test.sh) tests `update-alpine`
 from the package just built, in Alpine containers: it has to upgrade the
@@ -537,6 +548,11 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      configuration ([`cervino-terminal/init.lua`](cervino-terminal/init.lua)),
      depending on `neovim` and `tree-sitter-grammars`, and on `bat`,
      `ripgrep`, `fd` and `less`, and Fedora's bash prompt and settings;
+   - the `cervino-upnp` package, built with abuild from
+     [`cervino-upnp/APKBUILD`](cervino-upnp/APKBUILD): the session helper
+     that starts Rygel for GNOME Settings' Media Sharing
+     ([`cervino-upnp/media-sharing`](cervino-upnp/media-sharing)) and the
+     firewall rules for it, depending on Alpine's `rygel`;
    - the `cervino-desktop` package, built with abuild from
      [`cervino-desktop/APKBUILD`](cervino-desktop/APKBUILD): the desktop
      features' configuration and the AppArmor profiles from

@@ -26,7 +26,7 @@ fi
 
 # The packages the image leaves out, which packages.sh added in the boot
 # before (on an atomic install, to the version this one started with).
-for p in cervino-gstreamer cervino-terminal; do
+for p in cervino-gstreamer cervino-terminal cervino-upnp; do
 	apk info -e "$p" > /dev/null || { echo "$p is not installed" >&2; exit 1; }
 done
 

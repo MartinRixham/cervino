@@ -936,6 +936,71 @@ t_terminal() {
 	done
 }
 
+# rygel_pid: the PID of a rygel process of this user's, if one runs.
+rygel_pid() {
+	local f comm
+	for f in /proc/[0-9]*/comm; do
+		[[ -O $f ]] && read -r comm <"$f" 2>/dev/null && [[ $comm == rygel ]] || continue
+		f=${f%/comm}
+		echo "${f#/proc/}"
+		return 0
+	done
+	return 1
+}
+
+# rygel_listening: true if something listens on Rygel's port (8200, which
+# cervino-upnp's media-sharing gives it), from /proc/net/tcp{,6}: local
+# address field ending in :2008, state 0A (LISTEN).
+rygel_listening() {
+	awk '$2 ~ /:2008$/ && $4 == "0A" { found = 1 } END { exit !found }' \
+		/proc/net/tcp /proc/net/tcp6 2>/dev/null
+}
+
+# GNOME Settings' Media Sharing switch starts Rygel and stops it again. The
+# switch adds the current network (gsd-sharing's CurrentNetwork) to the
+# rygel service's enabled-connections, as this does; Rygel then serves on
+# its fixed port, sharing the folders the switch's page lists
+# (MediaExport).
+t_media_sharing() {
+	local key=org.gnome.settings-daemon.plugins.sharing.service
+	local path=/org/gnome/settings-daemon/plugins/sharing/rygel/
+	local status network saved pid= err= i
+	have rygel || { echo "rygel not installed"; return 1; }
+	have gsettings && have gdbus || { echo "gsettings or gdbus missing"; return 2; }
+	dbus_name_available --session org.gnome.SettingsDaemon.Sharing ||
+		{ echo "gsd-sharing not running"; return 1; }
+	status=$(gdbus call --session --dest org.gnome.SettingsDaemon.Sharing \
+		--object-path /org/gnome/SettingsDaemon/Sharing \
+		--method org.freedesktop.DBus.Properties.GetAll org.gnome.SettingsDaemon.Sharing)
+	network=$(sed -n "s/.*'CurrentNetwork': <'\([^']*\)'>.*/\1/p" <<< "$status")
+	[[ $status == *"'SharingStatus': <uint32 3>"* && -n $network ]] ||
+		{ echo "gsd-sharing doesn't allow sharing on this network: $status"; return 1; }
+	saved=$(gsettings get "$key:$path" enabled-connections)
+	gsettings set "$key:$path" enabled-connections "['$network']"
+	for ((i = 0; i < 30; i++)); do
+		pid=$(rygel_pid)
+		[[ -n $pid ]] && rygel_listening && break
+		sleep 1
+	done
+	if [[ -z $pid ]]; then
+		err="turning Media Sharing on started no Rygel"
+	elif ! rygel_listening; then
+		err="Rygel doesn't listen on port 8200"
+	elif ! grep -qs media-export "/proc/$pid/maps"; then
+		err="Rygel doesn't run its MediaExport plugin"
+	fi
+	gsettings set "$key:$path" enabled-connections "$saved"
+	[[ -z $err ]] || { echo "$err"; return 1; }
+	# Left on if it was on before.
+	[[ $saved == *"'$network'"* ]] && return 0
+	for ((i = 0; i < 30; i++)); do
+		rygel_pid >/dev/null || return 0
+		sleep 1
+	done
+	echo "turning Media Sharing off didn't stop Rygel"
+	return 1
+}
+
 # Browsers and other apps keep their passwords in the Secret Service. Reading
 # its collections never prompts; if the keyring daemon is not on the session
 # bus, D-Bus activation hands the request to it and times out.
@@ -1316,6 +1381,7 @@ run_test "Audio threads run with real-time priority"   t_audio_realtime
 run_test "AirPlay speaker discovery enabled"           t_airplay_discovery
 run_test "xdg-open available"                          t_xdg_open
 run_test "Terminal (Zellij in foot, AstroNvim)"        t_terminal
+run_test "Media sharing (Rygel) from GNOME Settings"    t_media_sharing
 run_test "Password storage (Secret Service)"           t_secret_service
 run_test "Sandboxed app store (Flatpak)"               t_app_store_sandbox
 run_test "Package repositories fetched over HTTPS"     t_package_repos_https

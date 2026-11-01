@@ -21,6 +21,7 @@ Besides the script, the repo holds:
 - the `cervino-vlc` and `cervino-gstreamer` packages'
   `cervino-vlc/APKBUILD` and `cervino-gstreamer/APKBUILD`
 - the `cervino-terminal` package's `cervino-terminal/APKBUILD`
+- the `cervino-upnp` package's `cervino-upnp/APKBUILD`
 - the AppArmor profiles in `apparmor.d/`
 - the Pi's patched `ffmpeg7`, `vlc`, `gst-plugins-base`, `gst-plugins-bad`,
   `wpa_supplicant`, `bluez` and `mesa` packages in `rpi/`
@@ -54,11 +55,11 @@ INSTALL_MODE=sys ci/vm-test.sh out/*.iso            # the same with a sys instal
 console, keeping the logs in `$WORKDIR` (default `./vm-test`). The only
 setup between install and test is the packages boot (below): otherwise the
 ISO itself must make every test pass. The guest gets the repo's `test/` and
-`ci/guest/`, and in `pkgs/` the x86_64 `cervino-gstreamer` and
-`cervino-terminal` `.apk`s from
-`PACKAGES` (the build's `out/repo`; default `repo` next to the ISO), as a
-tar archive on `/dev/vdb`, and each command's exit status comes back as an
-`@@RC=n@@` marker on the console.
+`ci/guest/`, and in `pkgs/` the x86_64 `cervino-gstreamer`,
+`cervino-terminal` and `cervino-upnp` `.apk`s from `PACKAGES` (the
+build's `out/repo`; default `repo` next to the ISO), as a tar archive
+on `/dev/vdb`, and each command's exit status comes back as an `@@RC=n@@`
+marker on the console.
 
 The VMs:
 
@@ -85,13 +86,13 @@ loaders have no serial console), and installs to `/dev/vda` with
 
 **The packages boot.** It boots the disk, logs in as `tester` (root is
 locked there) and runs `ci/guest/packages.sh` through doas, which adds
-what the image leaves out but the tests need, `cervino-gstreamer` and
-`cervino-terminal`, from
-`pkgs/` (signed with the build's key, which the system trusts): `apk add`
-of the files on a sys install, and on an atomic one `update-alpine add` of
-copies in `/var/lib/cervino-ci/pkgs` (the chroot of the new version has
-`/var` but not `/tmp`, and the apk wrapper turns down paths), staged for
-the test boot to start with, on trial.
+what the image leaves out but the tests need, `cervino-gstreamer`,
+`cervino-terminal` and `cervino-upnp`, from `pkgs/` (signed with the
+build's key, which the system trusts): `apk add` of the files on a sys
+install, and on an atomic one `update-alpine add` of copies in
+`/var/lib/cervino-ci/pkgs` (the chroot of the new version has `/var` but
+not `/tmp`, and the apk wrapper turns down paths), staged for the test
+boot to start with, on trial.
 
 **The test boot.** It boots the disk, logs in as `tester` and runs
 `ci/guest/test.sh` through doas. `test.sh` prints its own
@@ -100,7 +101,8 @@ together. In order, it:
 
 1. fails if anything of the live session (live user, its home, `live-user`
    script or runlevel link, autologin) reached the install, or if
-   `cervino-gstreamer` or `cervino-terminal` is not installed;
+   `cervino-gstreamer`, `cervino-terminal` or `cervino-upnp` is not
+   installed;
 2. turns on GDM autologin for `tester` through AccountsService (as GNOME
    Settings does), restarts gdm and runs
    `test/features.sh` as `tester` with the environment of the user's
@@ -183,7 +185,8 @@ and the VM's release is always the latest.
 
 `shellcheck build-alpine-gnome-iso.sh genapkovl-gnomelive.sh mkimg.gnomelive.sh live/*`,
 plus the shell scripts in `cervino-desktop/`, `cervino-vlc/`,
-`cervino-gstreamer/`, `cervino-terminal/`, `ci/` and `test/`, should print
+`cervino-gstreamer/`, `cervino-terminal/`, `cervino-upnp/`, `ci/` and
+`test/`, should print
 nothing. `.shellcheckrc` turns off the checks
 that go against the scripts' own idioms (`a= b=`, `cmd && ok || die`,
 functions called by name, programs in single quotes, `ls` over names the
@@ -231,8 +234,8 @@ Say each thing once:
 CI (`.github/workflows/build-iso.yml`) runs the script with
 `CONTAINER=docker` on pushes and PRs that touch the script, the generator,
 `live/`, `mkimg.gnomelive.sh`, `cervino-desktop/`, `cervino-vlc/`,
-`cervino-gstreamer/`, `cervino-terminal/`, `apparmor.d/`, `rpi/`,
-`patched/`, `extra/`, `ci/`, `test/` or the workflow, and daily on `main` (`schedule`),
+`cervino-gstreamer/`, `cervino-terminal/`, `cervino-upnp/`, `apparmor.d/`,
+`rpi/`, `patched/`, `extra/`, `ci/`, `test/` or the workflow, and daily on `main` (`schedule`),
 to catch Alpine changes that break the patched packages. Its concurrency
 group includes the event, so the daily run and a push don't cancel each
 other.
@@ -249,8 +252,8 @@ other.
   prefix), and after it, even if it failed, save each package whose `key`
   file is not the restored one's as `<target>-<package>-<key>`.
 - **`vm-test`** (after both builds): downloads the ISO and
-  `cervino-repo-iso` (into `out/repo`, for `cervino-gstreamer` and
-  `cervino-terminal`) and runs
+  `cervino-repo-iso` (into `out/repo`, for `cervino-gstreamer`,
+  `cervino-terminal` and `cervino-upnp`) and runs
   `ci/vm-test.sh` once per `INSTALL_MODE` (a matrix of `atomic` and `sys`,
   on separate runners, since a runner's 16 GB can't hold two 8 GB VMs),
   failing unless every OS feature test passes. The console logs are uploaded
@@ -267,8 +270,8 @@ other.
 - **The packages**: the build jobs set `APK_REPO` to the repository's GitHub
   Pages URL, and each uploads its `out/repo` (the packages as
   `<branch>/<arch>/*.apk`: `cervino-desktop`, `cervino-vlc`,
-  `cervino-gstreamer`, `cervino-terminal`, `mutter`, `dnsmasq`, `extra/`'s
-  packages, and for
+  `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`, `mutter`,
+  `dnsmasq`, `extra/`'s packages, and for
   `rpi` `wpa_supplicant`, `bluez` and `mesa`, with their subpackages but
   `-dbg`) as `cervino-repo-<target>`.
 - **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` in an
@@ -299,11 +302,12 @@ The same file runs in four phases, selected by its first argument.
 - Re-runs itself in `alpine:<release>`, mounting itself at `/build.sh`;
   `genapkovl-gnomelive.sh`, `live/`, `mkimg.gnomelive.sh`,
   `initramfs-live.patch`, `cervino-desktop/`, `cervino-vlc/`,
-  `cervino-gstreamer/`, `cervino-terminal/`, `apparmor.d/`, `rpi/`,
-  `patched/` and `extra/` (from the script's directory) at
-  `/genapkovl-gnomelive.sh`, `/live`, `/mkimg.gnomelive.sh`,
+  `cervino-gstreamer/`, `cervino-terminal/`, `cervino-upnp/`,
+  `apparmor.d/`, `rpi/`, `patched/` and `extra/` (from the script's
+  directory) at `/genapkovl-gnomelive.sh`, `/live`, `/mkimg.gnomelive.sh`,
   `/initramfs-live.patch`, `/cervino-desktop`, `/cervino-vlc`,
-  `/cervino-gstreamer`, `/cervino-terminal`, `/apparmor.d`, `/rpi`,
+  `/cervino-gstreamer`, `/cervino-terminal`, `/cervino-upnp`,
+  `/apparmor.d`, `/rpi`,
   `/patched` and `/extra`; `$OUTDIR` at
   `/out`; and `CACHEDIR`, if set, at `/cache`.
 - Passes `PKGVER`, the package's version: the last commit's time
@@ -363,9 +367,10 @@ its IPv6 reverse path filter test, which needs `ip netns`.
 one of the features) and `cervino-desktop`, which depends on `$features`: a feature added later
 reaches installed systems with the package, while GNOME's apps stay
 removable from world. It also has `cervino-vlc` (VLC, on the Pi, below),
-which can be removed for Alpine's packages. `cervino-gstreamer` and
-`cervino-terminal` (below) are not in world, so not in the image: users add
-them from the repo, and the VM test adds them before the tests.
+which can be removed for Alpine's packages. `cervino-gstreamer`,
+`cervino-terminal` and `cervino-upnp` (below) are not in world, so not
+in the image: users add them from the repo, and the VM test adds them
+before the tests.
 
 **The patched packages.** It first builds `patched/mutter`,
 `patched/showtime` and `patched/dnsmasq`, then for `rpi` `rpi/ffmpeg7`, `rpi/vlc`,
@@ -511,7 +516,8 @@ not in world (`cervino-vlc` brings it), so deleting `cervino-vlc` removes
 it.
 
 Their version is not `PKGVER` but `VLC_PKGVER` and `GSTREAMER_PKGVER`
-(and `cervino-terminal`'s `TERMINAL_PKGVER`), which `host_main`'s
+(and `cervino-terminal`'s `TERMINAL_PKGVER` and `cervino-upnp`'s
+`UPNP_PKGVER`), which `host_main`'s
 `bundle_version` takes from the last commit that changed the package's
 directory, its packages in `rpi/` and `patched/` or
 `build_bundle` (`git log -L`), so that a release leaving them as they were
@@ -576,6 +582,25 @@ that `bat`, `rg`, `fd` and GNU `less` are installed, and that foot's
 launchers are hidden. It can't start AstroNvim, which needs
 the network.
 
+**`cervino-upnp`.** GNOME Settings' Media Sharing (Rygel): `build_bundle`
+with no packages, the same on both targets. GNOME starts Rygel only as
+a systemd user unit (gsd-sharing calls systemd's `StartUnit` for
+`rygel.service`, and without `/run/systemd/system` doesn't even try), so
+the switch did nothing. The package depends on Alpine's `rygel` and
+holds:
+
+- `/usr/libexec/cervino/media-sharing` (`media-sharing`, gjs), autostarted
+  in GNOME sessions, which starts and stops `rygel` itself by gsd-sharing's
+  rule and passes it its interface, port and plugins (see its header);
+- `/etc/nftables.d/60-upnp.nft`, opening SSDP (UDP 1900) and Rygel's
+  port (TCP 8200), and install scripts (one, linked under the three
+  names) that reload nftables where it is started.
+
+`test/features.sh` turns the switch on as GNOME Settings does (the current
+network in the rygel service's `enabled-connections`), checks that Rygel
+listens on its port with MediaExport loaded, and that turning it off
+stops it.
+
 **`cervino-desktop`.** It builds the package with `abuild -d` in
 `/work/cervino/cervino-desktop`, from a copy of `cervino-desktop/` with,
 next to the APKBUILD:
@@ -589,8 +614,8 @@ next to the APKBUILD:
 
 The package is signed with the build's key, which mkimage puts in the image,
 so the live system and installs trust it. It is indexed, with
-`cervino-vlc`, `cervino-gstreamer`, `cervino-terminal` and the Pi's other
-packages, in a repo of its own,
+`cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp` and
+the Pi's other packages, in a repo of its own,
 `/work/pkgrepo/$ARCH`, as a package for
 `$ARCH` (`apk index --rewrite-arch`: abuild files a noarch package under the
 container's architecture, and apk 3 fetches a package from the directory of

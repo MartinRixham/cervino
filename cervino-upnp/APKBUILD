@@ -1,0 +1,54 @@
+# Media sharing for the Cervino GNOME desktop, as a package of its own
+# beside cervino-desktop: Rygel, the UPnP/DLNA media server, started and
+# stopped by GNOME Settings' Media Sharing switch (see media-sharing, the
+# session helper that does it, run from its autostart entry), and the
+# firewall rules that let other devices reach it.
+# build-alpine-gnome-iso.sh copies this directory into the build, with
+# cervino-upnp.conf (PKGVER, the version) next to it.
+# abuild sets startdir and pkgdir and reads the variables set here.
+# shellcheck shell=sh disable=SC2034,SC2153,SC2154
+. "$startdir"/cervino-upnp.conf
+
+pkgname=cervino-upnp
+pkgver=$PKGVER
+pkgrel=0
+pkgdesc="Media sharing (Rygel) in GNOME Settings on the Cervino GNOME desktop"
+url="https://github.com/MartinRixham/cervino"
+arch="noarch"
+license="Apache-2.0"
+# gjs runs the helper; the install scripts reload the firewall.
+depends="/bin/sh gjs rygel"
+install="$pkgname.post-install $pkgname.post-upgrade $pkgname.post-deinstall"
+options="!check"
+
+makefile() {
+	mkdir -p "$(dirname "$3")"
+	cat > "$3"
+	chown "$1" "$3"
+	chmod "$2" "$3"
+}
+
+package() {
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/media-sharing \
+		< "$startdir"/media-sharing
+	makefile root:root 0644 "$pkgdir"/etc/xdg/autostart/cervino-media-sharing.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Media sharing helper
+Exec=/usr/libexec/cervino/media-sharing
+OnlyShowIn=GNOME;
+NoDisplay=true
+EOF
+
+	# SSDP, by which other devices find Rygel and it announces itself
+	# (multicast, so never a reply conntrack knows), and Rygel's HTTP port,
+	# the one media-sharing gives it.
+	makefile root:root 0644 "$pkgdir"/etc/nftables.d/60-upnp.nft <<'EOF'
+table inet filter {
+	chain input {
+		udp dport 1900 accept comment "UPnP discovery (SSDP)"
+		tcp dport 8200 accept comment "UPnP media sharing (Rygel)"
+	}
+}
+EOF
+}

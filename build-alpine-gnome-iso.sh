@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Package lists are words in a string, split where they are used.
-# PKGVER, VLC_PKGVER, GSTREAMER_PKGVER and TERMINAL_PKGVER come from the
-# host, through the container's environment.
+# PKGVER, VLC_PKGVER, GSTREAMER_PKGVER, TERMINAL_PKGVER and UPNP_PKGVER come
+# from the host, through the container's environment.
 # shellcheck disable=SC2086,SC2046,SC2116,SC2153
 #
 # build-alpine-gnome-iso.sh: builds Cervino's GNOME live image, an x86_64
@@ -77,16 +77,17 @@ host_main() {
 	pkgver=$(TZ=UTC0 git -C "$here" log -1 --date=format-local:%Y%m%d.%H%M%S \
 		--format=%cd 2>/dev/null) || pkgver=
 	pkgver=${pkgver:-$(date -u +%Y%m%d.%H%M%S)}
-	# cervino-vlc's, cervino-gstreamer's and cervino-terminal's (see
-	# bundle_version), so that a release that leaves them as they were
-	# doesn't make installs download them again (ci/publish-repo.sh keeps a
-	# file already published). git log needs the history for that: a shallow
-	# clone has only the last commit.
-	local vlc_pkgver gstreamer_pkgver terminal_pkgver
+	# cervino-vlc's, cervino-gstreamer's, cervino-terminal's and
+	# cervino-upnp's (see bundle_version), so that a release that leaves
+	# them as they were doesn't make installs download them again
+	# (ci/publish-repo.sh keeps a file already published). git log needs
+	# the history for that: a shallow clone has only the last commit.
+	local vlc_pkgver gstreamer_pkgver terminal_pkgver upnp_pkgver
 	vlc_pkgver=$(bundle_version cervino-vlc rpi/ffmpeg7 rpi/vlc)
 	gstreamer_pkgver=$(bundle_version cervino-gstreamer rpi/gst-plugins-base \
 		rpi/gst-plugins-bad patched/showtime)
 	terminal_pkgver=$(bundle_version cervino-terminal)
+	upnp_pkgver=$(bundle_version cervino-upnp)
 
 	# The signing key goes in as a file, under a fixed path; apk knows a key by
 	# its file name, which is passed alongside.
@@ -126,6 +127,7 @@ host_main() {
 		-v "$here"/cervino-vlc:/cervino-vlc:ro \
 		-v "$here"/cervino-gstreamer:/cervino-gstreamer:ro \
 		-v "$here"/cervino-terminal:/cervino-terminal:ro \
+		-v "$here"/cervino-upnp:/cervino-upnp:ro \
 		-v "$here"/apparmor.d:/apparmor.d:ro \
 		-v "$here"/rpi:/rpi:ro \
 		-v "$here"/patched:/patched:ro \
@@ -142,6 +144,7 @@ host_main() {
 		-e VLC_PKGVER="$vlc_pkgver" \
 		-e GSTREAMER_PKGVER="$gstreamer_pkgver" \
 		-e TERMINAL_PKGVER="$terminal_pkgver" \
+		-e UPNP_PKGVER="$upnp_pkgver" \
 		-e APK_REPO="${APK_REPO%/}" \
 		"${keyopts[@]}" \
 		"${cacheopts[@]}" \
@@ -263,11 +266,11 @@ build_rootfs() {
 }
 
 # build_bundle NAME VERSION PACKAGE...: builds NAME (cervino-vlc,
-# cervino-gstreamer or cervino-terminal) at VERSION from NAME/APKBUILD for
-# builder_main, which has built each PACKAGE for this target (rpi/'s only on
-# the Pi) from rpi/ or patched/ into $repodir, with its files in pkgfiles
-# and the Alpine version it is based on in alpinever, and adds NAME's file
-# to its published. host_main's bundle_version gives VERSION from the
+# cervino-gstreamer, cervino-terminal or cervino-upnp) at VERSION from
+# NAME/APKBUILD for builder_main, which has built each PACKAGE for this
+# target (rpi/'s only on the Pi) from rpi/ or patched/ into $repodir, with
+# its files in pkgfiles and the Alpine version it is based on in alpinever,
+# and adds NAME's file to its published. host_main's bundle_version gives VERSION from the
 # commits that changed NAME/, the PACKAGEs or this function.
 #
 # NAME holds the runtime packages of the PACKAGEs built (not their -dev,
@@ -284,7 +287,8 @@ build_rootfs() {
 # .PKGINFO: abuild can't trace the libraries again, as those they link
 # aren't installed here. The only install scripts among them are vlc-libs'
 # plug-in cache scripts, which become cervino-vlc's. With none built
-# (cervino-vlc on a PC, cervino-terminal), NAME has only its own files.
+# (cervino-vlc on a PC, cervino-terminal, cervino-upnp), NAME has only its
+# own files.
 build_bundle() {
 	local bundle=$1 version=$2 src=/work/cervino/$1 name file pkg info ver script dep
 	local provides= depends= licenses= dep_name
@@ -424,9 +428,9 @@ builder_main() {
 	# cervino-desktop, which brings in the features. So a feature added to
 	# the package later reaches installed systems with it, while GNOME's
 	# apps stay in world, where they can be removed one by one. Also
-	# cervino-vlc, built below, which can be removed; not cervino-gstreamer
-	# or cervino-terminal, which users add from the repo. And the SPICE
-	# guest agent, which the installer leaves out but in a VM (see
+	# cervino-vlc, built below, which can be removed; not cervino-gstreamer,
+	# cervino-terminal or cervino-upnp, which users add from the repo. And
+	# the SPICE guest agent, which the installer leaves out but in a VM (see
 	# live/setup-disk).
 	local world
 	world=$(printf '%s\n' alpine-base doas \
@@ -536,7 +540,7 @@ builder_main() {
 		cd /work
 	done
 
-	# --- cervino-vlc, cervino-gstreamer and cervino-terminal packages --------
+	# --- cervino-vlc, cervino-gstreamer, cervino-terminal, cervino-upnp ------
 	# See build_bundle. The other patched packages, and extra/'s, are
 	# published as they are.
 	local published=()
@@ -544,6 +548,7 @@ builder_main() {
 	build_bundle cervino-gstreamer "$GSTREAMER_PKGVER" gst-plugins-base gst-plugins-bad \
 		showtime
 	build_bundle cervino-terminal "$TERMINAL_PKGVER"
+	build_bundle cervino-upnp "$UPNP_PKGVER"
 	for name in $replaces $extra; do
 		# shellcheck disable=SC2086
 		for file in ${pkgfiles[$name]}; do
@@ -557,9 +562,8 @@ builder_main() {
 	# Flathub's remote (Flatpak adds the remotes in /etc/flatpak/remotes.d)
 	# next to it, and signed with the build's key, which mkimage puts in the
 	# image. It goes in a repo of its own for mkimage, with cervino-vlc,
-	# cervino-gstreamer, cervino-terminal and the Pi's other packages,
-	# indexed under $ARCH:
-	# abuild files a noarch package under
+	# cervino-gstreamer, cervino-terminal, cervino-upnp and the Pi's other
+	# packages, indexed under $ARCH: abuild files a noarch package under
 	# the container's architecture, and apk 3 looks for a package in the
 	# directory of the architecture its index gives. Its dependencies are in
 	# Alpine's repos, which the index doesn't cover.

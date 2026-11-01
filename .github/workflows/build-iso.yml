@@ -13,6 +13,7 @@ on:
       - cervino-vlc/**
       - cervino-gstreamer/**
       - cervino-terminal/**
+      - cervino-upnp/**
       - apparmor.d/**
       - rpi/**
       - patched/**
@@ -30,6 +31,7 @@ on:
       - cervino-vlc/**
       - cervino-gstreamer/**
       - cervino-terminal/**
+      - cervino-upnp/**
       - apparmor.d/**
       - rpi/**
       - patched/**
@@ -74,8 +76,8 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       # The full history: the build versions cervino-vlc,
-      # cervino-gstreamer and cervino-terminal from the last commits that
-      # changed them.
+      # cervino-gstreamer, cervino-terminal and cervino-upnp from the last
+      # commits that changed them.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -390,8 +392,9 @@ jobs:
           name: alpine-gnome-iso
           path: out
 
-      # The packages the image leaves out (cervino-gstreamer and
-      # cervino-terminal), which the VM test adds before running the tests.
+      # The packages the image leaves out (cervino-gstreamer,
+      # cervino-terminal and cervino-upnp), which the VM test adds before
+      # running the tests.
       - uses: actions/download-artifact@v7
         with:
           name: cervino-repo-iso
