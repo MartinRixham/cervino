@@ -1,37 +1,49 @@
-# GNOME Notes (Bijiben), which Alpine doesn't package, built from a commit
-# of master: its last release, 40.2, is GTK 3, so it ignores GNOME's dark
-# style, and master's GTK 4 and libadwaita port is unreleased. Published
+# GNOME Notes (Bijiben), which Alpine doesn't package, built from the
+# 41.0 release of a fork of it: GNOME's last release, 40.2, is GTK 3, so it
+# ignores GNOME's dark style, and the fork releases the GTK 4 and
+# libadwaita port. gitlab.gnome.org turns down programs' downloads of a
+# personal project's archives (HTTP 406), so unpack() clones the tag and
+# checks that it is _commit, which stands in for the checksum. Published
 # to the update repo but not in world, so installs add it with apk. A
 # change here needs a new pkgrel, as ci/publish-repo.sh keeps a file
 # already published.
 pkgname=bijiben
-pkgver=40.2_git20261001
-_commit=794a9f4631bf44b7e89a8810b94318bb392b10e6
+pkgver=41.0
+_commit=bae040ec9ff589b510bda2e0461fbc519689573f
 pkgrel=0
 pkgdesc="Note editor for GNOME"
-url="https://gitlab.gnome.org/GNOME/bijiben"
+url="https://gitlab.gnome.org/MartinRixham/gnome-notes"
 arch="all"
 license="GPL-3.0-or-later"
 makedepends="
 	curl-dev
 	desktop-file-utils
 	evolution-data-server-dev
+	git
 	glib-dev
 	gnome-online-accounts-dev
 	gtk4.0-dev
 	itstool
 	json-glib-dev
 	libadwaita-dev
-	libdex-dev
-	libsoup3-dev
 	libxml2-dev
 	meson
 	tinysparql-dev
+	util-linux-dev
 	webkit2gtk-6.0-dev
 	"
+checkdepends="dbus"
 subpackages="$pkgname-doc $pkgname-lang"
-source="bijiben-$_commit.tar.gz::https://gitlab.gnome.org/GNOME/bijiben/-/archive/$_commit/bijiben-$_commit.tar.gz"
-builddir="$srcdir/bijiben-$_commit"
+_tag=BIJIBEN_${pkgver//./_}
+builddir="$srcdir/gnome-notes"
+
+unpack() {
+	mkdir -p "$srcdir"
+	git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$_tag" \
+		"$url.git" "$builddir"
+	[ "$(git -C "$builddir" rev-parse HEAD)" = "$_commit" ] ||
+		die "$_tag is not $_commit"
+}
 
 build() {
 	abuild-meson \
@@ -48,6 +60,3 @@ package() {
 	DESTDIR="$pkgdir" meson install --no-rebuild -C output
 }
 
-sha512sums="
-0a0e24bb2dd329b8001b17d3e6966fef72df147844491d653fd840eae811db38df1f99342aa127065f951a68c489d29ad3d47acd057423fbc488fd9c3cef2dd9  bijiben-794a9f4631bf44b7e89a8810b94318bb392b10e6.tar.gz
-"

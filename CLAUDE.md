@@ -474,10 +474,10 @@ world nor any package's depends: users add them. `tui-torrent`
 (`aria2-rpc-secret.patch`): it started aria2c with its RPC interface open
 to the network and to web pages, with no secret. `bapk` (Bold APK)
 and `qstop` are built unpatched from their GitHub release tags.
-`bijiben` (GNOME Notes) is built unpatched from a pinned commit of its
-`master` (`_commit`; `pkgver` is the last release plus `_git<date>`),
-whose GTK 4 port is unreleased; to move it on, change both and the
-checksum.
+`bijiben` (GNOME Notes) is built unpatched from a release tag of a
+fork, which releases the GTK 4 port GNOME's has not. It has no `source`:
+its `unpack()` clones the tag and checks it is `_commit` (see the
+APKBUILD); to move it on, change `pkgver` and `_commit`.
 
 **`cervino-vlc` and `cervino-gstreamer`.** `build_bundle NAME VERSION
 PACKAGE...` builds each with `abuild -d` in `/work/cervino/<name>`, from a

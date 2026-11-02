@@ -132,10 +132,11 @@ The update repo also has packages that Alpine lacks, built from
   GNOME's quick settings menu in the terminal: volume, microphone and
   brightness, Wi-Fi, Bluetooth, VPN and the other toggles, and lock, log
   out, suspend, restart and power off. `doas apk add qstop` adds it.
-- `bijiben`, GNOME Notes built from a commit of its `master` branch,
-  which is GTK 4 and libadwaita, so unlike the Flathub app (the 40.2
-  release, GTK 3) it follows GNOME's dark style. It is unreleased code:
-  back up your notes before pointing it at the same Nextcloud account.
+- `bijiben`, GNOME Notes 41.0 from
+  [a fork](https://gitlab.gnome.org/MartinRixham/gnome-notes), ported to
+  GTK 4 and libadwaita, so unlike the Flathub app (GNOME's 40.2 release,
+  GTK 3) it follows GNOME's dark style. Back up your notes before
+  pointing it at the same Nextcloud account as another version.
   `doas apk add bijiben` adds it.
 
 ## Requirements
