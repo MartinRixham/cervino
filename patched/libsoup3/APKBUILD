@@ -1,0 +1,71 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+#
+# Alpine's community/libsoup3 (_alpine below) with
+# content-length-encoding.patch, upstream's fix from 3.7.1: a server's
+# response could declare only the part of its body written so far, and
+# Rygel's media stopped playing after a second. pkgver is Alpine's, plus _p
+# and our patch set's number, so it ranks above Alpine's.
+# build-alpine-gnome-iso.sh stops when Alpine's libsoup3 is no longer
+# _alpine.
+_alpine=3.6.6-r0
+pkgname=libsoup3
+pkgver=3.6.6_p1
+_pkgver=${pkgver%_p*}
+pkgrel=0
+pkgdesc="Gnome HTTP client/server Library"
+url="https://libsoup.gnome.org"
+arch="all"
+license="LGPL-2.0-or-later"
+subpackages="$pkgname-dev $pkgname-lang $pkgname-dbg"
+depends="glib-networking gsettings-desktop-schemas"
+makedepends="
+	brotli-dev
+	gobject-introspection-dev
+	libgcrypt-dev
+	libpsl-dev
+	meson
+	nghttp2-dev
+	sqlite-dev
+	vala
+	zlib-dev
+	"
+checkdepends="gnutls-dev"
+source="https://download.gnome.org/sources/libsoup/${_pkgver%.*}/libsoup-$_pkgver.tar.xz
+	content-length-encoding.patch
+	"
+builddir="$srcdir/libsoup-$_pkgver"
+
+case "$CARCH" in
+x86*)
+	;;
+*)
+	# arm*: sigill for some reason
+	# rest: sigabrt, http1 != http2 on localhost req
+	options="$options !check"
+	;;
+esac
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dtls_check=false \
+		-Dintrospection=enabled \
+		-Dvapi=enabled \
+		-Dtests="$(want_check && echo true || echo false)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test -t 10 --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+4018dc6f9823fd82cde0fecbb50cd1b5dd0ff4963f92f7ea465e67faf81e71580709eec59914ddbdff317963a88e4a8024e60e44087041175bc21e04022857d2  libsoup-3.6.6.tar.xz
+7c3d80c4a574c8095321625295a0165ca3568817fa368606178ec2ee956aad70b1d1d188a30cc796a64907a515846ddaba1c7eb4e4e0bb5fc6c4d61cf2e92d6e  content-length-encoding.patch
+"

@@ -140,6 +140,14 @@ jobs:
           key: ${{ matrix.target }}-dnsmasq-${{ github.sha }}
           restore-keys: ${{ matrix.target }}-dnsmasq-
 
+      - name: Restore libsoup3
+        id: restore-libsoup3
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/libsoup3
+          key: ${{ matrix.target }}-libsoup3-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-libsoup3-
+
       - name: Restore tui-torrent
         id: restore-tui_torrent
         uses: actions/cache/restore@v6
@@ -357,6 +365,16 @@ jobs:
         with:
           path: ${{ runner.temp }}/pkgcache/dnsmasq
           key: ${{ steps.keys.outputs.dnsmasq }}
+
+      - name: Save libsoup3
+        if: >-
+          always() && steps.keys.outputs.libsoup3 &&
+          steps.keys.outputs.libsoup3 !=
+          steps.restore-libsoup3.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/libsoup3
+          key: ${{ steps.keys.outputs.libsoup3 }}
 
       - name: Save tui-torrent
         if: >-

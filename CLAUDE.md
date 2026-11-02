@@ -25,8 +25,8 @@ Besides the script, the repo holds:
 - the AppArmor profiles in `apparmor.d/`
 - the Pi's patched `ffmpeg7`, `vlc`, `gst-plugins-base`, `gst-plugins-bad`,
   `wpa_supplicant`, `bluez` and `mesa` packages in `rpi/`
-- the patched `mutter`, `showtime` and `dnsmasq` packages, for both
-  targets, in `patched/`
+- the patched `mutter`, `showtime`, `dnsmasq` and `libsoup3` packages,
+  for both targets, in `patched/`
 - packages Alpine lacks (`tui-torrent`, `bapk`, `qstop`, `bijiben`),
   for both targets, in `extra/`
 
@@ -272,7 +272,7 @@ other.
   Pages URL, and each uploads its `out/repo` (the packages as
   `<branch>/<arch>/*.apk`: `cervino-desktop`, `cervino-vlc`,
   `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`, `mutter`,
-  `dnsmasq`, `extra/`'s packages, and for
+  `dnsmasq`, `libsoup3`, `extra/`'s packages, and for
   `rpi` `wpa_supplicant`, `bluez` and `mesa`, with their subpackages but
   `-dbg`) as `cervino-repo-<target>`.
 - **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` in an
@@ -374,7 +374,8 @@ in the image: users add them from the repo, and the VM test adds them
 before the tests.
 
 **The patched packages.** It first builds `patched/mutter`,
-`patched/showtime` and `patched/dnsmasq`, then for `rpi` `rpi/ffmpeg7`, `rpi/vlc`,
+`patched/showtime`, `patched/dnsmasq` and `patched/libsoup3`, then for
+`rpi` `rpi/ffmpeg7`, `rpi/vlc`,
 `rpi/gst-plugins-base`, `rpi/gst-plugins-bad`, `rpi/wpa_supplicant`,
 `rpi/bluez` and `rpi/mesa`, in that order, then `extra/`'s, with
 `abuild -r`. mutter comes
@@ -431,8 +432,9 @@ silence, the video jumping with it). The version is Alpine's plus
 To move to a newer one, take Alpine's APKBUILD again and Raspberry Pi
 OS's patches for that version.
 
-`mesa`, `mutter`, `showtime` and `dnsmasq` are Alpine's aport with a
-patch of ours, versioned Alpine's plus `_p<n>`, our patch set's number
+`mesa`, `mutter`, `showtime`, `dnsmasq` and `libsoup3` are Alpine's
+aport with a patch of ours (for `libsoup3`, upstream's, backported),
+versioned Alpine's plus `_p<n>`, our patch set's number
 (for `dnsmasq`, whose version already ends in `_p<n>`, upstream's
 `rel<n>`, a second `_p<n>`):
 
@@ -459,10 +461,15 @@ patch of ours, versioned Alpine's plus `_p<n>`, our patch set's number
   connection's interface is made anew, with a new index, on each connect,
   so after a switch every query through the tunnel failed ("failed to bind
   server socket to ...: Address not available").
+- `libsoup3` (`content-length-encoding.patch`, upstream's 26c647ae from
+  3.7.1, not in 3.6): since 3.6.6, setting the encoding to Content-Length
+  after the length (as Rygel does) left the length unparsed, read as 0,
+  so the server sent the length of the body written so far instead. Media
+  Sharing's files stopped after their first chunks, a second of playback.
 
-`wpa_supplicant`, `bluez`, `mesa`, `mutter` and `dnsmasq` are published
-as they are (but their `-dbg` packages, too big for GitHub Pages), and so
-replace Alpine's. A change to one of them needs a new `pkgrel`, as
+`wpa_supplicant`, `bluez`, `mesa`, `mutter`, `dnsmasq` and `libsoup3`
+are published as they are (but their `-dbg` packages, too big for GitHub
+Pages), and so replace Alpine's. A change to one of them needs a new `pkgrel`, as
 `ci/publish-repo.sh` keeps a file already published. The other five are
 published only inside `cervino-vlc` (`vlc` and `ffmpeg7`) and
 `cervino-gstreamer` (`gst-plugins-base` and `gst-plugins-bad` on `rpi`,
