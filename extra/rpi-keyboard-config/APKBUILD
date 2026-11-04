@@ -1,0 +1,42 @@
+# rpi-keyboard-config, Raspberry Pi's tool for the keymaps and RGB LEDs of
+# the Raspberry Pi 500 and 500+ keyboards, which Alpine doesn't package.
+# Published to the update repo but not in world, so installs add it with
+# apk. A change here needs a new pkgrel, as ci/publish-repo.sh keeps a file
+# already published.
+pkgname=rpi-keyboard-config
+pkgver=1.0
+pkgrel=0
+pkgdesc="Configure the keymaps and RGB LEDs of Raspberry Pi keyboards"
+url="https://github.com/raspberrypi/rpi-keyboard-config"
+arch="noarch"
+license="BSD-3-Clause"
+# It loads libhidapi-hidraw.so.0 with ctypes.
+depends="python3 hidapi"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="hidapi"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/raspberrypi/rpi-keyboard-config/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+# Upstream has no tests: check that the command line loads.
+check() {
+	PYTHONPATH=src python3 -m RPiKeyboardConfig.cli --help > /dev/null
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+	# Debian's package copies the rule into /etc/udev/rules.d as
+	# 99-rpi-keyboard.rules, but elogind's 73-seat-late.rules acts on the
+	# uaccess tag, so the rule has to come before it.
+	install -Dm644 debian/99-rpi-keyboard.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/70-rpi-keyboard.rules
+}
+
+sha512sums="
+89dd5ad32b6f2d280c8db776284755a70ce8a559fcec1faf56c0c27a72f441aa26014325c1b2db385648670a32abf3b078fa82565ee621861f5765ad2abc942f  rpi-keyboard-config-1.0.tar.gz
+"

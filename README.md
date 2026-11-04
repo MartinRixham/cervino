@@ -138,6 +138,12 @@ The update repo also has packages that Alpine lacks, built from
   GTK 3) it follows GNOME's dark style. Back up your notes before
   pointing it at the same Nextcloud account as another version.
   `doas apk add bijiben` adds it.
+- `rpi-keyboard-config`
+  ([Raspberry Pi's](https://github.com/raspberrypi/rpi-keyboard-config)),
+  which sets the keymaps and RGB lighting of the Raspberry Pi 500 and
+  500+ keyboards, for users in the `plugdev` group or at the seat (run
+  `rpi-keyboard-config --help`). `doas apk add rpi-keyboard-config` adds
+  it, and the keyboard is usable by it from the next restart.
 
 ## Requirements
 
@@ -191,8 +197,8 @@ the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publi
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
 `mutter`, `dnsmasq`, `libsoup3`, `tui-torrent`, `bapk`, `qstop`,
-`bijiben`, and the Pi's `wpa_supplicant`, `bluez` and `mesa`) to the
-update repo (see [Updates](#updates)).
+`bijiben`, `rpi-keyboard-config`, and the Pi's `wpa_supplicant`,
+`bluez` and `mesa`) to the update repo (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -552,7 +558,8 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      libsoup's upstream fix that keeps media shared with Media Sharing
      from stopping after a second;
    - for both, the packages in [`extra/`](extra), which Alpine lacks
-     (`tui-torrent`, `bapk`, `qstop`, `bijiben`), built the same way;
+     (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
+     `rpi-keyboard-config`), built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
      [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the
