@@ -116,8 +116,8 @@ host_main() {
 	# relabelling the volumes with :Z: a container-private label on $OUTDIR
 	# stops libvirt's qemu from opening the ISO in it.
 	#
-	# Pull even with the tag cached: it moves to each point release, and
-	# the image is tagged with the container's /etc/alpine-release.
+	# Pull even with the tag cached: it moves to each point release (but
+	# see container_main's upgrade).
 	"$runtime" run --rm --pull=always \
 		--platform "linux/$platform" \
 		--security-opt label=disable \
@@ -164,7 +164,9 @@ host_main() {
 container_main() {
 	printf '%s\n' "$MIRROR/$ALPINE_BRANCH/main" "$MIRROR/$ALPINE_BRANCH/community" \
 		> /etc/apk/repositories
-	apk update --quiet
+	# Upgrade first: Docker Hub's alpine:<branch> can lag a point release by
+	# days, and mkimage_main tags the image with /etc/alpine-release.
+	apk upgrade --update --quiet
 	# clang and lld build cervino-desktop's freestanding tryboot for the Pi.
 	# The container runs $ARCH, and syslinux (for the ISO's boot loader)
 	# only exists for x86.
