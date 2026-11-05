@@ -115,7 +115,10 @@ host_main() {
 	# On SELinux hosts, disable confinement for this container rather than
 	# relabelling the volumes with :Z: a container-private label on $OUTDIR
 	# stops libvirt's qemu from opening the ISO in it.
-	"$runtime" run --rm \
+	#
+	# Pull even with the tag cached: it moves to each point release, and
+	# the image is tagged with the container's /etc/alpine-release.
+	"$runtime" run --rm --pull=always \
 		--platform "linux/$platform" \
 		--security-opt label=disable \
 		-v "$(realpath "$0")":/build.sh:ro \
