@@ -480,7 +480,7 @@ builder_main() {
 	# built here are left in /work/pkgcache for container_main to keep.
 	local name file repodir=/work/packages/cervino/$ARCH
 	local patched="mutter showtime dnsmasq libsoup3" replaces="mutter dnsmasq libsoup3"
-	local extra="tui-torrent bapk qstop bijiben rpi-keyboard-config"
+	local extra="tui-torrent bapk qstop bijiben rpi-keyboard-config tomesole"
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"

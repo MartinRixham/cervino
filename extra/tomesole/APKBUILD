@@ -1,0 +1,37 @@
+# tomesole, a terminal interface and command line client for Library
+# Genesis, which Alpine doesn't package. Published to the update repo but
+# not in world, so installs add it with apk. A change here needs a new
+# pkgrel, as ci/publish-repo.sh keeps a file already published.
+pkgname=tomesole
+pkgver=0.1.8
+pkgrel=0
+pkgdesc="Terminal client (TUI and CLI) for searching and downloading from Library Genesis"
+url="https://github.com/ChrisThoma/tomesole"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ChrisThoma/tomesole/archive/refs/tags/v$pkgver.tar.gz"
+# cargo fetches the crates in prepare().
+options="net"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/tomesole -t "$pkgdir"/usr/bin
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+sha512sums="
+c9e45f79b88e21ae93d194d8f82b2bf69592ffaa1549f6dcf85bfe4c0b9b547f0c684b07233a64fb0400347ded3a09f85dce10d72eb374f80877c4b8caab7efc  tomesole-0.1.8.tar.gz
+"

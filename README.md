@@ -144,6 +144,10 @@ The update repo also has packages that Alpine lacks, built from
   500+ keyboards, for users in the `plugdev` group or at the seat (run
   `rpi-keyboard-config --help`). `doas apk add rpi-keyboard-config` adds
   it, and the keyboard is usable by it from the next restart.
+- `tomesole` ([tomesole](https://github.com/ChrisThoma/tomesole)), a
+  terminal interface and command line client for searching and
+  downloading from Library Genesis (run `tomesole`, or `tomesole doctor`
+  to check its setup). `doas apk add tomesole` adds it.
 
 ## Requirements
 
@@ -197,7 +201,7 @@ the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publi
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
 `mutter`, `dnsmasq`, `libsoup3`, `tui-torrent`, `bapk`, `qstop`,
-`bijiben`, `rpi-keyboard-config`, and the Pi's `wpa_supplicant`,
+`bijiben`, `rpi-keyboard-config`, `tomesole`, and the Pi's `wpa_supplicant`,
 `bluez` and `mesa`) to the update repo (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
@@ -559,7 +563,7 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      from stopping after a second;
    - for both, the packages in [`extra/`](extra), which Alpine lacks
      (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
-     `rpi-keyboard-config`), built the same way;
+     `rpi-keyboard-config`, `tomesole`), built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
      [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the

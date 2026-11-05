@@ -188,6 +188,14 @@ jobs:
           key: ${{ matrix.target }}-rpi-keyboard-config-${{ github.sha }}
           restore-keys: ${{ matrix.target }}-rpi-keyboard-config-
 
+      - name: Restore tomesole
+        id: restore-tomesole
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/tomesole
+          key: ${{ matrix.target }}-tomesole-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-tomesole-
+
       - name: Restore ffmpeg7
         id: restore-ffmpeg7
         if: matrix.target == 'rpi'
@@ -433,6 +441,16 @@ jobs:
         with:
           path: ${{ runner.temp }}/pkgcache/rpi-keyboard-config
           key: ${{ steps.keys.outputs.rpi_keyboard_config }}
+
+      - name: Save tomesole
+        if: >-
+          always() && steps.keys.outputs.tomesole &&
+          steps.keys.outputs.tomesole !=
+          steps.restore-tomesole.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/tomesole
+          key: ${{ steps.keys.outputs.tomesole }}
 
       - name: Checksum
         working-directory: out
