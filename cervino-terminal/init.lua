@@ -50,6 +50,9 @@ require("lazy").setup({
       -- A function, as ensure_installed is a list lazy.nvim would add to.
       opts.treesitter.auto_install = false
       opts.treesitter.ensure_installed = {}
+      -- Or AstroCore has Mason download the tree-sitter CLI, of no use
+      -- without a C compiler.
+      opts.treesitter.auto_install_cli = false
     end,
   },
   {

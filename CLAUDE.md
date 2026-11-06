@@ -581,7 +581,8 @@ runs (`git`, `ripgrep`, `lazygit`, `bottom`, `gdu`),
 
 nvim-treesitter builds its parsers with a C compiler, which the system
 lacks. So nothing is built (AstroCore's `auto_install` and
-`ensure_installed` are off), and Neovim takes Alpine's parsers from
+`ensure_installed` are off, and `auto_install_cli`, which would have Mason
+download the tree-sitter CLI), and Neovim takes Alpine's parsers from
 `$VIMRUNTIME/parser`. AstroCore only uses parsers nvim-treesitter built, so
 `init.lua` wraps `astrocore.treesitter.installed()` to add Alpine's, and
 puts nvim-treesitter's `runtime/` (its queries) on the runtime path. A
