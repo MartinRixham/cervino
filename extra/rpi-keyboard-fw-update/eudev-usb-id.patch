@@ -1,0 +1,16 @@
+The script tells the keyboard's RP2040 in BOOTSEL mode from other new
+drives by systemd's ID_USB_VENDOR_ID and ID_USB_MODEL_ID, which eudev's
+usb_id doesn't set: it sets only the older ID_VENDOR_ID and ID_MODEL_ID,
+so the drive was never found and the update timed out. Accept either.
+
+--- a/rpi-keyboard-fw-update
++++ b/rpi-keyboard-fw-update
+@@ -116,7 +116,7 @@
+         debug "Candidate drive: $DRIVE"
+         # Check that the new drive is an RP2040 in BOOTSEL mode
+         DRIVE_INFO="$(udevadm info "$DRIVE")"
+-        if echo "$DRIVE_INFO" | grep -q "ID_USB_VENDOR_ID=$USB_VID_RASPBERRYPI" && echo "$DRIVE_INFO" | grep -q "ID_USB_MODEL_ID=$USB_PID_RP2040_BOOTSEL"; then
++        if echo "$DRIVE_INFO" | grep -Eq "ID_(USB_)?VENDOR_ID=$USB_VID_RASPBERRYPI" && echo "$DRIVE_INFO" | grep -Eq "ID_(USB_)?MODEL_ID=$USB_PID_RP2040_BOOTSEL"; then
+           debug "Found BOOTSEL drive $DRIVE"
+           FOUND_BOOTSEL_DRIVE=1
+           echo "$DRIVE"

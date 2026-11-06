@@ -29,7 +29,8 @@ Besides the script, the repo holds:
 - the patched `mutter`, `showtime`, `dnsmasq` and `libsoup3` packages,
   for both targets, in `patched/`
 - packages Alpine lacks (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
-  `rpi-keyboard-config`, `tomesole`), for both targets, in `extra/`
+  `rpi-keyboard-config`, `tomesole`), for both targets, and
+  `rpi-keyboard-fw-update`, for `rpi`, in `extra/`
 
 `README.md` documents the user-facing behaviour and the environment
 variables (`TARGET`, `ALPINE_BRANCH`, `OUTDIR`, `LIVE_USER`,
@@ -545,6 +546,10 @@ to the network and to web pages, with no secret. `bapk` (Bold APK),
 tags, and
 `rpi-keyboard-config` from Raspberry Pi's, with Debian's udev rule
 installed under another number (see the APKBUILD).
+`rpi-keyboard-fw-update` (`eudev-usb-id.patch`), built for `rpi` only
+(its `pinctrl` is aarch64-only), from a commit, as upstream has no
+tags: its script told the keyboard's BOOTSEL drive by udev properties
+eudev doesn't set.
 `bijiben` (GNOME Notes) is built unpatched from a release tag of a
 fork, which releases the GTK 4 port GNOME's has not. It has no `source`:
 its `unpack()` clones the tag and checks it is `_commit` (see the

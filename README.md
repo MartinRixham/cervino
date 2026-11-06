@@ -149,7 +149,18 @@ The update repo also has packages that Alpine lacks, built from
   which sets the keymaps and RGB lighting of the Raspberry Pi 500 and
   500+ keyboards, for users in the `plugdev` group or at the seat (run
   `rpi-keyboard-config --help`). `doas apk add rpi-keyboard-config` adds
-  it, and the keyboard is usable by it from the next restart.
+  it, and the keyboard is usable by it from the next restart. It needs
+  the keyboard's Vial firmware (1.20 or later), which the first ones
+  shipped without: if it says the firmware isn't compatible, update it
+  with `rpi-keyboard-fw-update`.
+- `rpi-keyboard-fw-update`
+  ([Raspberry Pi's](https://github.com/raspberrypi/keyboard-firmware)),
+  only for the Pi, which updates the firmware of the Raspberry Pi 500
+  and 500+ keyboards to the one it brings, for the Pi's model and
+  keyboard layout. `rpi-keyboard-fw-update -v` shows the keyboard and its
+  firmware version, `doas rpi-keyboard-fw-update` updates it. Keep a USB
+  keyboard at hand in case the update fails. `doas apk add
+  rpi-keyboard-fw-update` adds it.
 - `tomesole` ([tomesole](https://github.com/ChrisThoma/tomesole)), a
   terminal interface and command line client for searching and
   downloading from Library Genesis (run `tomesole`, or `tomesole doctor`
@@ -207,8 +218,9 @@ the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publi
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
 `mutter`, `dnsmasq`, `libsoup3`, `tui-torrent`, `bapk`, `qstop`,
-`bijiben`, `rpi-keyboard-config`, `tomesole`, and the Pi's `wpa_supplicant`,
-`bluez`, `mesa` and `cervino-kernel`) to the update repo (see [Updates](#updates)).
+`bijiben`, `rpi-keyboard-config`, `tomesole`, and the Pi's
+`wpa_supplicant`, `bluez`, `mesa`, `rpi-keyboard-fw-update` and
+`cervino-kernel`) to the update repo (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -606,7 +618,8 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      from stopping after a second;
    - for both, the packages in [`extra/`](extra), which Alpine lacks
      (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
-     `rpi-keyboard-config`, `tomesole`), built the same way;
+     `rpi-keyboard-config`, `tomesole`, and for the Pi only
+     `rpi-keyboard-fw-update`), built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
      [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the

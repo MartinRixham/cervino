@@ -490,6 +490,7 @@ builder_main() {
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"
 		patched+=" linux-rpi"
 		replaces+=" wpa_supplicant bluez mesa linux-rpi"
+		extra+=" rpi-keyboard-fw-update"
 	fi
 	local dir base alpine dep key tmp files
 	local -A keys after=([vlc]=ffmpeg7 [gst-plugins-bad]=gst-plugins-base)

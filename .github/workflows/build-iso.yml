@@ -196,6 +196,15 @@ jobs:
           key: ${{ matrix.target }}-tomesole-${{ github.sha }}
           restore-keys: ${{ matrix.target }}-tomesole-
 
+      - name: Restore rpi-keyboard-fw-update
+        id: restore-rpi-keyboard-fw-update
+        if: matrix.target == 'rpi'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/rpi-keyboard-fw-update
+          key: rpi-rpi-keyboard-fw-update-${{ github.sha }}
+          restore-keys: rpi-rpi-keyboard-fw-update-
+
       - name: Restore ffmpeg7
         id: restore-ffmpeg7
         if: matrix.target == 'rpi'
@@ -470,6 +479,16 @@ jobs:
         with:
           path: ${{ runner.temp }}/pkgcache/tomesole
           key: ${{ steps.keys.outputs.tomesole }}
+
+      - name: Save rpi-keyboard-fw-update
+        if: >-
+          always() && steps.keys.outputs.rpi_keyboard_fw_update &&
+          steps.keys.outputs.rpi_keyboard_fw_update !=
+          steps.restore-rpi-keyboard-fw-update.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/rpi-keyboard-fw-update
+          key: ${{ steps.keys.outputs.rpi_keyboard_fw_update }}
 
       - name: Checksum
         working-directory: out

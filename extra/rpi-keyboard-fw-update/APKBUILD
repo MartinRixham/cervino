@@ -1,0 +1,47 @@
+# rpi-keyboard-fw-update, Raspberry Pi's updater for the firmware of the
+# Raspberry Pi 500 and 500+ keyboards, with the firmware, which Alpine
+# doesn't package. rpi-keyboard-config needs the Vial firmware (1.20 or
+# later) these keyboards shipped without. Built for the Pi only, as
+# raspberrypi-utils-pinctrl is aarch64-only. Published to the update repo
+# but not in world, so installs add it with apk. A change here needs a new
+# pkgrel, as ci/publish-repo.sh keeps a file already published.
+pkgname=rpi-keyboard-fw-update
+pkgver=1.0.1
+# Upstream has no tags: the commit of Debian's 1.0.1.
+_commit=ee4f1cb1cccdbbf9596c80add02d77da402239dc
+pkgrel=0
+pkgdesc="Update the firmware of the Raspberry Pi 500 and 500+ keyboards"
+url="https://github.com/raspberrypi/keyboard-firmware"
+arch="noarch"
+license="BSD-3-Clause"
+# It puts the keyboard in BOOTSEL mode with pinctrl, finds its drive with
+# lsblk and udevadm, reads its version with lsusb and copies the firmware
+# onto it.
+depends="bash lsblk raspberrypi-utils-pinctrl usbutils"
+source="$pkgname-$pkgver.tar.gz::https://github.com/raspberrypi/keyboard-firmware/archive/$_commit.tar.gz
+	eudev-usb-id.patch
+	"
+builddir="$srcdir/keyboard-firmware-$_commit"
+
+# Upstream has no tests: check that the script parses and that each
+# firmware it can pick has a version.
+check() {
+	bash -n rpi-keyboard-fw-update
+	local uf2
+	for uf2 in pi500-keyboard-fw.uf2 pi500plus-keyboard-fw-ansi.uf2 \
+		pi500plus-keyboard-fw-iso.uf2 pi500plus-keyboard-fw-jis.uf2; do
+		grep -q "^$uf2=" keyboard/versions.txt
+		[ -s keyboard/$uf2 ]
+	done
+}
+
+package() {
+	install -Dm755 rpi-keyboard-fw-update -t "$pkgdir"/usr/bin
+	install -Dm644 keyboard/* -t "$pkgdir"/usr/lib/firmware/raspberrypi/keyboard
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+sha512sums="
+2a19c0033ec050c58c3e93e9b6e5d440042aa032761dcc0e5ce360dc9f65be7d56ed558dbfaea700b9ca3d67f3f961f1b0bb0fe42bd5ecabd95a0bcf82b3c64a  rpi-keyboard-fw-update-1.0.1.tar.gz
+b61ec835820c20b5340befd0e7cc960b4f839eb4d81771d2e43575349cb39abaaa830611cf0865d442d1f3cdd0f73c9909efaed4b8fb54990be9e5b6e9c887fc  eudev-usb-id.patch
+"
