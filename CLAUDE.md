@@ -50,6 +50,7 @@ qemu-system-x86_64 -enable-kvm -m 8G -cdrom out/*.iso
 ci/vm-test.sh out/*.iso                             # the end-to-end test CI runs
 INSTALL_MODE=sys ci/vm-test.sh out/*.iso            # the same with a sys install
 test/kernel.sh                                      # on a Pi 5: cervino-kernel
+test/kernel.sh out/repo                             # as CI: a small VM, no KVM needed
 ```
 
 ### ci/vm-test.sh
@@ -172,7 +173,23 @@ starting it on the Pi; its header says what each phase does. It needs
 rootless podman with subordinate IDs. Like the build script it runs in
 phases selected by its first argument: on the host, then `--build` and
 `--vm` in `alpine:<branch>` containers (the second `--privileged`, for
-`/dev/kvm` and the chroot's mounts), and `--guest` in the VM. It keeps
+`/dev/kvm` and the chroot's mounts), and `--guest` in the VM.
+
+Given a directory of a build's packages (`out/repo`), the host phase
+runs on any arm64 machine (podman, or `CONTAINER`), on the
+`cervino-kernel` there, whose index it makes again, signed with a
+throwaway key (`local_repo`):
+
+- `--check`: the package checks `--build` runs (`check_package`);
+- `--vm` with `SMALL=1`: a small system (Alpine's base, AppArmor and
+  Alpine's profiles, btrfs, zram, the two kernels, mkinitfs's trigger
+  building the initramfs) booted with each kernel, running `--guest`
+  alone. Without `/dev/kvm` (or with `ACCEL=tcg`) QEMU emulates the CPU,
+  booting it in about two minutes.
+
+The `rpi` CI job runs that after its build.
+
+On the Pi it keeps
 everything in `$WORKDIR` (default `./kernel-test`): the sources, the
 package (built again only when its key changes, as in `builder_main`),
 a throwaway signing key, the VM's disk image (installed again daily or
@@ -183,7 +200,7 @@ added there runs here too; the kernel's own checks are `guest_main`.
 The package's config gets QEMU's virtio-mmio drivers as modules
 (`rpi/linux-rpi/cervino-changes.config`) only for this VM. The config
 check compares with Alpine's `linux-rpi`'s and allows only the options a
-page size or those drivers change (`expected` in `build_main`): a new
+page size or those drivers change (`expected` in `check_package`): a new
 difference fails it until it is understood and added there.
 
 ### ci/update-test.sh
@@ -268,8 +285,10 @@ other.
 - **Build jobs**: one per `TARGET`, a matrix of `iso` on `ubuntu-latest` and
   `rpi` on `ubuntu-24.04-arm`. They free runner disk space first because
   mkimage needs several GB. Each job uploads its image plus `SHA256SUMS` as
-  an artifact; the `iso` job then runs `ci/update-test.sh`. The `rpi` image
-  is only built: QEMU can't run GNOME on an emulated Pi.
+  an artifact; the `iso` job then runs `ci/update-test.sh`, the `rpi` job
+  `test/kernel.sh out/repo` (the package checks, and the kernel's own in a
+  small VM). The `rpi` image is only built: QEMU can't run GNOME on an
+  emulated Pi.
 - **The patched packages' cache**: the build jobs pass
   `CACHEDIR=$RUNNER_TEMP/pkgcache` and keep each patched package in an
   Actions cache of its own. Before the build they restore the newest

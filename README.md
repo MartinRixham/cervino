@@ -558,13 +558,20 @@ kernel on trial, falling back to the version before if it doesn't start
 (see above); elsewhere the package refuses to install. Programs that
 assume 4 KB pages fail under it: some builds of jemalloc, x86 emulators
 (box64, FEX) and Wine, and some programs built for other systems. A disk
-with it installed won't start on an earlier Pi.
+with it installed won't start on an earlier Pi. Swap is made for one page
+size: an unencrypted swap partition (installs with `-s`) made under the
+4 KB kernel isn't used under this one, nor the other way round, until
+`swapon --fixpgsz` formats it again; encrypted swap is made anew at each
+boot.
 
 The build compiles it too, which adds about an hour on an arm64 host.
 [`test/kernel.sh`](test/kernel.sh) builds and tests it on a Pi 5 or 500
 without starting it there: it checks the package, then boots a copy of the
 Pi's system in a VM with it and with a 4 KB page kernel, and runs the CI's
-OS feature tests in both (see the script for what it can't test).
+OS feature tests in both (see the script for what it can't test). CI,
+whose runners can't run that VM, checks the package the `rpi` build made
+and boots a small system with it in a VM, running only the kernel's own
+checks (`test/kernel.sh out/repo`).
 
 ## How it works
 

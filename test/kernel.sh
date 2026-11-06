@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
 #
-# test/kernel.sh: builds cervino-kernel (rpi/linux-rpi) and tests it as far
-# as a Raspberry Pi 5 or 500 can without starting it, before it is pushed.
-# Run it on the Pi, from the repo. It needs podman (rootless, with
-# subordinate IDs: /etc/subuid, /etc/subgid) and KVM.
+# test/kernel.sh [REPO_DIR]: builds cervino-kernel (rpi/linux-rpi) and
+# tests it as far as a Raspberry Pi 5 or 500 can without starting it, before
+# it is pushed. Run it on the Pi, from the repo. It needs podman (rootless,
+# with subordinate IDs: /etc/subuid, /etc/subgid) and KVM.
+#
+# With REPO_DIR, a build's packages laid out as <branch>/<arch>/ (out/repo),
+# it tests the cervino-kernel there instead, on any arm64 machine with
+# podman or docker (CONTAINER), KVM or not: CI runs it after the rpi build.
+# That is step 1 without the build, and step 2 with a small system instead
+# of this machine's (only what --guest checks) and --guest alone.
 #
 # 1. --build, in an alpine:<branch> container: builds the package (again
 #    only when rpi/linux-rpi or Alpine's linux-rpi changed), signed with a
-#    throwaway key, and checks it: what it provides, its config against
-#    Alpine's linux-rpi's, the page size in its kernel image's header, that
-#    it takes linux-rpi's place and gives it back as the apk wrapper deletes
-#    it, and that its pre-install script turns down a system that is not an
-#    atomic install (and, here, accepts this machine).
+#    throwaway key, and checks it (check_package): what it provides, its
+#    config against Alpine's linux-rpi's, the page size in its kernel
+#    image's header, that it takes linux-rpi's place and gives it back as
+#    the apk wrapper deletes it, and that its pre-install script turns down
+#    a system that is not an atomic install (and, on a Pi 5 or 500 that is
+#    one, accepts it). --check does the same for REPO_DIR's package.
 # 2. --vm, in another: installs this machine's world, cervino-kernel in
 #    place of linux-rpi, with linux-virt and the packages the VM test adds,
 #    into a btrfs disk image set up as an install would be (a user, tester,
@@ -30,12 +37,15 @@
 # failures. The VM's console logs are kept in $WORKDIR/<kernel>.log.
 #
 # Environment overrides:
-#   ALPINE_BRANCH  the release to build for (default: this machine's)
+#   ALPINE_BRANCH  the release to build for (default: this machine's;
+#                  with REPO_DIR, its <branch>)
+#   CONTAINER      podman or docker, with REPO_DIR (default: podman)
+#   ACCEL=tcg      with REPO_DIR, emulate the CPU even with KVM
 #   MIRROR         Alpine mirror (default: the CDN)
 #   WORKDIR        sources, packages, disk images, logs (default: ./kernel-test)
-#   VM_MEMORY      guest RAM (default: 6G)
+#   VM_MEMORY      guest RAM (default: 6G; with REPO_DIR, 4G)
 #   VM_CPUS        guest CPUs (default: all host CPUs)
-#   SKIP_VM=1      only build and check the package
+#   SKIP_VM=1      only build (or with REPO_DIR, find) and check the package
 
 set -euo pipefail
 export LC_ALL=C
@@ -73,15 +83,23 @@ totals() {
 # Host side: runs the phases in containers and adds up their failures.
 # ---------------------------------------------------------------------------
 host_main() {
-	local here image failed=0 rc
+	local repo=${1:-}
+	here= image= failed=0 runtime=podman
 	here=$(dirname "$(dirname "$(realpath "$0")")")
-	WORKDIR=${WORKDIR:-./kernel-test}
-	mkdir -p "$WORKDIR"
-	WORKDIR=$(realpath "$WORKDIR")
-	ALPINE_BRANCH=${ALPINE_BRANCH:-v$(cut -d. -f1,2 /etc/alpine-release 2>/dev/null)}
+	if [[ -n $repo ]]; then
+		local apks
+		apks=("$repo"/v*/aarch64/cervino-kernel-[0-9]*.apk)
+		[[ ${#apks[@]} == 1 && -f ${apks[0]} ]] ||
+			die "$repo has no cervino-kernel (or more than one)"
+		repo=$(realpath "$(dirname "${apks[0]}")")
+		ALPINE_BRANCH=$(basename "$(dirname "$repo")")
+		runtime=${CONTAINER:-podman}
+	else
+		ALPINE_BRANCH=${ALPINE_BRANCH:-v$(cut -d. -f1,2 /etc/alpine-release 2>/dev/null)}
+	fi
 	[[ $ALPINE_BRANCH =~ ^v[0-9]+\.[0-9]+$ ]] || die "set ALPINE_BRANCH (v3.24, ...)"
-	[[ $(uname -m) == aarch64 ]] || die "run it on a Raspberry Pi 5 or 500"
-	command -v podman >/dev/null || die "need podman"
+	[[ $(uname -m) == aarch64 ]] || die "run it on an arm64 machine (with no REPO_DIR, a Pi 5)"
+	command -v "$runtime" >/dev/null || die "need $runtime"
 	image=docker.io/library/alpine:${ALPINE_BRANCH#v}
 
 	# The pre-install script, which only reads, on this machine: it must
@@ -102,25 +120,34 @@ host_main() {
 	# Without subordinate IDs, rootless podman maps only root: it can't
 	# unpack Alpine's image (/etc/shadow is group shadow's), and apk can't
 	# give files to the VM system's other users (gdm, polkitd, ...).
-	(($(podman unshare cat /proc/self/uid_map | wc -l) > 1)) ||
+	[[ $runtime != podman ]] || (($(id -u) == 0)) ||
+		(($(podman unshare cat /proc/self/uid_map | wc -l) > 1)) ||
 		die "rootless podman has no subordinate IDs for $(id -un): as root," \
 			"add a range to /etc/subuid and /etc/subgid (e.g. $(id -un):100000:65536)" \
 			"and run podman system migrate"
 
-	echo ">>> Building cervino-kernel for Alpine ${ALPINE_BRANCH#v}"
-	rc=0
-	podman run --rm --pull=always --security-opt label=disable \
-		-v "$here":/src:ro -v "$WORKDIR":/work \
-		-e ALPINE_BRANCH="$ALPINE_BRANCH" -e MIRROR="$MIRROR" \
-		"$image" sh -c 'apk add --quiet bash && exec bash /src/test/kernel.sh --build' ||
-		rc=$?
-	((rc != 125)) || die "podman could not run the container"
-	failed=$((failed + rc))
-	if [[ -n ${SKIP_VM:-} ]] || [[ ! -f $WORKDIR/packages/current ]]; then
-		echo
-		echo ">>> $failed test(s) failed"
-		exit "$failed"
+	WORKDIR=${WORKDIR:-./kernel-test}
+	mkdir -p "$WORKDIR"
+	WORKDIR=$(realpath "$WORKDIR")
+
+	if [[ -n $repo ]]; then
+		echo ">>> Checking $repo/$(basename "${apks[0]}")"
+		phase --check -v "$repo":/repo:ro
+		[[ -z ${SKIP_VM:-} ]] || done_main
+		# The small system's kernel arguments: AppArmor's, as the image's.
+		rm -rf "$WORKDIR"/host
+		mkdir -p "$WORKDIR"/host
+		echo 'lsm=landlock,lockdown,yama,integrity,apparmor' > "$WORKDIR"/host/cmdline
+		echo ">>> Testing cervino-kernel in a VM (a small system)"
+		phase --vm --privileged -v "$repo":/repo:ro -v "$WORKDIR":/work -e SMALL=1 \
+			-e ACCEL="${ACCEL:-}" -e VM_MEMORY="${VM_MEMORY:-4G}" \
+			-e VM_CPUS="${VM_CPUS:-$(nproc)}"
+		done_main
 	fi
+
+	echo ">>> Building cervino-kernel for Alpine ${ALPINE_BRANCH#v}"
+	phase --build -v "$WORKDIR":/work
+	[[ -z ${SKIP_VM:-} && -f $WORKDIR/packages/current ]] || done_main
 
 	[[ -r /dev/kvm && -w /dev/kvm ]] || die "need access to /dev/kvm"
 
@@ -141,15 +168,25 @@ host_main() {
 		xargs > "$host"/cmdline
 
 	echo ">>> Testing cervino-kernel in a VM"
-	rc=0
-	podman run --rm --pull=always --privileged --security-opt label=disable \
-		-v "$here":/src:ro -v "$WORKDIR":/work \
-		-e ALPINE_BRANCH="$ALPINE_BRANCH" -e MIRROR="$MIRROR" \
-		-e VM_MEMORY="${VM_MEMORY:-6G}" -e VM_CPUS="${VM_CPUS:-$(nproc)}" \
-		"$image" sh -c 'apk add --quiet bash && exec bash /src/test/kernel.sh --vm' ||
+	phase --vm --privileged -v "$WORKDIR":/work \
+		-e VM_MEMORY="${VM_MEMORY:-6G}" -e VM_CPUS="${VM_CPUS:-$(nproc)}"
+	done_main
+}
+
+# phase PHASE [RUNTIME OPTIONS...]: runs this script's PHASE in a container of
+# $image, adding its failures to $failed.
+phase() {
+	local name=$1 rc=0
+	shift
+	"$runtime" run --rm --pull=always --security-opt label=disable -v "$here":/src:ro \
+		-e ALPINE_BRANCH="$ALPINE_BRANCH" -e MIRROR="$MIRROR" "$@" \
+		"$image" sh -c "apk add --quiet bash && exec bash /src/test/kernel.sh $name" ||
 		rc=$?
-	((rc != 125)) || die "podman could not run the container"
+	((rc != 125)) || die "$runtime could not run the container"
 	failed=$((failed + rc))
+}
+
+done_main() {
 	echo
 	echo ">>> $failed test(s) failed"
 	exit "$failed"
@@ -159,12 +196,12 @@ host_main() {
 # --build: builds the package and checks it.
 # ---------------------------------------------------------------------------
 # apk_scratch ARGS...: apk on the scratch root $scratch, with Alpine's repos
-# and the package's, running no scripts (no kernel hooks).
+# and the package's ($pkgrepo), running no scripts (no kernel hooks).
 apk_scratch() {
 	apk --root "$scratch" --no-scripts --quiet \
 		--repository "$MIRROR/$ALPINE_BRANCH/main" \
 		--repository "$MIRROR/$ALPINE_BRANCH/community" \
-		--repository /work/packages/cervino "$@"
+		--repository "$pkgrepo" "$@"
 }
 
 # installed: the names of the packages installed in $scratch.
@@ -218,6 +255,44 @@ build_main() {
 	# What the VM tests (the host goes on only with it).
 	echo "$key" > /work/packages/current
 	echo
+	pkgrepo=/work/packages/cervino
+	check_package "$apk"
+}
+
+# --check: checks the package in /repo, a build's (CI's), as --build does
+# its own.
+check_main() {
+	printf '%s\n' "$MIRROR/$ALPINE_BRANCH/main" "$MIRROR/$ALPINE_BRANCH/community" \
+		> /etc/apk/repositories
+	apk upgrade --update --quiet
+	apk add --quiet tar
+	local_repo /tmp/repo
+	check_package "$(echo "$pkgrepo"/aarch64/cervino-kernel-[0-9]*.apk)"
+}
+
+# local_repo DIR: makes DIR a repo of /repo's cervino-kernel alone, indexed
+# again and signed with a throwaway key (the build's is gone), which apk
+# then trusts, and which is enough for it to trust the package. Sets
+# pkgrepo, and pubkey to the key.
+local_repo() {
+	pkgrepo=$1
+	apk add --quiet abuild
+	rm -rf "$pkgrepo"
+	mkdir -p "$pkgrepo"/aarch64
+	cp /repo/cervino-kernel-[0-9]*.apk "$pkgrepo"/aarch64/
+	abuild-keygen -a -n -q 2>/dev/null
+	pubkey=$(echo ~/.abuild/*.pub)
+	cp "$pubkey" /etc/apk/keys/
+	apk index --quiet --no-warnings --allow-untrusted -o "$pkgrepo"/aarch64/APKINDEX.tar.gz \
+		"$pkgrepo"/aarch64/*.apk
+	abuild-sign -q "$pkgrepo"/aarch64/APKINDEX.tar.gz
+}
+
+# check_package APK: the package's checks, with it in $pkgrepo and its key
+# in /etc/apk/keys.
+check_package() {
+	local apk=$1 base
+	base=$(sed -n 's/^_alpine=//p' /src/rpi/linux-rpi/APKBUILD)
 
 	# What the package provides and runs.
 	local info
@@ -310,7 +385,10 @@ build_main() {
 
 	# This container is no atomic install (no /etc/kernel/cmdline).
 	desc="pre-install turns down a system that is not an atomic install"
-	if sh "$aport"/cervino-kernel.pre-install 2>/dev/null; then
+	tar -xzOf "$apk" .pre-install > /tmp/pre-install 2>/dev/null
+	if [[ ! -s /tmp/pre-install ]]; then
+		fail "$desc" "the package has no pre-install script"
+	elif sh /tmp/pre-install 2>/dev/null; then
 		fail "$desc" "it accepted this container"
 	else
 		pass "$desc"
@@ -330,25 +408,37 @@ make_system() {
 	local host=/work/host pkgs world
 	rm -rf "$root"
 	mkdir -p "$root"/etc/apk "$root"/etc/kernel "$root"/etc/mkinitfs
-	cp -R "$host"/keys "$host"/repositories "$root"/etc/apk/
-	[[ ! -d $host/repositories.d ]] || cp -R "$host"/repositories.d "$root"/etc/apk/
-	cp /work/keys/*.pub "$root"/etc/apk/keys/
+	if [[ -n $small ]]; then
+		cp -R /etc/apk/keys /etc/apk/repositories "$root"/etc/apk/
+	else
+		cp -R "$host"/keys "$host"/repositories "$root"/etc/apk/
+		[[ ! -d $host/repositories.d ]] || cp -R "$host"/repositories.d "$root"/etc/apk/
+		cp "$pubkey" "$root"/etc/apk/keys/
+	fi
 	# As on an atomic install, where the kernel hook builds the initramfs
 	# (and update-boot then does nothing, as this is none), here with the
-	# VM's drivers, and cervino-kernel's pre-install accepts it.
+	# VM's drivers, and cervino-kernel's pre-install accepts it. The small
+	# system has no hook: mkinitfs's trigger builds it.
 	echo "root=LABEL=cervino-root" > "$root"/etc/kernel/cmdline
-	printf '%s\n' 'features="base btrfs keymap kms virtio"' disable_trigger=yes \
-		> "$root"/etc/mkinitfs/mkinitfs.conf
+	echo 'features="base btrfs keymap kms virtio"' > "$root"/etc/mkinitfs/mkinitfs.conf
+	[[ -n $small ]] || echo disable_trigger=yes >> "$root"/etc/mkinitfs/mkinitfs.conf
 	# This machine's world, cervino-kernel for linux-rpi, plus linux-virt and
-	# the packages ci/guest/packages.sh adds.
-	world=$(grep -vx linux-rpi "$host"/world | xargs)
-	pkgs="cervino-kernel linux-virt cervino-gstreamer cervino-terminal cervino-upnp"
+	# the packages ci/guest/packages.sh adds; or the small system, what
+	# guest_main needs.
+	if [[ -n $small ]]; then
+		world="alpine-base mkinitfs kmod bash doas btrfs-progs apparmor apparmor-openrc"
+		world+=" apparmor-profiles zram-init zram-init-openrc"
+		pkgs="cervino-kernel linux-virt"
+	else
+		world=$(grep -vx linux-rpi "$host"/world | xargs)
+		pkgs="cervino-kernel linux-virt cervino-gstreamer cervino-terminal cervino-upnp"
+	fi
 	echo ">>> Installing the VM's system"
 	# shellcheck disable=SC2086
-	apk add --root "$root" --initdb --quiet --repository /work/packages/cervino \
+	apk add --root "$root" --initdb --quiet --repository "$pkgrepo" \
 		$world $pkgs || die "could not install the VM's system"
 	[[ -f $root/boot/initramfs-rpi16k && -f $root/boot/initramfs-virt ]] ||
-		die "the kernel hook made no initramfs"
+		die "no initramfs was made"
 
 	mount --rbind /dev "$root"/dev
 	mount -t proc proc "$root"/proc
@@ -358,21 +448,34 @@ make_system() {
 	printf '%s\n' 'LABEL=cervino-root / btrfs defaults 0 0' \
 		'LABEL=cervino-swap none swap sw 0 0' >> "$root"/etc/fstab
 	# A getty on the serial console, as the lbu shim wraps it.
-	echo 'ttyAMA0::respawn:/usr/libexec/cervino/apparmor-exec busybox-getty' \
-		'/sbin/getty -L 115200 ttyAMA0 vt100' >> "$root"/etc/inittab
-	local level service
+	local getty=/sbin/getty
+	[[ -n $small ]] || getty="/usr/libexec/cervino/apparmor-exec busybox-getty $getty"
+	echo "ttyAMA0::respawn:$getty -L 115200 ttyAMA0 vt100" >> "$root"/etc/inittab
+	local level service runlevels=$host/runlevels
+	if [[ -n $small ]]; then
+		runlevels=/tmp/runlevels
+		printf '%s\n' 'sysinit devfs' 'sysinit dmesg' 'sysinit mdev' 'sysinit hwdrivers' \
+			'boot apparmor' 'boot modules' 'boot sysctl' 'boot hostname' 'boot bootmisc' \
+			'boot syslog' 'boot swap' 'boot zram-init' > "$runlevels"
+		# Swap on zram, as cervino-desktop's (Alpine's adds file systems).
+		printf '%s\n' load_on_start=yes unload_on_stop=yes num_devices=1 type0=swap \
+			size0=512 algo0=zstd labl0=zram_swap > "$root"/etc/conf.d/zram-init
+	else
+		ln -sfn /etc/zoneinfo/"$(cat "$host"/timezone)" "$root"/etc/localtime
+	fi
 	while read -r level service; do
 		[[ -e $root/etc/init.d/$service ]] || continue
 		mkdir -p "$root"/etc/runlevels/"$level"
 		ln -sfn /etc/init.d/"$service" "$root"/etc/runlevels/"$level"/"$service"
-	done < "$host"/runlevels
-	ln -sfn /etc/zoneinfo/"$(cat "$host"/timezone)" "$root"/etc/localtime
+	done < "$runlevels"
 	# tester, as setup-user makes the user (live/adduser and setup-alpine's
 	# groups), with no password and doas without one, as ci/guest/install.sh
 	# leaves it; root locked, as the lbu shim leaves it.
 	chroot_run adduser -D -s /bin/bash -g Tester tester
-	chroot_run sh -c 'for g in wheel audio input video netdev plugdev lpadmin; do
-		addgroup tester "$g"; done'
+	local groups=(wheel audio input video netdev plugdev lpadmin)
+	[[ -z $small ]] || groups=(wheel)
+	# shellcheck disable=SC2016 # expanded by the chroot's shell
+	chroot_run sh -c 'for g; do addgroup tester "$g"; done' sh "${groups[@]}"
 	chroot_run passwd -d tester > /dev/null
 	chroot_run passwd -l root > /dev/null
 	chmod 0700 "$root"/home/tester
@@ -380,7 +483,7 @@ make_system() {
 	echo 'permit nopass tester' > "$root"/etc/doas.d/kernel-test.conf
 	rm -f "$root"/etc/machine-id
 	# As setup-disk does on an install.
-	"$root"/usr/libexec/cervino/widevine "$root" ||
+	[[ -n $small ]] || "$root"/usr/libexec/cervino/widevine "$root" ||
 		echo ">>> could not install Widevine: its test will fail with both kernels" >&2
 	umount -R "$root"/dev "$root"/proc "$root"/sys
 
@@ -405,8 +508,10 @@ vm_start() {
 	mkfifo "$guest"/serial.in "$guest"/serial.out
 	: > "$log"
 	echo ">>> [$vm] starting the VM"
-	qemu-system-aarch64 -machine virt,gic-version=host -accel kvm -cpu host \
-		-m "$VM_MEMORY" -smp "$VM_CPUS" \
+	# QEMU's virtio-mmio devices are legacy (virtio 0.9) unless told
+	# otherwise, which virtio-gpu and virtio-sound refuse.
+	qemu-system-aarch64 "${accel[@]}" \
+		-m "$VM_MEMORY" -smp "$VM_CPUS" -global virtio-mmio.force-legacy=false \
 		-display none -monitor none -serial pipe:"$guest"/serial \
 		-drive file="$guest"/disk.img,if=none,format=raw,id=root \
 		-device virtio-blk-device,drive=root,serial=root \
@@ -458,16 +563,30 @@ wait_for() {
 }
 
 # vm_run COMMAND SECONDS: runs a command as root (doas) in tester's login
-# shell on the serial console; false if it does not finish in time.
+# shell on the serial console, leaving its exit status in rc; false if it
+# does not finish in time.
 vm_run() {
 	send "doas sh -c '$1'; printf '@@RC=%s@@\\n' \$?"
-	wait_for '@@RC=[0-9]+@@' "$2"
+	wait_for '@@RC=[0-9]+@@' "$2" || return
+	rc=${match//[!0-9]/}
 }
 
-# results LOG: the results the guest printed: [PASS], [FAIL] or [SKIP] and
-# the test's description, one per line.
+# vm_test COMMAND SECONDS: runs a test command (vm_run); false if it does not
+# finish in time, or fails without printing any results (it stopped early).
+vm_test() {
+	local start=$mark
+	vm_run "$@" || { echo ">>> [$vm] timed out: $1"; return 1; }
+	((rc == 0)) || [[ -n $(tail -c +$((start + 1)) "$log" | results) ]] || {
+		echo ">>> [$vm] exited $rc without results: $1"
+		return 1
+	}
+}
+
+# results [LOG]: the results the guest printed (in LOG, or read from the
+# standard input): [PASS], [FAIL] or [SKIP] and the test's description, one
+# per line.
 results() {
-	tr -d '\r' < "$1" | sed 's/\x1b\[[0-9;]*m//g' |
+	tr -d '\r' < "${1:-/dev/stdin}" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' |
 		sed -n 's/^\[\(PASS\|FAIL\|SKIP\)\] \(.*\)$/\1 \2/p'
 }
 
@@ -478,18 +597,28 @@ boot() {
 	cmdline="root=LABEL=cervino-root rootfstype=btrfs modules=virtio_mmio,virtio_blk,btrfs"
 	cmdline+=" console=ttyAMA0 $(cat /work/host/cmdline)"
 	cp --reflink=auto "$guest"/disk.pristine "$guest"/disk.img
+	# Swap made at the kernel's page size: the kernel refuses swap made at
+	# another (README.md, The 16 KB page kernel).
+	local pagesize=4096
+	[[ $kernel != rpi16k ]] || pagesize=16384
 	truncate -s 4G "$guest"/swap.img
-	mkswap -q -L cervino-swap "$guest"/swap.img
+	mkswap -q -p "$pagesize" -L cervino-swap "$guest"/swap.img
 	vm_start "$kernel" -kernel "$guest"/vmlinuz-"$kernel" \
 		-initrd "$guest"/initramfs-"$kernel" -append "$cmdline"
 	local share='rm -rf /tmp/ci && mkdir /tmp/ci && tar -xf /dev/disk/by-id/virtio-share -C /tmp/ci'
 	local ok=
 	if wait_for 'login: ' 900; then
 		send tester
+		# The small system has only what guest_main checks.
 		if wait_for '~('$'\e''\[[0-9;]*m)*[#$] ' 120 &&
-			vm_run "$share && bash /tmp/ci/test/kernel.sh --guest" 1200 &&
-			vm_run "$share && /tmp/ci/ci/guest/test.sh sys" 3600; then
+			vm_test "$share && bash /tmp/ci/test/kernel.sh --guest" 1200 &&
+			{ [[ -n $small ]] || vm_test "$share && /tmp/ci/ci/guest/test.sh sys" 3600; }; then
 			ok=1
+		else
+			# What the log needs to tell why (the console's own messages
+			# stop at the login prompt).
+			local diag='ls -l /dev/dri; lsmod | grep -iE "gpu|drm"; rc-status -a'
+			vm_run "$diag; tail -n 100 /var/log/messages" 120 || true
 		fi
 		vm_stop
 	else
@@ -505,8 +634,24 @@ vm_main() {
 	printf '%s\n' "$MIRROR/$ALPINE_BRANCH/main" "$MIRROR/$ALPINE_BRANCH/community" \
 		> /etc/apk/repositories
 	apk upgrade --update --quiet
-	apk add --quiet qemu-system-aarch64 btrfs-progs util-linux coreutils tar
-	cp /work/keys/*.pub /etc/apk/keys/
+	apk add --quiet qemu-system-aarch64 qemu-hw-display-virtio-gpu grep btrfs-progs \
+		util-linux coreutils tar
+	small=${SMALL:-}
+	local inputs=(/src/test/kernel.sh)
+	if [[ -n $small ]]; then
+		local_repo /tmp/repo
+	else
+		pkgrepo=/work/packages/cervino pubkey=$(echo /work/keys/*.pub)
+		cp "$pubkey" /etc/apk/keys/
+		inputs+=(/work/host/world /work/host/repositories /work/host/runlevels)
+	fi
+	# Without KVM (a CI runner), QEMU emulates the CPU: a few times slower.
+	accel=(-machine 'virt,gic-version=host' -accel kvm -cpu host)
+	if [[ ${ACCEL:-} == tcg || ! -w /dev/kvm ]]; then
+		accel=(-machine 'virt,gic-version=3' -accel 'tcg,thread=multi'
+			-cpu 'max,pauth-impdef=on')
+		echo ">>> No KVM: QEMU emulates the CPU"
+	fi
 
 	guest=/work/guest root=/vm-root
 	mkdir -p "$guest"
@@ -514,9 +659,7 @@ vm_main() {
 	# or repositories, or this script changed (and once a day, to pick up
 	# updates).
 	local key
-	key=$(cat /work/packages/cervino/aarch64/*.apk /work/host/world \
-		/work/host/repositories /work/host/runlevels /src/test/kernel.sh |
-		sha256sum | cut -d ' ' -f 1)
+	key=$(cat "$pkgrepo"/aarch64/*.apk "${inputs[@]}" | sha256sum | cut -d ' ' -f 1)
 	key="$key $(date -u +%F)"
 	if [[ $(cat "$guest"/key 2>/dev/null) != "$key" || ! -f $guest/disk.pristine ]]; then
 		rm -f "$guest"/key
@@ -613,15 +756,16 @@ guest_main() {
 	fi
 
 	desc="Kernel log has no oops, BUG or warning"
-	out=$(dmesg | grep -E 'BUG:|Oops|WARNING:|Call trace:|Unable to handle' | head -n 3)
+	out=$(dmesg | grep -E 'BUG:|Oops|WARNING:|Call trace:|Unable to handle' | head -n 3) || :
 	if [[ -z $out ]]; then pass "$desc"; else fail "$desc" "$out"; fi
 	totals
 }
 
 case ${1:-} in
 --build) build_main ;;
+--check) check_main ;;
 --vm) vm_main ;;
 --guest) guest_main ;;
-'') host_main ;;
-*) die "usage: $0" ;;
+-*) die "usage: $0 [REPO_DIR]" ;;
+*) (($# <= 1)) || die "usage: $0 [REPO_DIR]"; host_main "$@" ;;
 esac

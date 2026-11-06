@@ -501,6 +501,15 @@ jobs:
           CONTAINER: docker
         run: ci/update-test.sh out/repo
 
+      # cervino-kernel's package checks, and the kernel's own in a small
+      # VM (test/kernel.sh; on a Pi it boots the Pi's system and runs the
+      # OS feature tests too).
+      - name: Test cervino-kernel
+        if: matrix.target == 'rpi'
+        env:
+          CONTAINER: docker
+        run: test/kernel.sh out/repo
+
   # ci/vm-test.sh (README.md, Prebuilt ISOs), once per install mode, each
   # on a runner of its own: the VM needs 8 GB, and a runner has 16.
   vm-test:
