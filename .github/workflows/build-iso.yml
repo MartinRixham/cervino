@@ -259,6 +259,15 @@ jobs:
           key: rpi-mesa-${{ github.sha }}
           restore-keys: rpi-mesa-
 
+      - name: Restore linux-rpi
+        id: restore-linux_rpi
+        if: matrix.target == 'rpi'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/linux-rpi
+          key: rpi-linux-rpi-${{ github.sha }}
+          restore-keys: rpi-linux-rpi-
+
       - name: Build image
         env:
           TARGET: ${{ matrix.target }}
@@ -351,6 +360,16 @@ jobs:
         with:
           path: ${{ runner.temp }}/pkgcache/mesa
           key: ${{ steps.keys.outputs.mesa }}
+
+      - name: Save linux-rpi
+        if: >-
+          always() && steps.keys.outputs.linux_rpi &&
+          steps.keys.outputs.linux_rpi !=
+          steps.restore-linux_rpi.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/linux-rpi
+          key: ${{ steps.keys.outputs.linux_rpi }}
 
       - name: Save mutter
         if: >-

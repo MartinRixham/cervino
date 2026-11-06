@@ -1,0 +1,15 @@
+#!/bin/sh
+# Refuses to install where the kernel would not start. Its 16 KB pages need
+# the BCM2712 (a Pi 5, Pi 500 or CM5); on other device tree machines it
+# stops. And only an atomic install's update-boot makes the Pi start it
+# (and keeps the version before, to fall back to): on a sys install
+# config.txt would still name vmlinuz-rpi, which it replaces.
+dt=/proc/device-tree/compatible
+if [ -e "$dt" ] && ! tr '\0' '\n' < "$dt" | grep -qx 'brcm,bcm2712'; then
+	echo "cervino-kernel: only a Raspberry Pi 5, Pi 500 or CM5 can start it" >&2
+	exit 1
+fi
+if [ ! -f /etc/kernel/cmdline ]; then
+	echo "cervino-kernel: only an atomic install can start it" >&2
+	exit 1
+fi

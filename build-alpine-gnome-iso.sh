@@ -464,7 +464,9 @@ builder_main() {
 	# comes first, so that it builds with Alpine's mesa-dev.
 	# wpa_supplicant, bluez, mesa, mutter, dnsmasq and libsoup3 rank above
 	# Alpine's and so replace them (but for their -dbg packages, too big to
-	# publish); the rest go in cervino-vlc and cervino-gstreamer (below).
+	# publish); the rest go in cervino-vlc and cervino-gstreamer (below),
+	# but rpi/linux-rpi, published as cervino-kernel, which users add (see
+	# its APKBUILD).
 	# Each is Alpine's APKBUILD of one version (its _alpine) with the
 	# patches: stop if Alpine's has moved on, as its changes (security
 	# fixes, rebuilds for libraries' new sonames) would be missing.
@@ -486,7 +488,8 @@ builder_main() {
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"
-		replaces+=" wpa_supplicant bluez mesa"
+		patched+=" linux-rpi"
+		replaces+=" wpa_supplicant bluez mesa linux-rpi"
 	fi
 	local dir base alpine dep key tmp files
 	local -A keys after=([vlc]=ffmpeg7 [gst-plugins-bad]=gst-plugins-base)

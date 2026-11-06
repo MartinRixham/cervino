@@ -1,0 +1,246 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+#
+# Alpine's main/linux-rpi (_alpine below) built with 16 KB memory pages,
+# as Raspberry Pi OS's kernel_2712 is, for the Pi 5, Pi 500 and CM5 (the
+# BCM2712's Cortex-A76; the earlier Pis' cores can't use them), as
+# cervino-kernel, kernel flavor rpi16k (vmlinuz-rpi16k). Its config is
+# Alpine's, but from bcm2712_defconfig, Raspberry Pi OS's for that kernel
+# (bcm2711_defconfig with 16 KB pages and 47-bit addresses), plus
+# cervino-changes.config. It provides linux-rpi at Alpine's version, so it
+# takes linux-rpi's place in world, and deleting it (through the apk
+# wrapper) brings that back. Only an atomic install starts it (see
+# cervino-kernel.pre-install). The -dev subpackage is left out.
+# build-alpine-gnome-iso.sh stops when Alpine's linux-rpi is no longer
+# _alpine.
+_alpine=6.18.60-r0
+pkgname=cervino-kernel
+pkgver=6.18.60
+_kernver=${pkgver%.*}
+pkgrel=0
+pkgdesc="Linux kernel with Raspberry Pi patches and 16 KB pages, for the Pi 5"
+url="https://github.com/raspberrypi/linux"
+depends="initramfs-generator linux-firmware-brcm"
+_depends_dev="perl gmp-dev elfutils-dev bash mpc1-dev mpfr-dev"
+makedepends="$_depends_dev gcc>=13.1.1_git20230603 sed installkernel bc linux-headers linux-firmware-any
+	bison flex openssl-dev>3 findutils xz mawk
+"
+options="!strip !check"
+install="$pkgname.pre-install"
+_rpi_repo="https://github.com/raspberrypi/linux.git"
+_linux_repo="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+source="https://cdn.kernel.org/pub/linux/kernel/v${pkgver%%.*}.x/linux-$_kernver.tar.xz
+	patch-$pkgver.patch.xz::https://cdn.kernel.org/pub/linux/kernel/v${pkgver%%.*}.x/patch-$pkgver.xz
+	https://dev.alpinelinux.org/archive/rpi-patches/rpi-$pkgver-alpine.patch
+
+	common-changes.config
+	cervino-changes.config
+	"
+arch="aarch64"
+license="GPL-2.0-only"
+builddir="$srcdir"/linux-$_kernver
+_flavors="rpi16k"
+
+case "$CARCH" in
+	aarch64) _carch="arm64" ;;
+	arm*) _carch="arm" ;;
+esac
+
+prepare() {
+	default_prepare
+
+	# remove localversion from patch if any
+	rm -f localversion*
+
+	local flavor=
+	for flavor in $_flavors; do
+		local _builddir="$srcdir"/build-$flavor.$CARCH
+		mkdir -p "$_builddir"
+		echo "-$pkgrel-$flavor" > "$_builddir"/localversion-alpine
+		_genconfig $flavor
+		make -C "$builddir" \
+			O="$_builddir" \
+			ARCH="$_carch" \
+			olddefconfig
+		_verifyconfig $flavor
+		_checkconfig $flavor "$srcdir"/cervino-changes.config
+	done
+}
+
+# generate config from defconfig and apply local changes.
+# common-changes.config holds a list of = delimited
+# config command and values used by kernel scripts/config script.
+_genconfig() {
+	local flavor=$1 defconfig=
+	local _builddir="$srcdir"/build-$flavor.$CARCH
+	local defconfig=
+	case "$CARCH" in
+		armhf) defconfig=bcmrpi_defconfig;;
+		armv7) defconfig=bcm2709_defconfig;;
+		aarch64) defconfig=bcm2712_defconfig;;
+		*) die "Unknown CARCH: $CARCH" ;;
+	esac
+
+	cp "$builddir"/arch/$_carch/configs/$defconfig \
+		"$_builddir"/.config
+
+	while read line; do
+		# skip comments
+		case "$line" in
+			"#"*) continue;;
+		esac
+		local option=${line%%=*} str=
+		local cmd=$(echo $line | cut -d= -f2)
+		case "$cmd" in
+			y) cmd="enable";;
+			n) cmd="disable";;
+			m) cmd="module";;
+			'"'*) cmd="set-str"; str="${line#*=}";;
+			[0-9]*) cmd="set-val"; str="${line#*=}";;
+			*) die "Command $cmd not accepted" ;;
+		esac
+		msg "[$flavor] $cmd: $option $str"
+		"$srcdir"/linux-$_kernver/scripts/config \
+			--file "$_builddir"/.config \
+			--$cmd "$option" "${str//\"/}"
+	done < "$srcdir"/common-changes.config
+	_applyconfig $flavor "$srcdir"/cervino-changes.config
+}
+
+# verify if options are set to correct value
+_verifyconfig() {
+	local flavor=$1
+	local _builddir="$srcdir"/build-$flavor.$CARCH
+	while read line; do
+		[ ${line:0:1} = "#" ] && continue
+		local option=${line%%=*} str= invert=
+		local cmd=$(echo $line | cut -d= -f2)
+		case "$cmd" in
+			enable) str="$option=y" ;;
+			disable) str="$option"; invert="-v" ;;
+			module) str="$option=m" ;;
+			set-val) str="$option=${line##*=}" ;;
+			set-str) str=${line##*=}
+				str="$option=\"${str//\"/}\"" ;;
+		esac
+		grep -q $invert "^$str" "$_builddir"/.config || \
+			die "Config: $option not properly set!"
+	done < "$srcdir"/common-changes.config
+}
+
+# _applyconfig FLAVOR FILE: sets the options FILE sets (CONFIG_X=y, =m or
+# =n) with scripts/config.
+_applyconfig() {
+	local _builddir="$srcdir"/build-$1.$CARCH line option value
+	while read -r line; do
+		case "$line" in "#"*|"") continue;; esac
+		option=${line%%=*} value=${line#*=}
+		case "$value" in
+			y) "$builddir"/scripts/config --file "$_builddir"/.config -e "$option";;
+			m) "$builddir"/scripts/config --file "$_builddir"/.config -m "$option";;
+			n) "$builddir"/scripts/config --file "$_builddir"/.config -d "$option";;
+			*) die "$2: unsupported value for $option";;
+		esac
+	done < "$2"
+}
+
+# _checkconfig FLAVOR FILE: stops unless olddefconfig kept the options as
+# FILE sets them: it drops an option whose dependencies are missing.
+# (Alpine's _verifyconfig compares with scripts/config's commands instead,
+# and so checks nothing.)
+_checkconfig() {
+	local _builddir="$srcdir"/build-$1.$CARCH line option
+	while read -r line; do
+		case "$line" in "#"*|"") continue;; esac
+		option=${line%%=*}
+		case "${line#*=}" in n) line="# $option is not set";; esac
+		grep -qxF "$line" "$_builddir"/.config ||
+			die "Config: $option is not ${line#*=} after olddefconfig"
+	done < "$2"
+}
+
+build() {
+	unset LDFLAGS
+	# for some reason these sometimes leak into the kernel build,
+	# -Werror=format-security breaks some stuff
+	unset CFLAGS CPPFLAGS CXXFLAGS
+	for i in $_flavors; do
+		cd "$srcdir"/build-$i.$CARCH
+		local _kver=$(make kernelversion)
+		if [ "$_kver" != "$pkgver" ]; then
+			error "Version in Makefile ($_kver) does not correspond with pkgver ($pkgver)"
+			return 1
+		fi
+		make ARCH="$_carch" CC="${CC:-gcc}" \
+			AWK=mawk \
+			KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-Alpine"
+	done
+}
+
+_package() {
+	local _buildflavor="$1" _outdir="$2"
+	local _builddir="$srcdir"/build-$_buildflavor.$CARCH
+
+	cd "$_builddir"
+	local _abi_release="$(make -s kernelrelease)"
+	mkdir -p "$_outdir"/boot "$_outdir"/lib/modules
+
+	local _install
+	case "$CARCH" in
+	arm*)
+		_install="zinstall dtbs_install"
+		;;
+	aarch64)
+		_install="install dtbs_install"
+		;;
+	*)
+		_install=install
+		;;
+	esac
+
+	# modules_install seems to regenerate a defect Modules.symvers. Work
+	# around it by backing it up and restore it after modules_install
+	cp Module.symvers Module.symvers.backup
+
+	local INSTALL_DTBS_PATH="$_outdir"/boot
+	make modules_install $_install \
+		ARCH="$_carch" \
+		INSTALL_MOD_PATH="$_outdir" \
+		INSTALL_PATH="$_outdir"/boot \
+		INSTALL_DTBS_PATH="$INSTALL_DTBS_PATH"
+	cp Module.symvers.backup Module.symvers
+
+	rm -f "$_outdir"/lib/modules/$_abi_release/build \
+		"$_outdir"/lib/modules/$_abi_release/source
+	rm -rf "$_outdir"/lib/firmware
+
+	install -D -m644 include/config/kernel.release \
+		"$_outdir"/usr/share/kernel/$_buildflavor/kernel.release
+
+	ln -sf /boot/vmlinuz-"$_buildflavor" \
+		"$_outdir"/lib/modules/"$_abi_release"/vmlinuz
+
+	# allow the initramfs generators to know the package name the kernel came from
+	echo "${subpkgname:-$pkgname}" > "$_outdir"/lib/modules/$_abi_release/pkgname
+
+	if [ "$CARCH" = "aarch64" ]; then
+		mv -f "$INSTALL_DTBS_PATH"/broadcom/*.dtb \
+			"$INSTALL_DTBS_PATH"
+		rmdir "$INSTALL_DTBS_PATH"/broadcom
+	fi
+}
+
+package() {
+	# linux-rpi's name, at Alpine's version, so that the two never install
+	# together (their device trees and overlays are the same files).
+	provides="linux-rpi=$_alpine"
+	replaces="linux-rpi"
+	_package rpi16k "$pkgdir"
+}
+
+sha512sums="
+88599ffdec96d150c1feb9b261ba93bb0301a9d0e1ad6bef7aeab1f5372cbfc57d8b43c7e902bd8f76921d1dbd8189663c142ea869e51d0e2b483b150ee00fe0  linux-6.18.tar.xz
+fce959c563635d4374cba148b7f1b8b64a143e5b42bd8e86afee7dfdc76b9d887afb5a032249ac16518ee95e73b3c1a459f15926a035780493c5b3b9fbd3b51b  patch-6.18.60.patch.xz
+f0875f562ebadae043c2282fb6379f43b062ccfa45e9696cd49b4561576b62ff84eda751af75907e6e5437861e3ef00921aa09175fa35603e46e3b9ab2e4ebdb  rpi-6.18.60-alpine.patch
+b7fa577b8630aa116b4bb4194e3779e12d40a9a15a3a2b618289fd637deb3fef89d368a2ce71e75ae309a9a384acbf666019e8374ecefa13ef12a957ec3dda6a  common-changes.config
+864aaf4e5d8dcdc1dd5eda5ba42507eebc0193d5c5ddccd5cf90250e4d134b822d4ff5fe648fd18040d3054fefe12381c682c5350b2b1ef834e8a4d494af778c  cervino-changes.config
+"

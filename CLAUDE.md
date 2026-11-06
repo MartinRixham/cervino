@@ -24,7 +24,8 @@ Besides the script, the repo holds:
 - the `cervino-upnp` package's `cervino-upnp/APKBUILD`
 - the AppArmor profiles in `apparmor.d/`
 - the Pi's patched `ffmpeg7`, `vlc`, `gst-plugins-base`, `gst-plugins-bad`,
-  `wpa_supplicant`, `bluez` and `mesa` packages in `rpi/`
+  `wpa_supplicant`, `bluez` and `mesa` packages, and `linux-rpi` with 16 KB
+  pages (`cervino-kernel`), in `rpi/`
 - the patched `mutter`, `showtime`, `dnsmasq` and `libsoup3` packages,
   for both targets, in `patched/`
 - packages Alpine lacks (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
@@ -48,6 +49,7 @@ ALPINE_BRANCH=v3.24 AUTOLOGIN=0 ./build-alpine-gnome-iso.sh
 qemu-system-x86_64 -enable-kvm -m 8G -cdrom out/*.iso
 ci/vm-test.sh out/*.iso                             # the end-to-end test CI runs
 INSTALL_MODE=sys ci/vm-test.sh out/*.iso            # the same with a sys install
+test/kernel.sh                                      # on a Pi 5: cervino-kernel
 ```
 
 ### ci/vm-test.sh
@@ -162,6 +164,28 @@ between the boots are kept in `/var/lib/cervino-ci`.
 - `fallback`: must find the version from before running and still the
   default, with the broken one listed as "did not start when tried".
 
+### test/kernel.sh
+
+`test/kernel.sh`, run by hand on a Pi 5 or 500 (CI can't: it needs a
+BCM2712 with KVM), builds `cervino-kernel` and tests it there without
+starting it on the Pi; its header says what each phase does. It needs
+rootless podman with subordinate IDs. Like the build script it runs in
+phases selected by its first argument: on the host, then `--build` and
+`--vm` in `alpine:<branch>` containers (the second `--privileged`, for
+`/dev/kvm` and the chroot's mounts), and `--guest` in the VM. It keeps
+everything in `$WORKDIR` (default `./kernel-test`): the sources, the
+package (built again only when its key changes, as in `builder_main`),
+a throwaway signing key, the VM's disk image (installed again daily or
+when its inputs change) and the console logs. The VM's system is this
+machine's world, and the tests are `ci/guest/test.sh sys`, so a test
+added there runs here too; the kernel's own checks are `guest_main`.
+
+The package's config gets QEMU's virtio-mmio drivers as modules
+(`rpi/linux-rpi/cervino-changes.config`) only for this VM. The config
+check compares with Alpine's `linux-rpi`'s and allows only the options a
+page size or those drivers change (`expected` in `build_main`): a new
+difference fails it until it is understood and added there.
+
 ### ci/update-test.sh
 
 `ci/update-test.sh out/repo` tests the package's `update-alpine` (taken out
@@ -273,8 +297,8 @@ other.
   `<branch>/<arch>/*.apk`: `cervino-desktop`, `cervino-vlc`,
   `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`, `mutter`,
   `dnsmasq`, `libsoup3`, `extra/`'s packages, and for
-  `rpi` `wpa_supplicant`, `bluez` and `mesa`, with their subpackages but
-  `-dbg`) as `cervino-repo-<target>`.
+  `rpi` `wpa_supplicant`, `bluez`, `mesa` and `cervino-kernel`, with their
+  subpackages but `-dbg`) as `cervino-repo-<target>`.
 - **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` in an
   `alpine:<branch>` container per branch (so the index is in a format that
   branch's apk reads) on a worktree of the `gh-pages` branch. That is an
@@ -377,8 +401,8 @@ before the tests.
 `patched/showtime`, `patched/dnsmasq` and `patched/libsoup3`, then for
 `rpi` `rpi/ffmpeg7`, `rpi/vlc`,
 `rpi/gst-plugins-base`, `rpi/gst-plugins-bad`, `rpi/wpa_supplicant`,
-`rpi/bluez` and `rpi/mesa`, in that order, then `extra/`'s, with
-`abuild -r`. mutter comes
+`rpi/bluez`, `rpi/mesa` and `rpi/linux-rpi`, in that order, then
+`extra/`'s, with `abuild -r`. mutter comes
 first so that it builds with Alpine's `mesa-dev`.
 
 - abuild-apk installs their makedepends. `vlc` builds with the
@@ -397,8 +421,8 @@ first so that it builds with Alpine's `mesa-dev`.
   repo.
 - A package built here is left with its key in `/work/pkgcache/<package>/`.
 
-Those in `rpi/` but `mesa` are Alpine's aport with Raspberry Pi OS's
-patches:
+Those in `rpi/` but `mesa` and `linux-rpi` are Alpine's aport with
+Raspberry Pi OS's patches:
 
 - `ffmpeg7` and `vlc`: the Pi's hardware video decoders (V4L2 request HEVC,
   V4L2 M2M H.264, DRM PRIME frames). ffmpeg7's libraries only add to
@@ -467,9 +491,27 @@ versioned Alpine's plus `_p<n>`, our patch set's number
   so the server sent the length of the body written so far instead. Media
   Sharing's files stopped after their first chunks, a second of playback.
 
+`linux-rpi` is Alpine's aport built as `cervino-kernel`, kernel flavor
+`rpi16k`, with 16 KB pages (README.md, The 16 KB page kernel): from
+`bcm2712_defconfig`, Raspberry Pi OS's for its 16 KB page kernel, rather
+than Alpine's `bcm2711_defconfig`, plus `cervino-changes.config` (see
+test/kernel.sh above), applied and checked by the APKBUILD's own
+functions (Alpine's `_verifyconfig` checks nothing). It provides
+`linux-rpi` at Alpine's version (`_alpine`), as the bundles do, so it
+takes `linux-rpi`'s place in world, and the apk wrapper deletes it as it
+deletes them. Its `pre-install` refuses a device tree machine that isn't a
+BCM2712, and a system without `/etc/kernel/cmdline` (not an atomic
+install): elsewhere nothing would point the Pi's `config.txt` at
+`vmlinuz-rpi16k`. On an atomic install the kernel hook builds its
+initramfs, and `update-boot`'s `pick_kernel` takes `vmlinuz-rpi*`, so
+`kernel=vmlinuz-rpi16k` goes in the next version's `config.txt`, started on
+trial. Its version is Alpine's, so a change of ours needs a new `pkgrel`,
+which also changes the kernel release (`6.18.60-<pkgrel>-rpi16k`).
+
 `wpa_supplicant`, `bluez`, `mesa`, `mutter`, `dnsmasq` and `libsoup3`
 are published as they are (but their `-dbg` packages, too big for GitHub
-Pages), and so replace Alpine's. A change to one of them needs a new `pkgrel`, as
+Pages), and so replace Alpine's. `cervino-kernel` is published as it is
+too, but users add it. A change to one of them needs a new `pkgrel`, as
 `ci/publish-repo.sh` keeps a file already published. The other five are
 published only inside `cervino-vlc` (`vlc` and `ffmpeg7`) and
 `cervino-gstreamer` (`gst-plugins-base` and `gst-plugins-bad` on `rpi`,
@@ -874,8 +916,8 @@ the same file). It is a wrapper:
   `apk upgrade` to `update-alpine`, and turns down `fix` and other options;
 - everything else, `--simulate`, `--root`, and any other system (including
   `update-alpine`'s chroot) gets `/sbin/apk` unchanged, but that a `del`
-  of `cervino-vlc` or `cervino-gstreamer` first runs `apk add !<name>`
-  (see above).
+  of `cervino-vlc`, `cervino-gstreamer` or `cervino-kernel` first runs
+  `apk add !<name>` (see above).
 
 ## Installing
 

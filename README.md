@@ -202,7 +202,7 @@ as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
 `mutter`, `dnsmasq`, `libsoup3`, `tui-torrent`, `bapk`, `qstop`,
 `bijiben`, `rpi-keyboard-config`, `tomesole`, and the Pi's `wpa_supplicant`,
-`bluez` and `mesa`) to the update repo (see [Updates](#updates)).
+`bluez`, `mesa` and `cervino-kernel`) to the update repo (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -532,6 +532,34 @@ from a version that starts is `doas update-alpine rollback`, or, from one
 that doesn't, swapping the two partition numbers in `autoboot.txt` on
 another computer, which starts the version in the other partition.
 
+### The 16 KB page kernel
+
+The Pi 5, 500 and CM5 can run the kernel with 16 KB memory pages instead
+of 4 KB, as Raspberry Pi OS does on them, which makes some work faster
+(fewer misses in the CPU's address translation cache, cheaper page
+faults). `cervino-kernel` is Alpine's Pi kernel, `linux-rpi`, built that
+way (its configuration is Raspberry Pi OS's for that kernel), from the
+update repo. It takes `linux-rpi`'s place:
+
+```sh
+doas apk add cervino-kernel    # the 16 KB page kernel
+doas apk del cervino-kernel    # back to Alpine's linux-rpi
+```
+
+Only an atomic install on a Pi 5, 500 or CM5 can add it: the earlier
+Pis' cores can't use 16 KB pages, and only an atomic install starts a new
+kernel on trial, falling back to the version before if it doesn't start
+(see above); elsewhere the package refuses to install. Programs that
+assume 4 KB pages fail under it: some builds of jemalloc, x86 emulators
+(box64, FEX) and Wine, and some programs built for other systems. A disk
+with it installed won't start on an earlier Pi.
+
+The build compiles it too, which adds about an hour on an arm64 host.
+[`test/kernel.sh`](test/kernel.sh) builds and tests it on a Pi 5 or 500
+without starting it there: it checks the package, then boots a copy of the
+Pi's system in a VM with it and with a 4 KB page kernel, and runs the CI's
+OS feature tests in both (see the script for what it can't test).
+
 ## How it works
 
 The script uses Alpine's own image tooling, `aports/scripts/mkimage.sh`, with
@@ -551,8 +579,10 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      abuild from [`rpi/`](rpi): Alpine's, with Raspberry Pi OS's patches
      for the Pi's hardware video decoders, Wi-Fi and Bluetooth (the build
      stops when Alpine's packages are no longer the versions those are
-     based on), and `mesa`, with a patch of ours that stops programs
-     inheriting the GPU's render node, and the GPU memory with it;
+     based on), `mesa`, with a patch of ours that stops programs
+     inheriting the GPU's render node, and the GPU memory with it, and
+     `linux-rpi` with 16 KB pages, as `cervino-kernel` (see
+     [The 16 KB page kernel](#the-16-kb-page-kernel));
    - for both, `mutter`, `showtime`, `dnsmasq` and `libsoup3`, built from
      [`patched/`](patched): Alpine's, with patches of ours that keep GNOME
      Shell from crashing when a window's buffer can't be loaded onto the
