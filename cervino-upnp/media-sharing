@@ -14,6 +14,9 @@
 // names LocalSearch had before Rygel 45, so with it LocalSearch would stay
 // on and share all of Music, Videos and Pictures whatever the folders.
 // (Alpine's rygel has LocalSearch's .plugin file but not its module.)
+//
+// It logs each new decision, with the reason when it is not to run, to
+// the session log (~/.cache/gdm/session.log).
 
 const {Gio, GLib, GLibUnix, NM} = imports.gi;
 
@@ -22,6 +25,7 @@ const SHARING = 'org.gnome.SettingsDaemon.Sharing';
 const SHARING_AVAILABLE = 3; // GSD_SHARING_STATUS_AVAILABLE
 const SIGHUP = 1, SIGINT = 2, SIGTERM = 15;
 const RETRY_SECONDS = 10;
+const PORT_WAIT_SECONDS = 2;
 
 const settings = new Gio.Settings({
     schema_id: 'org.gnome.settings-daemon.plugins.sharing.service',
@@ -33,25 +37,63 @@ const sharing = Gio.DBusProxy.new_for_bus_sync(Gio.BusType.SESSION,
     Gio.DBusProxyFlags.DO_NOT_AUTO_START, null, SHARING, '/org/gnome/SettingsDaemon/Sharing',
     SHARING, null);
 let rygel = null, rygelIface = null, stopping = false, retry = 0;
+let decision = null, watched = [], waiting = false;
 
-// The interface Rygel should serve on, or null if it should not run.
-// gsd-sharing's current network is the primary connection's UUID.
+// [the interface Rygel should serve on, or null if it should not run, and
+// why not]. gsd-sharing's current network is the primary connection's UUID.
 function wantedInterface() {
+    if (!sharing.g_name_owner)
+        return [null, 'gsd-sharing is not running'];
     const status = sharing.get_cached_property('SharingStatus')?.unpack();
     const network = sharing.get_cached_property('CurrentNetwork')?.unpack();
-    if (status !== SHARING_AVAILABLE || !network ||
-        !settings.get_strv('enabled-connections').includes(network))
-        return null;
+    if (status !== SHARING_AVAILABLE)
+        return [null, `sharing status is ${status}, not available`];
+    if (!network)
+        return [null, 'gsd-sharing has no current network'];
+    if (!settings.get_strv('enabled-connections').includes(network))
+        return [null, `sharing is off for network ${network}`];
     const primary = nm.get_primary_connection();
     if (primary?.get_uuid() !== network)
-        return null;
-    return primary.get_devices()[0]?.get_ip_iface() || null;
+        return [null, `primary connection ${primary?.get_uuid()} is not ${network}`];
+    const device = primary.get_devices()[0];
+    if (!device)
+        return [null, `connection ${network} has no device yet`];
+    const iface = device.get_ip_iface();
+    if (!iface)
+        return [null, `connection ${network}'s device has no interface yet`];
+    return [iface, null];
+}
+
+// At login NetworkManager can list the primary connection before its
+// device and interface, so those are watched too: otherwise nothing calls
+// sync again once they appear.
+function watchPrimary() {
+    for (const [object, id] of watched)
+        object.disconnect(id);
+    watched = [];
+    const primary = nm.get_primary_connection();
+    if (!primary)
+        return;
+    watched.push([primary, primary.connect('notify::devices', onPrimaryChanged)]);
+    watched.push([primary, primary.connect('notify::state', sync)]);
+    for (const device of primary.get_devices())
+        watched.push([device, device.connect('notify::ip-interface', sync)]);
+}
+
+function onPrimaryChanged() {
+    watchPrimary();
+    sync();
 }
 
 // Rygel is a GApplication: one started while another still runs hands over
 // to it and exits, so a new one starts only once the old one has exited.
 function sync() {
-    const iface = wantedInterface();
+    const [iface, why] = wantedInterface();
+    const now = iface ? `Rygel should run on ${iface}` : `Rygel should not run: ${why}`;
+    if (now !== decision) {
+        decision = now;
+        log(now);
+    }
     if (rygel) {
         if (iface !== rygelIface && !stopping) {
             stopping = true;
@@ -61,6 +103,29 @@ function sync() {
     }
     if (iface)
         start(iface);
+    else
+        waiting = false;
+}
+
+// Rygel binds PORT without SO_REUSEADDR, so while the last Rygel's
+// connections linger after it exits (TIME_WAIT and FIN_WAIT2, up to a
+// minute) it gets no socket on the network and serves only on loopback, and
+// says so only in a warning. So it is started only once the port binds.
+function portFree() {
+    for (const family of [Gio.SocketFamily.IPV4, Gio.SocketFamily.IPV6]) {
+        let socket;
+        try {
+            socket = Gio.Socket.new(family, Gio.SocketType.STREAM, Gio.SocketProtocol.TCP);
+            socket.bind(Gio.InetSocketAddress.new(Gio.InetAddress.new_any(family), PORT), false);
+        } catch (e) {
+            // Anything else (no IPv6) is not for us to wait for.
+            if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.ADDRESS_IN_USE))
+                return false;
+        } finally {
+            socket?.close();
+        }
+    }
+    return true;
 }
 
 function start(iface) {
@@ -68,6 +133,18 @@ function start(iface) {
         GLib.source_remove(retry);
         retry = 0;
     }
+    if (!portFree()) {
+        if (!waiting)
+            log(`Port ${PORT} is still in use; waiting to start Rygel`);
+        waiting = true;
+        retry = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, PORT_WAIT_SECONDS, () => {
+            retry = 0;
+            sync();
+            return GLib.SOURCE_REMOVE;
+        });
+        return;
+    }
+    waiting = false;
     const argv = ['rygel', `--port=${PORT}`, `--network-interface=${iface}`,
         '--disable-plugin=LocalSearch'];
     let proc;
@@ -104,7 +181,8 @@ function start(iface) {
 settings.connect('changed::enabled-connections', sync);
 sharing.connect('g-properties-changed', sync);
 sharing.connect('notify::g-name-owner', sync);
-nm.connect('notify::primary-connection', sync);
+nm.connect('notify::primary-connection', onPrimaryChanged);
+watchPrimary();
 sync();
 
 const loop = new GLib.MainLoop(null, false);
