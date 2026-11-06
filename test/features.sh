@@ -123,6 +123,21 @@ t_private_home() {
 	return 1
 }
 
+# Rootless containers (podman, toolbox, distrobox) need subordinate IDs for
+# the user, and /dev/net/tun for their network; with podman installed, a
+# rootless container must map more than the user's own.
+t_rootless_containers() {
+	local user n
+	[[ -c /dev/net/tun ]] || { echo "no /dev/net/tun (tun not loaded)"; return 1; }
+	user=$(id -un)
+	grep -qe "^$user:" -e "^$(id -u):" /etc/subuid 2>/dev/null &&
+		grep -qe "^$user:" -e "^$(id -g):" /etc/subgid 2>/dev/null ||
+		{ echo "$user has no range in /etc/subuid and /etc/subgid"; return 1; }
+	have podman || return 0
+	n=$(podman unshare cat /proc/self/uid_map 2>/dev/null | wc -l)
+	((n > 1)) || { echo "podman unshare maps only $user"; return 1; }
+}
+
 # Admin users get root through sudo/doas, so root itself should not be able
 # to log in with a password. /etc/shadow is only readable by root, so a user
 # asks AccountsService (which reads it as root) instead; it only counts a
@@ -1330,6 +1345,7 @@ run_test "Full-featured interactive login shell"       t_interactive_shell
 run_test "Privilege escalation for admin users"        t_privilege_escalation
 run_test "Home directory private to its user"          t_private_home
 run_test "Root password login locked"                  t_root_locked
+run_test "Rootless containers: subordinate IDs, tun"    t_rootless_containers
 run_test "Standard CLI tools installed"                t_cli_tools
 run_test "glibc programs can run (gcompat on musl)"    t_glibc_programs
 run_test "Manual pages installed"                      t_man_pages

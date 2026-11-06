@@ -780,6 +780,11 @@ the apkovl (the `lbu` overlay format) holding what only the live system has:
   (package upgrade, then an offered release upgrade), with its bash
   completion (`update-alpine.bash`; the versions for `delete` only as root
   or through `doas -n`);
+- `/usr/libexec/cervino/subids [USER...]`, which gives users subordinate
+  IDs for rootless containers where shadow's `useradd` wouldn't (see its
+  header): the live system's `adduser` shim and `live-user` script run it
+  for the user they make, and `cervino-desktop.post-upgrade` for every
+  user of an older install;
 - the autostart helper that registers the session with GDM and answers
   gnome-session's end-of-session queries for GNOME Shell, also listed in
   GDM's greeter autostart directory so the login screen registers too;
@@ -1192,9 +1197,9 @@ permanently in `/usr/local/sbin`, which `/etc/profile` puts first:
 `lbu`: `setup-disk` copies the live `/etc` to the target with
 `lbu package -`, and the shim filters that archive:
 
-- it drops the live user (passwd/shadow/group), its home directory
-  (`setup-alpine` runs `lbu add` on every `/home/*`), the `live-user` init
-  script and runlevel link, and GDM autologin;
+- it drops the live user (passwd/shadow/group/subuid/subgid), its home
+  directory (`setup-alpine` runs `lbu add` on every `/home/*`), the
+  `live-user` init script and runlevel link, and GDM autologin;
 - if the copy's `wheel` group has a member, it locks root's password (`!`);
 - it starts the serial-console getty the initramfs added to `inittab`
   through `apparmor-exec`;

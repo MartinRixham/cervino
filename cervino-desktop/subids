@@ -1,0 +1,37 @@
+#!/bin/sh
+# subids [USER...]: gives each USER (default: every user with a UID from
+# 1000 up, but nobody, and a login shell) that has none subordinate IDs in
+# /etc/subuid and /etc/subgid, as shadow's useradd does: 65536 of each, from
+# 100000 up, after the ranges given already. Rootless containers (podman,
+# toolbox, distrobox) map the container's users to them, and without them
+# can't unpack an image.
+#
+# useradd (GNOME Settings) gives them only where /etc/subuid exists, which
+# shadow-subids, a dependency of podman, installs empty; busybox adduser
+# (setup-user) gives none. So the live image's adduser shim runs this for
+# the user it makes (creating the files, after which useradd gives them
+# too), and the package's post-upgrade script for the users installs had
+# already.
+
+set -eu
+count=65536
+
+# add FILE USER ID: gives USER (whose UID or GID is ID) the next free range
+# in FILE, unless it has one there.
+add() {
+	grep -q -e "^$2:" -e "^$3:" "$1" && return 0
+	start=$(awk -F: -v n=100000 '$2 + $3 > n { n = $2 + $3 } END { print n }' "$1")
+	echo "$2:$start:$count" >> "$1"
+}
+
+[ -e /etc/subuid ] || install -m 0644 /dev/null /etc/subuid
+[ -e /etc/subgid ] || install -m 0644 /dev/null /etc/subgid
+if [ $# -eq 0 ]; then
+	# shellcheck disable=SC2046 # user names have no spaces
+	set -- $(awk -F: '$3 >= 1000 && $3 < 65534 && $7 !~ /\/(nologin|false)$/ { print $1 }' \
+		/etc/passwd)
+fi
+for user; do
+	add /etc/subuid "$user" "$(id -u "$user")"
+	add /etc/subgid "$user" "$(id -g "$user")"
+done

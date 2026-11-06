@@ -13,6 +13,7 @@ start() {
 	if ! getent passwd "$LIVE_USER" >/dev/null; then
 		adduser -D -s /bin/bash -g "Live User" "$LIVE_USER" &&
 		chmod 700 /home/"$LIVE_USER" &&
+		{ /usr/libexec/cervino/subids "$LIVE_USER" || :; } &&
 		for g in audio video netdev input plugdev lpadmin wheel; do
 			addgroup "$LIVE_USER" $g 2>/dev/null
 		done

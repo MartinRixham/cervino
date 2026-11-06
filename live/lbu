@@ -20,7 +20,7 @@ tar -tzf "$d"/ovl.tar.gz | grep -v \
 cd "$d"/root || exit
 strip() { awk "$@" "$f" > "$f".new && cat "$f".new > "$f" && rm "$f".new; }
 
-for f in etc/passwd etc/passwd- etc/shadow etc/shadow-; do
+for f in etc/passwd etc/passwd- etc/shadow etc/shadow- etc/subuid etc/subgid; do
 	[ -f "$f" ] && strip -F: -v u="$LIVE_USER" '$1 != u'
 done
 

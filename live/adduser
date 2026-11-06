@@ -29,6 +29,7 @@ fi
 [ -z "$shell" ] || set -- -s "$shell" "$@"
 /usr/sbin/adduser "$@" || exit
 [ -z "$GNOMELIVE_SETUP" ] || [ "$names" != 1 ] || echo "$user" >> "$list"
+[ "$names" != 1 ] || /usr/libexec/cervino/subids "$user" || :
 [ "$names" = 1 ] && [ -n "$home" ] || exit 0
 dir=$(getent passwd "$user" | cut -d: -f6)
 [ ! -d "$dir" ] || chmod 700 "$dir"

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Gives users who have none subordinate IDs, for rootless containers (see
+# /usr/libexec/cervino/subids): installs made before this package did
+# so have users without them.
+
+/usr/libexec/cervino/subids || :
+
+exit 0

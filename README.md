@@ -32,6 +32,12 @@ from a desktop distribution:
   country's channels and power limits apply, including for a hotspot; a
   time zone with no country (UTC) keeps the kernel's world region, and
   drivers that set the region themselves (Intel's) ignore it
+- subordinate user and group IDs (`/etc/subuid`, `/etc/subgid`) for every
+  user, so rootless containers (podman, toolbox, distrobox) work once
+  installed; Alpine gives them only to users made after podman is
+  installed, and not to the one the installer makes. An update gives them
+  to users of older installs. The `tun` module is loaded at boot, as their
+  network (and userspace VPNs) needs `/dev/net/tun`
 - OpenSSH installed, but sshd not enabled until you turn it on
   (`rc-update add sshd`): the installer's SSH step defaults to none. sftp
   runs the external `sftp-server`, so sshd's AppArmor profile need not

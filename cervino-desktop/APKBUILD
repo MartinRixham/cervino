@@ -33,7 +33,7 @@ depends="/bin/sh doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc ava
 	nftables-openrc openrc openrc-settingsd-openrc zram-init-openrc $DEPENDS"
 replaces="alpine-baselayout alpine-baselayout-data busybox-openrc dbus-openrc
 	earlyoom-openrc openrc shadow zram-init-openrc"
-install="$pkgname.post-install"
+install="$pkgname.post-install $pkgname.post-upgrade"
 triggers="$pkgname.trigger=/etc/apparmor.d:/etc/apparmor.d/*:/boot"
 # abuild would make the package provide a cmd: for each of its commands,
 # and cmd:apk, for the apk wrapper, conflicts with apk-tools' own; so no
@@ -107,6 +107,9 @@ USERGROUPS_ENAB yes
 UID_MIN 1000
 HOME_MODE 0700
 EOF
+	# Subordinate IDs for rootless containers, for the users useradd gives
+	# none (see the script; the post-upgrade script runs it).
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/subids < "$startdir"/subids
 
 	# NetworkManager manages all interfaces; ifupdown only brings up lo.
 	# With several name servers in resolv.conf, musl asks them all at once and
@@ -455,6 +458,13 @@ EOF
 	# The SPICE agent needs uinput.
 	makefile root:root 0644 "$pkgdir"/etc/modules-load.d/uinput.conf <<'EOF'
 uinput
+EOF
+	# Rootless containers' networking (podman's pasta, slirp4netns) and
+	# userspace VPNs open /dev/net/tun, which only exists once tun is loaded:
+	# nothing makes the kernel's static device nodes (kmod static-nodes),
+	# whose first open would load it.
+	makefile root:root 0644 "$pkgdir"/etc/modules-load.d/tun.conf <<'EOF'
+tun
 EOF
 	# spice-vdagentd blocks writing to its virtio port while nothing on the host
 	# reads it (no SPICE client), and then ignores SIGTERM: kill it after 5 s,
