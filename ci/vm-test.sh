@@ -21,13 +21,19 @@
 # never finds the CD drive on it. A sys install's has the default machine
 # and BIOS.
 #
+# An aarch64 ISO (the arm64 target's, *-aarch64.iso) runs on an aarch64
+# host, in QEMU's virt machine with AAVMF, UEFI's only firmware there, for
+# both install modes. The CD drive is on virtio-scsi (the machine has no
+# IDE), the serial console is ttyAMA0, and the display a virtio GPU (the
+# machine has none of its own).
+#
 # Environment overrides:
 #   INSTALL_MODE  atomic or sys, setup-disk's -m (default: atomic)
 #   WORKDIR     disk image, logs etc. (default: ./vm-test)
 #   VM_MEMORY   guest RAM; the live system runs from RAM (default: 8G)
 #   VM_CPUS     guest CPUs (default: all host CPUs)
-#   OVMF_CODE, OVMF_VARS  OVMF's firmware and variable store templates
-#               (default: found in /usr/share)
+#   OVMF_CODE, OVMF_VARS  OVMF's (or AAVMF's) firmware and variable store
+#               templates (default: found in /usr/share)
 
 set -euo pipefail
 export LC_ALL=C
@@ -43,6 +49,9 @@ INSTALL_MODE=${INSTALL_MODE:-atomic}
 die() { echo "error: $*" >&2; exit 1; }
 
 case $INSTALL_MODE in atomic | sys) ;; *) die "INSTALL_MODE must be atomic or sys" ;; esac
+
+arch=x86_64
+[[ $ISO == *-aarch64.iso ]] && arch=aarch64
 
 qemu_pid=
 vm_user=root
@@ -66,7 +75,7 @@ vm_start() {
 	: > "$log"
 
 	echo ">>> [$vm] starting VM"
-	qemu-system-x86_64 \
+	qemu-system-"$arch" \
 		-enable-kvm -cpu host -m "$VM_MEMORY" -smp "$VM_CPUS" \
 		-display none -monitor none \
 		-serial pipe:"$WORKDIR"/serial \
@@ -144,12 +153,29 @@ vm_run() {
 
 unpack_share='rm -rf /tmp/ci && mkdir /tmp/ci && tar -xf /dev/vdb -C /tmp/ci'
 
-command -v qemu-system-x86_64 >/dev/null || die "need qemu-system-x86_64"
+command -v qemu-system-"$arch" >/dev/null || die "need qemu-system-$arch"
 command -v xorriso >/dev/null || die "need xorriso"
 [[ -r /dev/kvm && -w /dev/kvm ]] || die "need access to /dev/kvm"
+[[ $(uname -m) == "$arch" ]] || die "an $arch ISO needs an $arch host, for KVM"
 
 firmware=()
-if [[ $INSTALL_MODE == atomic ]]; then
+uefi=
+[[ $INSTALL_MODE == atomic || $arch == aarch64 ]] && uefi=1
+if [[ -n $uefi && $arch == aarch64 ]]; then
+	for f in /usr/share/AAVMF/AAVMF_CODE.fd /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
+		/usr/share/edk2/aarch64/QEMU_EFI-pflash.raw /usr/share/qemu/edk2-aarch64-code.fd; do
+		[[ -n ${OVMF_CODE:-} ]] || [[ ! -f $f ]] || OVMF_CODE=$f
+	done
+	[[ -f ${OVMF_CODE:-} ]] || die "need AAVMF (qemu-efi-aarch64), or OVMF_CODE and OVMF_VARS"
+	if [[ -z ${OVMF_VARS:-} ]]; then
+		case $OVMF_CODE in
+		*/QEMU_EFI-pflash.raw) OVMF_VARS=${OVMF_CODE%/*}/vars-template-pflash.raw ;;
+		*/QEMU_EFI.fd) OVMF_VARS=/usr/share/AAVMF/AAVMF_VARS.fd ;;
+		*) OVMF_VARS=${OVMF_CODE/CODE/VARS} OVMF_VARS=${OVMF_VARS/-code./-vars.} ;;
+		esac
+	fi
+	[[ -f $OVMF_VARS ]] || die "no AAVMF variable store next to $OVMF_CODE; set OVMF_VARS"
+elif [[ -n $uefi ]]; then
 	for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd \
 		/usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/qemu/ovmf-x86_64-code.bin; do
 		[[ -n ${OVMF_CODE:-} ]] || [[ ! -f $f ]] || OVMF_CODE=$f
@@ -162,19 +188,36 @@ fi
 
 mkdir -p "$WORKDIR"
 rm -f "$WORKDIR"/*.log "$WORKDIR"/disk.qcow2 "$WORKDIR"/efivars.fd
-if [[ $INSTALL_MODE == atomic ]]; then
+if [[ -n $uefi ]]; then
 	cp "$OVMF_VARS" "$WORKDIR"/efivars.fd
 	chmod u+w "$WORKDIR"/efivars.fd
+	# AAVMF's flash devices are 64 MiB, which some distributions' files
+	# are not padded to.
+	if [[ $arch == aarch64 ]]; then
+		cp "$OVMF_CODE" "$WORKDIR"/efi-code.fd
+		chmod u+w "$WORKDIR"/efi-code.fd
+		truncate -s 64M "$WORKDIR"/efi-code.fd "$WORKDIR"/efivars.fd
+		OVMF_CODE=$WORKDIR/efi-code.fd
+	fi
+	machine=q35
+	[[ $arch == aarch64 ]] && machine=virt,gic-version=host
 	# shellcheck disable=SC2054 # commas are QEMU's
-	firmware=(-machine q35 -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE"
+	firmware=(-machine "$machine"
+		-drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE"
 		-drive if=pflash,format=raw,file="$WORKDIR"/efivars.fd)
+fi
+if [[ $arch == aarch64 ]]; then
+	firmware+=(-device virtio-gpu-pci -device virtio-scsi-pci)
+	console=ttyAMA0
+else
+	console=ttyS0
 fi
 qemu-img create -q -f qcow2 "$WORKDIR"/disk.qcow2 32G
 rm -rf "$WORKDIR"/pkgs
 mkdir "$WORKDIR"/pkgs
 for p in cervino-gstreamer cervino-terminal cervino-upnp; do
-	find "$PACKAGES" -path "*/x86_64/$p-[0-9]*.apk" -exec cp {} "$WORKDIR"/pkgs/ \;
-	[[ -n $(ls "$WORKDIR"/pkgs/"$p"-* 2>/dev/null) ]] || die "no x86_64 $p package in $PACKAGES"
+	find "$PACKAGES" -path "*/$arch/$p-[0-9]*.apk" -exec cp {} "$WORKDIR"/pkgs/ \;
+	[[ -n $(ls "$WORKDIR"/pkgs/"$p"-* 2>/dev/null) ]] || die "no $arch $p package in $PACKAGES"
 done
 tar -C "$REPO" -cf "$WORKDIR"/share.tar --owner=0 --group=0 \
 	test ci/guest
@@ -183,18 +226,29 @@ tar -C "$WORKDIR" -rf "$WORKDIR"/share.tar --owner=0 --group=0 pkgs
 # The ISO's boot loaders have no serial console, so boot its kernel and
 # initramfs directly (through OVMF, as UEFI would, for an atomic install),
 # with its own command line plus a serial console; the initramfs still finds
-# and boots from the ISO in the CD drive as usual.
+# and boots from the ISO in the CD drive as usual. The aarch64 ISO has only
+# GRUB, whose linux line has the kernel's path first.
+if [[ $arch == aarch64 ]]; then
+	bootcfg=/boot/grub/grub.cfg
+	# shellcheck disable=SC2054 # commas are QEMU's
+	cdrom=(-drive file="$ISO",if=none,id=cd,media=cdrom,readonly=on
+		-device scsi-cd,drive=cd)
+else
+	bootcfg=/boot/syslinux/syslinux.cfg
+	cdrom=(-cdrom "$ISO")
+fi
 xorriso -osirrox on -indev "$ISO" \
 	-extract /boot/vmlinuz-lts "$WORKDIR"/vmlinuz-lts \
 	-extract /boot/initramfs-lts "$WORKDIR"/initramfs-lts \
-	-extract /boot/syslinux/syslinux.cfg "$WORKDIR"/syslinux.cfg 2>/dev/null
-chmod u+w "$WORKDIR"/vmlinuz-lts "$WORKDIR"/initramfs-lts "$WORKDIR"/syslinux.cfg
-cmdline=$(awk '$1 == "APPEND" { $1 = ""; print; exit }' "$WORKDIR"/syslinux.cfg)
-[[ -n $cmdline ]] || die "no kernel command line in the ISO's syslinux.cfg"
+	-extract "$bootcfg" "$WORKDIR"/boot.cfg 2>/dev/null
+chmod u+w "$WORKDIR"/vmlinuz-lts "$WORKDIR"/initramfs-lts "$WORKDIR"/boot.cfg
+cmdline=$(awk '$1 == "APPEND" { $1 = ""; print; exit }
+	$1 == "linux" { $1 = $2 = ""; print; exit }' "$WORKDIR"/boot.cfg)
+[[ -n $cmdline ]] || die "no kernel command line in the ISO's $bootcfg"
 
-vm_start install -cdrom "$ISO" \
+vm_start install "${cdrom[@]}" \
 	-kernel "$WORKDIR"/vmlinuz-lts -initrd "$WORKDIR"/initramfs-lts \
-	-append "$cmdline console=ttyS0,115200"
+	-append "$cmdline console=$console,115200"
 vm_run root "$unpack_share && /tmp/ci/ci/guest/install.sh $INSTALL_MODE" 3600
 vm_stop
 ((rc == 0)) || die "installing with setup-alpine failed"

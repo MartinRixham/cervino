@@ -47,10 +47,15 @@ case $disks in *" "*) stock=1 ;; esac
 
 # Alpine's setup-disk, for what it does, copies the system (see the apk shim
 # in genapkovl-gnomelive.sh). Both leave out the SPICE guest agent but in a
-# VM, which a hypervisor shows with the CPU flag (the Pi's image never runs
-# in one).
+# VM, which a hypervisor shows on x86 with the CPU flag, and on aarch64
+# (which has none) in the firmware's SMBIOS tables: the maker or the
+# machine's name (Hyper-V's is "Virtual Machine").
 CERVINO_VM=
-grep -qw hypervisor /proc/cpuinfo && CERVINO_VM=1
+if grep -qw hypervisor /proc/cpuinfo ||
+	cat /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name 2>/dev/null |
+		grep -qiE '^(qemu|kvm|vmware|innotek gmbh|virtualbox|xen|parallels|virtual machine|apple virtualization)'; then
+	CERVINO_VM=1
+fi
 export CERVINO_COPY_ROOT=1 CERVINO_VM
 [ -z "$stock" ] || exec /usr/sbin/setup-disk "$@"
 [ "$mode" != none ] && [ "$disks" != none ] || exit 0
@@ -340,7 +345,7 @@ case " $(cat /proc/cmdline) " in *" nomodeset "*) cmdline="nomodeset $cmdline" ;
 
 # A serial console the install runs on is the installed system's too.
 tty=$(tty 2>/dev/null)
-case $tty in /dev/ttyS[0-9]*)
+case $tty in /dev/ttyS[0-9]* | /dev/ttyAMA[0-9]*)
 	case " $cmdline " in *" console=${tty#/dev/} "*|*" console=${tty#/dev/},"*) ;; *)
 		speed=$(stty speed < "$tty" 2>/dev/null || echo 115200)
 		cmdline="$cmdline console=${tty#/dev/},$speed" ;;

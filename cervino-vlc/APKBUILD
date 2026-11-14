@@ -5,7 +5,7 @@
 # their runtime packages in apks/ next to this, with cervino-vlc.conf and
 # VLC's plug-in cache scripts). Once it is deleted (through the apk
 # wrapper), VLC is gone and what else uses ffmpeg7 gets Alpine's.
-# Elsewhere it only depends on Alpine's VLC (vlc-qt), so the PC's image has
+# Elsewhere it only depends on Alpine's VLC (vlc-qt), so the ISOs have
 # VLC too, gone once this is deleted.
 # VLC builds against ffmpeg7's patches, so the two go together; it uses
 # GStreamer's libraries too, but cervino-gstreamer's only add to Alpine's.
@@ -24,7 +24,7 @@ license="Apache-2.0"
 # -dbg packages; what they provide and depend on is in the .conf.
 options="!check !strip !tracedeps"
 
-if [ "$TARGET_ARCH" = aarch64 ]; then
+if [ "$TARGET" = rpi ]; then
 	arch="aarch64"
 	license="$LICENSE"
 	provides="$PROVIDES"

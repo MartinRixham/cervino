@@ -6,10 +6,11 @@ with code in this repository.
 ## What this is
 
 A Bash script, `build-alpine-gnome-iso.sh`, that builds a bootable x86_64
-Alpine Linux live ISO that boots straight into GNOME, or with `TARGET=rpi`
-an aarch64 Raspberry Pi SD card image (`.img.gz`) of the same system. It
-reproduces what `setup-desktop gnome` would install and enable, on top of
-Alpine's "standard" ISO (or its `rpiimg` image).
+Alpine Linux live ISO that boots straight into GNOME, or with
+`TARGET=arm64` an aarch64 ISO, or with `TARGET=rpi` an aarch64 Raspberry
+Pi SD card image (`.img.gz`) of the same system. It reproduces what
+`setup-desktop gnome` would install and enable, on top of Alpine's
+"standard" ISO (or its `rpiimg` image).
 
 Besides the script, the repo holds:
 
@@ -27,9 +28,9 @@ Besides the script, the repo holds:
   `wpa_supplicant`, `bluez` and `mesa` packages, and `linux-rpi` with 16 KB
   pages (`cervino-kernel`), in `rpi/`
 - the patched `mutter`, `showtime`, `dnsmasq` and `libsoup3` packages,
-  for both targets, in `patched/`
+  for every target, in `patched/`
 - packages Alpine lacks (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
-  `rpi-keyboard-config`, `tomesole`), for both targets, and
+  `rpi-keyboard-config`, `tomesole`), for every target, and
   `rpi-keyboard-fw-update`, for `rpi`, in `extra/`
 
 `README.md` documents the user-facing behaviour and the environment
@@ -47,9 +48,10 @@ it:
 ```sh
 ./build-alpine-gnome-iso.sh                       # needs podman or docker, curl, network
 ALPINE_BRANCH=v3.24 AUTOLOGIN=0 ./build-alpine-gnome-iso.sh
-qemu-system-x86_64 -enable-kvm -m 8G -cdrom out/*.iso
-ci/vm-test.sh out/*.iso                             # the end-to-end test CI runs
-INSTALL_MODE=sys ci/vm-test.sh out/*.iso            # the same with a sys install
+qemu-system-x86_64 -enable-kvm -m 8G -cdrom out/*-x86_64.iso
+ci/vm-test.sh out/*-x86_64.iso                      # the end-to-end test CI runs
+INSTALL_MODE=sys ci/vm-test.sh out/*-x86_64.iso     # the same with a sys install
+ci/vm-test.sh out/*-aarch64.iso                     # TARGET=arm64's, on an arm64 host
 test/kernel.sh                                      # on a Pi 5: cervino-kernel
 test/kernel.sh out/repo                             # as CI: a small VM, no KVM needed
 ```
@@ -60,7 +62,7 @@ test/kernel.sh out/repo                             # as CI: a small VM, no KVM 
 console, keeping the logs in `$WORKDIR` (default `./vm-test`). The only
 setup between install and test is the packages boot (below): otherwise the
 ISO itself must make every test pass. The guest gets the repo's `test/` and
-`ci/guest/`, and in `pkgs/` the x86_64 `cervino-gstreamer`,
+`ci/guest/`, and in `pkgs/` the ISO's architecture's `cervino-gstreamer`,
 `cervino-terminal` and `cervino-upnp` `.apk`s from `PACKAGES` (the
 build's `out/repo`; default `repo` next to the ISO), as a tar archive
 on `/dev/vdb`, and each command's exit status comes back as an `@@RC=n@@`
@@ -73,6 +75,11 @@ The VMs:
   `$WORKDIR/efivars.fd` across the boots. On the default i440fx, the kernel
   never finds the CD drive on the PIIX IDE bus under OVMF.
 - The sys VM keeps QEMU's default machine and BIOS.
+- An aarch64 ISO (`*-aarch64.iso`, needing an aarch64 host) boots in
+  both modes with AAVMF (copied and padded to the 64 MiB flash) on the
+  `virt` machine, with the CD drive on virtio-scsi, a virtio GPU and the
+  console on `ttyAMA0`. The install boot takes the command line from the
+  ISO's `grub.cfg`, as it has no syslinux.
 
 **The install boot.** It boots the ISO's kernel directly, with the `APPEND`
 line from the ISO's `syslinux.cfg` plus `console=ttyS0` (the ISO's boot
@@ -152,7 +159,8 @@ between the boots are kept in `/var/lib/cervino-ci`.
 - `check`: the shutdown must have switched to it (on trial, as `BootNext`),
   with the `/etc` changes made after staging (a file written, one deleted).
   Once started it must become first in `BootOrder` and the fallback
-  `BOOTX64.EFI` (waiting for the inittab `::once:` commit, which can race
+  `BOOTX64.EFI` (`BOOTAA64.EFI` on aarch64; waiting for the inittab
+  `::once:` commit, which can race
   the console login), keeping the old version's entry.
 - `rollback`: `update-alpine rollback` must turn down the running version
   and one that doesn't exist (in `check`), and with the old version's ID
@@ -283,13 +291,14 @@ to catch Alpine changes that break the patched packages. Its concurrency
 group includes the event, so the daily run and a push don't cancel each
 other.
 
-- **Build jobs**: one per `TARGET`, a matrix of `iso` on `ubuntu-latest` and
-  `rpi` on `ubuntu-24.04-arm`. They free runner disk space first because
-  mkimage needs several GB. Each job uploads its image plus `SHA256SUMS` as
-  an artifact; the `iso` job then runs `ci/update-test.sh`, the `rpi` job
-  `test/kernel.sh out/repo` (the package checks, and the kernel's own in a
-  small VM). The `rpi` image is only built: QEMU can't run GNOME on an
-  emulated Pi.
+- **Build jobs**: one per `TARGET`, a matrix of `iso` on `ubuntu-latest`
+  and `rpi` and `arm64` on `ubuntu-24.04-arm`. They free runner disk space
+  first because mkimage needs several GB. Each job uploads its image plus
+  `SHA256SUMS` as an artifact; the `iso` job then runs `ci/update-test.sh`,
+  the `rpi` job `test/kernel.sh out/repo` (the package checks, and the
+  kernel's own in a small VM). The `rpi` image is only built: QEMU can't
+  run GNOME on an emulated Pi. Nor is the `arm64` ISO tested in a VM: the
+  arm64 runners have no KVM.
 - **The patched packages' cache**: the build jobs pass
   `CACHEDIR=$RUNNER_TEMP/pkgcache` and keep each patched package in an
   Actions cache of its own. Before the build they restore the newest
@@ -303,8 +312,8 @@ other.
   on separate runners, since a runner's 16 GB can't hold two 8 GB VMs),
   failing unless every OS feature test passes. The console logs are uploaded
   as `vm-test-logs-<mode>` on failure.
-- **`release`**: on `v*` tags, publishes both images as a GitHub release,
-  only after both build jobs and both VM tests pass.
+- **`release`**: on `v*` tags, publishes the three images as a GitHub
+  release, only after the build jobs and both VM tests pass.
 - **Signing**: on those tags the build jobs also sign with the
   `APK_SIGNING_KEY` secret, written to `$RUNNER_TEMP/cervino.rsa` (apk knows
   a key by its file name, so it stays `cervino.rsa` in every job). The
@@ -318,9 +327,13 @@ other.
   `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`, `mutter`,
   `dnsmasq`, `libsoup3`, `extra/`'s packages, and for
   `rpi` `wpa_supplicant`, `bluez`, `mesa` and `cervino-kernel`, with their
-  subpackages but `-dbg`) as `cervino-repo-<target>`.
-- **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` in an
-  `alpine:<branch>` container per branch (so the index is in a format that
+  subpackages but `-dbg`) as `cervino-repo-<target>`. The build points
+  `rpi`'s installs at `$APK_REPO/rpi/<branch>`, the ISOs' at
+  `$APK_REPO/<branch>`: `rpi` and `arm64` are both aarch64, so they need a
+  repo each.
+- **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` (on the
+  `iso` and `arm64` packages into the worktree's root, on `rpi`'s into its
+  `rpi/`) in an `alpine:<branch>` container per branch (so the index is in a format that
   branch's apk reads) on a worktree of the `gh-pages` branch. That is an
   orphan branch holding only the published repo, created on the first
   release, written only by this job, one run at a time. It adds the packages
@@ -336,7 +349,12 @@ other.
 container runs `ARCH` (`--platform linux/amd64` or `linux/arm64`), as
 building the root file system runs the packages' scripts; `host_main` stops
 unless the host is that architecture or has QEMU user emulation for it in
-`binfmt_misc`. CI builds `rpi` on an arm64 runner (`ubuntu-24.04-arm`).
+`binfmt_misc`. CI builds `rpi` and `arm64` on an arm64 runner
+(`ubuntu-24.04-arm`).
+
+The packages say which target they are for by `TARGET` (in their `.conf`),
+not `ARCH`: `arm64` is aarch64 but has nothing of the Pi's, and its
+packages are published in a repo apart from `rpi`'s (see CI).
 
 The same file runs in four phases, selected by its first argument.
 
@@ -557,9 +575,10 @@ APKBUILD); to move it on, change `pkgver` and `_commit`.
 
 **`cervino-vlc` and `cervino-gstreamer`.** `build_bundle NAME VERSION
 PACKAGE...` builds each with `abuild -d` in `/work/cervino/<name>`, from a
-copy of `<name>/` with `<name>.conf` (`PKGVER`, `TARGET_ARCH`) next to the
-APKBUILD. Each also gets, from its packages built for the target (for
-`rpi` its pair, plus `showtime` for `cervino-gstreamer`; on `x86_64` only
+copy of `<name>/` with `<name>.conf` (`PKGVER`, `TARGET`, `TARGET_ARCH`)
+next to the APKBUILD. Each also gets, from its packages built for the
+target (for `rpi` its pair, plus `showtime` for `cervino-gstreamer`; on the
+ISOs only
 `showtime`, so `cervino-vlc` holds nothing and only depends on Alpine's
 `vlc-qt`):
 
@@ -690,8 +709,9 @@ next to the APKBUILD:
 
 - `cervino-desktop.conf`, as `sh` assignments: `PKGVER`; `DEPENDS`, the
   features; `PUBKEY`, the file name of the signing key's public key, copied
-  next to it; `REPO`, `$APK_REPO/$ALPINE_BRANCH` or empty; and
-  `TARGET_ARCH`, `$ARCH`;
+  next to it; `REPO`, `$APK_REPO/$ALPINE_BRANCH` (for `rpi`
+  `$APK_REPO/rpi/$ALPINE_BRANCH`) or empty; `TARGET`; and `TARGET_ARCH`,
+  `$ARCH`;
 - Flathub's downloaded `flathub.flatpakrepo`;
 - the `apparmor.d/` directory.
 
@@ -724,8 +744,10 @@ It runs `mkimage.sh --profile gnomelive` with `DATADIR=/work/mkinitfs`,
 which reaches `update-kernel`'s `mkinitfs`, so the image's initramfs has the
 patched init.
 
-**`mkimg.gnomelive.sh`** is a profile that extends `profile_standard` (for
-`rpi`: `profile_rpiimg`, keeping `hostname="rpi"`, which mkimage's
+**`mkimg.gnomelive.sh`** is a profile that extends `profile_standard` (on
+`x86_64` with the CPU microcode; for `arm64`, mkimage's GRUB EFI image is
+the only boot loader; for `rpi`: `profile_rpiimg`, keeping
+`hostname="rpi"`, which mkimage's
 `section_rpi_config` requires, plus a section that puts `usercfg.txt`,
 turning on the vc4 KMS overlay, on the boot partition). It:
 
@@ -864,7 +886,8 @@ gone at shutdown) holds:
 
 ### Booting on a PC
 
-Atomic installs on a PC are UEFI-only, with no boot loader.
+Atomic installs on a PC (and on the `arm64` ISO's aarch64 machines, the
+same way) are UEFI-only, with no boot loader.
 
 - `update-boot` makes each complete (read-only, not staged) version's kernel
   (`lts` over other flavors), microcode and initramfs into a unified kernel
@@ -877,7 +900,8 @@ Atomic installs on a PC are UEFI-only, with no boot loader.
   PARTUUID, and deletes the plain `Alpine Linux` one that started Limine on
   earlier installs, with Limine's files.
 - The version that starts is first in `BootOrder` (then the other versions,
-  then everything else) and copied to `EFI/BOOT/BOOTX64.EFI`, the firmware's
+  then everything else) and copied to `EFI/BOOT/BOOTX64.EFI` (on aarch64
+  `BOOTAA64.EFI`), the firmware's
   fallback for lost entries. The version on trial is `BootNext`.
 
 ### Which version starts
@@ -984,7 +1008,9 @@ under `/usr/local` don't reach installs.
 
 The apkovl's `setup-disk` shim asks whether to install `atomic` (the
 default) or `sys` (`-m atomic`/`-m sys` in answer files). For both it
-exports `CERVINO_VM=1` when `/proc/cpuinfo` has the `hypervisor` flag.
+exports `CERVINO_VM=1` when `/proc/cpuinfo` has the `hypervisor` flag
+(x86) or the SMBIOS maker or machine name is a hypervisor's (aarch64 has
+no such flag).
 
 - `sys`, when chosen at its question (after it has asked for the disk and
   whether to encrypt, as `-m sys [-e] <disk>`, so Alpine's doesn't ask its
@@ -1088,7 +1114,7 @@ Pi:
   `"0 tryboot"` through `/usr/libexec/cervino/tryboot`, as busybox init
   passes no argument and the kernel's firmware driver clears the flag on any
   other restart. `tryboot` is `cervino-desktop/tryboot.c`, built only for
-  `aarch64`: freestanding, no libc, by clang with lld; the package has
+  `rpi`: freestanding, no libc, by clang with lld; the package has
   `!archcheck` for it.
 
 Busybox init doesn't tell a restart from a power off, so the package's

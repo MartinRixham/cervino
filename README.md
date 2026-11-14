@@ -1,7 +1,7 @@
 # Cervino
 
-Build a bootable x86_64 Alpine Linux live ISO, or a Raspberry Pi SD card
-image, that starts straight into the GNOME desktop.
+Build a bootable x86_64 or aarch64 Alpine Linux live ISO, or a Raspberry
+Pi SD card image, that starts straight into the GNOME desktop.
 
 The image is Alpine's "standard" ISO plus everything `setup-desktop gnome`
 would install and enable, so you don't need to run `setup-alpine` first.
@@ -181,8 +181,8 @@ be installed on the host.
 ./build-alpine-gnome-iso.sh
 ```
 
-The ISO is written to `./out/`. For the [Raspberry Pi](#raspberry-pi) image,
-set `TARGET=rpi`.
+The ISO is written to `./out/`. For the [aarch64 ISO](#aarch64-iso), set
+`TARGET=arm64`; for the [Raspberry Pi](#raspberry-pi) image, `TARGET=rpi`.
 
 Settings are passed as environment variables, for example:
 
@@ -193,7 +193,7 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 
 | Variable        | Default                                    | Description                                                         |
 | --------------- | ------------------------------------------ | ------------------------------------------------------------------- |
-| `TARGET`        | `iso`                                      | `iso` for the x86_64 ISO, `rpi` for the aarch64 Raspberry Pi image  |
+| `TARGET`        | `iso`                                      | `iso` for the x86_64 ISO, `arm64` for the aarch64 ISO, `rpi` for the aarch64 Raspberry Pi image |
 | `ALPINE_BRANCH` | latest stable                              | Alpine release branch, e.g. `v3.24`                                 |
 | `OUTDIR`        | `./out`                                    | Where the image is written                                          |
 | `LIVE_USER`     | `alpine`                                   | Desktop user created at boot                                        |
@@ -209,18 +209,18 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 ### Prebuilt ISOs
 
 The [Build ISO](.github/workflows/build-iso.yml) GitHub Actions workflow runs
-the script on every push and pull request that touches it, for both targets,
-and uploads the ISO and the Raspberry Pi image, each with its `SHA256SUMS`, as
-workflow artifacts. It also runs once a day on `main`, so a change in Alpine
+the script on every push and pull request that touches it, for each target,
+and uploads the two ISOs and the Raspberry Pi image, each with its
+`SHA256SUMS`, as workflow artifacts. It also runs once a day on `main`, so a change in Alpine
 that breaks the build (a patched package that Alpine updated, a patch that no
 longer applies) shows up without a push. You can also start it by hand from
-the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publishes both images
+the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publishes the images
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
 `mutter`, `dnsmasq`, `libsoup3`, `tui-torrent`, `bapk`, `qstop`,
 `bijiben`, `rpi-keyboard-config`, `tomesole`, and the Pi's
 `wpa_supplicant`, `bluez`, `mesa`, `rpi-keyboard-fw-update` and
-`cervino-kernel`) to the update repo (see [Updates](#updates)).
+`cervino-kernel`) to the update repos (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
 [`ci/vm-test.sh`](ci/vm-test.sh). The test boots the ISO, installs it to a
@@ -240,14 +240,19 @@ back, `update-alpine delete` removes the updated version, and an update
 that doesn't start falls back to the version before. Both the live system and the installed one must
 get through all this without a single AppArmor denial. The build fails, and no release is
 published, unless every test passes. The Raspberry Pi image is built but not
-tested this way: QEMU can't emulate a Pi that runs GNOME. To run the same
+tested this way: QEMU can't emulate a Pi that runs GNOME. Nor is the aarch64
+ISO, as GitHub's arm64 runners have no KVM. To run the same
 test locally (it needs
 `qemu-system-x86_64`, `xorriso` and access to `/dev/kvm`):
 
 ```sh
-ci/vm-test.sh out/*.iso                     # an atomic install
-INSTALL_MODE=sys ci/vm-test.sh out/*.iso    # a sys install
+ci/vm-test.sh out/*-x86_64.iso                     # an atomic install
+INSTALL_MODE=sys ci/vm-test.sh out/*-x86_64.iso    # a sys install
 ```
+
+On an aarch64 host with KVM, `ci/vm-test.sh out/*-aarch64.iso` tests the
+aarch64 ISO the same way (it needs `qemu-system-aarch64` and AAVMF,
+UEFI for QEMU's `virt` machine, which both install modes boot with there).
 
 It takes `cervino-gstreamer`, `cervino-terminal` and `cervino-upnp` from
 `out/repo`, next to the ISO, or from the directory given as a second argument.
@@ -265,7 +270,9 @@ turned down, and upgrade to it, `cervino.list` included, when accepted
 The desktop features' configuration (and the packages they need) is the
 `cervino-desktop` package, so it can change on systems already installed.
 Release images point apk at an extra repository on this project's GitHub
-Pages, `https://martinrixham.github.io/cervino/<branch>`, through
+Pages, `https://martinrixham.github.io/cervino/<branch>` for the ISOs and
+`https://martinrixham.github.io/cervino/rpi/<branch>` for the Pi (both
+hold aarch64 packages, so they need a repository each), through
 `/etc/apk/repositories.d/cervino.list`, and trust its signing key. A new
 `cervino-desktop` arrives with the next `apk upgrade`, or in GNOME
 Software's updates, like any other package. If it depends on a new
@@ -310,9 +317,10 @@ you entered it), or in a root shell.
 `/var` and `/home` are shared, so data is never rolled back.
 
 Each `v*` tag publishes the release's packages to the `gh-pages` branch,
-which holds nothing but that repository (written by CI alone, never merged):
-`<branch>/<arch>/APKINDEX.tar.gz` with the newest five versions of each
-package (a version already there stays as it was), and the
+which holds nothing but those repositories (written by CI alone, never
+merged): `<branch>/<arch>/APKINDEX.tar.gz` (and `rpi/<branch>/aarch64/`)
+with the newest five versions of each package (a version already there
+stays as it was), and the
 public key, `cervino.rsa.pub`. Release builds and the repo are signed with
 the `APK_SIGNING_KEY` secret of the `release` environment, which only `v*`
 tags can use. To set this up for a fork:
@@ -353,7 +361,7 @@ boot it to the desktop (4 GB or more to do much in it). Write it to a USB
 stick or attach it to a VM, for example:
 
 ```sh
-qemu-system-x86_64 -enable-kvm -m 8G -cdrom out/*.iso
+qemu-system-x86_64 -enable-kvm -m 8G -cdrom out/*-x86_64.iso
 ```
 
 The live user is in the `wheel` group and can use `doas` to get root. By
@@ -439,8 +447,8 @@ kernel arguments in one file, made by `ukify`) on the boot partition,
 any of them too. The `cervino-desktop` package's `update-boot` makes them
 and the entries, puts the version that starts first in `BootOrder` and sets
 `BootNext` to a version on trial. It also copies the version that starts to
-`EFI/BOOT/BOOTX64.EFI`, which the firmware starts if it loses the boot
-entries. Each version's kernel arguments are in its `/etc/kernel/cmdline`.
+`EFI/BOOT/BOOTX64.EFI` (`BOOTAA64.EFI` on aarch64), which the firmware
+starts if it loses the boot entries. Each version's kernel arguments are in its `/etc/kernel/cmdline`.
 GNOME Software installs apps from Flatpak only, as apk cannot write to the
 system: `update-alpine` installs packages (see [Updates](#updates)), and
 `doas apk add`, `del` and `upgrade` hand over to it.
@@ -451,6 +459,37 @@ desktop features' configuration) and your changes under `/etc`. The live user, i
 home directory, its doas and polkit rules, its init script and GDM autologin
 are dropped from that copy, so create a user in `setup-alpine`'s user step and
 log in as that user. Without one there is no account GDM can log in to.
+
+## aarch64 ISO
+
+```sh
+TARGET=arm64 ./build-alpine-gnome-iso.sh
+```
+
+builds `out/alpine-gnomelive-<release>-aarch64.iso`, from Alpine's aarch64
+standard ISO, for arm64 machines that start with UEFI, and for VMs on an
+arm64 host. It boots with GRUB alone (UEFI's only), and runs Alpine's
+`linux-lts`. It has the same system as the x86_64 ISO (but the Intel
+VA-API drivers and the CPU microcode), with Alpine's VLC, GStreamer, Mesa,
+wpa_supplicant and BlueZ: the Pi's patched ones are for the Pi's hardware,
+and stay in the Pi's repo. Installing works as from the x86_64 ISO (see
+[Installing to disk](#installing-to-disk)), atomic or sys, both with UEFI.
+
+To start it in virt-manager, make a VM from the ISO ("Local install
+media"), with the architecture `aarch64` and the machine type `virt` (UEFI
+is the firmware there), 4 GB of RAM or more and a virtio disk, and before
+starting it pick "Virtio" video (the machine has no display of its own).
+With `qemu-system-aarch64` alone (the firmware's path is Fedora's
+`edk2-aarch64`'s; Debian's `qemu-efi-aarch64` has
+`/usr/share/qemu-efi-aarch64/QEMU_EFI.fd`):
+
+```sh
+qemu-system-aarch64 -machine virt -accel kvm -cpu host -m 8G \
+    -bios /usr/share/AAVMF/AAVMF_CODE.fd -device virtio-gpu-pci \
+    -device qemu-xhci -device usb-kbd -device usb-tablet \
+    -drive file=out/alpine-gnomelive-*-aarch64.iso,media=cdrom,if=none,id=cd \
+    -device virtio-scsi-pci -device scsi-cd,drive=cd
+```
 
 ## Raspberry Pi
 
@@ -491,12 +530,12 @@ doas apk add cervino-gstreamer    # GStreamer's plug-ins with the patches
 ```
 
 Without them, Alpine's packages take their place, without the hardware
-decoding (`doas apk add` and `doas apk del` switch between them). On a PC
-`cervino-vlc` brings in Alpine's VLC (`vlc-qt`), and can be removed the
-same way, and the system uses Alpine's GStreamer plug-ins.
+decoding (`doas apk add` and `doas apk del` switch between them). On the
+ISOs `cervino-vlc` brings in Alpine's VLC (`vlc-qt`), and can be removed
+the same way, and the system uses Alpine's GStreamer plug-ins.
 
-`cervino-gstreamer` also holds Showtime, on both, with a patch of ours
-that keeps its sound from skipping on an AirPlay speaker: it holds a
+`cervino-gstreamer` also holds Showtime, on every target, with a patch of
+ours that keeps its sound from skipping on an AirPlay speaker: it holds a
 second of decoded video (about 75 MB at 1080p), so that the audio can be
 decoded far enough ahead of it. Without `cervino-gstreamer`, Showtime is
 Alpine's.
@@ -592,8 +631,9 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
 
 1. **Host:** works out the Alpine release and re-runs itself in an
    `alpine:<release>` container of the target's architecture, mounting the
-   output directory. Building the Pi image on an x86_64 host (or the ISO on
-   an arm64 one) needs QEMU user emulation, e.g. `qemu-user-static`.
+   output directory. Building an aarch64 image on an x86_64 host (or the
+   x86_64 ISO on an arm64 one) needs QEMU user emulation, e.g.
+   `qemu-user-static`.
 2. **Container:** installs the build tools, creates an unprivileged `build`
    user and an abuild signing key (`mkimage.sh` must run unprivileged).
 3. **Builder:** sparse-clones `aports/scripts`, resolves the package list
@@ -608,16 +648,16 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      inheriting the GPU's render node, and the GPU memory with it, and
      `linux-rpi` with 16 KB pages, as `cervino-kernel` (see
      [The 16 KB page kernel](#the-16-kb-page-kernel));
-   - for both, `mutter`, `showtime`, `dnsmasq` and `libsoup3`, built from
-     [`patched/`](patched): Alpine's, with patches of ours that keep GNOME
+   - for every target, `mutter`, `showtime`, `dnsmasq` and `libsoup3`,
+     built from [`patched/`](patched): Alpine's, with patches of ours that keep GNOME
      Shell from crashing when a window's buffer can't be loaded onto the
      GPU (as can happen going fullscreen on the Pi), Showtime's sound from
      skipping on an AirPlay speaker, and names from failing to resolve
      through a VPN after switching between VPN connections, and with
      libsoup's upstream fix that keeps media shared with Media Sharing
      from stopping after a second;
-   - for both, the packages in [`extra/`](extra), which Alpine lacks
-     (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
+   - for every target, the packages in [`extra/`](extra), which Alpine
+     lacks (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
      `rpi-keyboard-config`, `tomesole`, and for the Pi only
      `rpi-keyboard-fw-update`), built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
@@ -626,7 +666,7 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      Pi, the runtime packages of `ffmpeg7` and `vlc`, and of
      `gst-plugins-base` and `gst-plugins-bad`, each pair in one, and for
      both `showtime` in `cervino-gstreamer`, providing their names at
-     Alpine's versions (on a PC `cervino-vlc` only depends on Alpine's
+     Alpine's versions (on the ISOs `cervino-vlc` only depends on Alpine's
      `vlc-qt`);
    - the `cervino-terminal` package, built with abuild from
      [`cervino-terminal/APKBUILD`](cervino-terminal/APKBUILD): the Zellij

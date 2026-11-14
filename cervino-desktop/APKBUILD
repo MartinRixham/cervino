@@ -5,8 +5,9 @@
 # cervino-desktop.conf (PKGVER, the version; DEPENDS, the packages of the
 # desktop features; PUBKEY, the file name of the public key it is signed with,
 # which is copied next to it; REPO, the URL of the repo it is published in,
-# or empty; TARGET_ARCH, the architecture it is for), flathub.flatpakrepo and
-# the repo's AppArmor profiles (apparmor.d/) next to it.
+# or empty; TARGET, the image it is for, iso, arm64 or rpi; TARGET_ARCH, its
+# architecture), flathub.flatpakrepo and the repo's AppArmor profiles
+# (apparmor.d/) next to it.
 #
 # Some of the files belong to other packages (alpine-baselayout's inittab and
 # root crontab, shadow's login.defs, the daemons' conf.d files): replaces=
@@ -40,11 +41,11 @@ triggers="$pkgname.trigger=/etc/apparmor.d:/etc/apparmor.d/*:/boot"
 # tracing, and the /bin/sh the install scripts need is listed by hand.
 # The Pi's package has one program, tryboot, built for aarch64: abuild
 # would refuse that in a noarch package, but the build makes one package per
-# architecture anyway (its dependencies differ), indexed as that one's.
+# target anyway (its dependencies differ), indexed as its architecture's.
 options="!check !tracedeps !archcheck"
 
 build() {
-	[ "$TARGET_ARCH" = aarch64 ] || return 0
+	[ "$TARGET" = rpi ] || return 0
 	clang --target=aarch64-linux-musl -O2 -Wall -Wextra -Werror -ffreestanding \
 		-fno-stack-protector -nostdlib -static -fuse-ld=lld -Wl,--build-id=none -s \
 		-o "$srcdir"/tryboot "$startdir"/tryboot.c
@@ -161,7 +162,7 @@ EOF
 	# the decoders themselves (video4linux, media). dma_heap/vidbuf_cached is
 	# the heap they look for first: where the decoder is behind an IOMMU (Pi
 	# 5) the system heap, else CMA. grep runs under udevd's AppArmor profile.
-	if [ "$TARGET_ARCH" = aarch64 ]; then
+	if [ "$TARGET" = rpi ]; then
 		makefile root:root 0644 "$pkgdir"/usr/lib/udev/rules.d/60-cervino-dma-heap.rules \
 			<<'EOF'
 SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660", TAG+="uaccess"
@@ -575,7 +576,7 @@ EOF
 	# on, in place of a boot menu.
 	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/boot-trial < "$startdir"/boot-trial
 	# The Pi's restart with the tryboot flag, for boot-trial reboot.
-	if [ "$TARGET_ARCH" = aarch64 ]; then
+	if [ "$TARGET" = rpi ]; then
 		install -Dm755 "$srcdir"/tryboot "$pkgdir"/usr/libexec/cervino/tryboot
 	fi
 	# elogind runs this before it restarts or switches off the machine, with

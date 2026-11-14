@@ -1,13 +1,14 @@
 # mkimg.gnomelive.sh: the gnomelive mkimage profile. build-alpine-gnome-iso.sh
 # copies it into aports/scripts/, with mkimg.gnomelive.conf (the build
-# settings: gnomelive_target, iso or rpi; gnomelive_kernel_opts, the kernel
-# arguments; gnomelive_apks, the on-disc repo's packages) and, for the
-# Raspberry Pi, usercfg.txt next to it.
-# mkimage reads the variables set here and sets the ones used, and its
-# build_section takes the checksum as separate words.
-# shellcheck shell=sh disable=SC2034,SC2154,SC2046
+# settings: gnomelive_target, iso, arm64 or rpi; gnomelive_kernel_opts, the
+# kernel arguments; gnomelive_apks, the on-disc repo's packages) and, for
+# the Raspberry Pi, usercfg.txt next to it.
+# mkimage reads the variables set here and sets the ones used (ARCH among
+# them), and its build_section takes the checksum as separate words.
+# shellcheck shell=sh disable=SC2034,SC2154,SC2046,SC2153
 
-# The ISO: Alpine's standard ISO plus GNOME. The Pi's image: Alpine's Pi
+# The ISOs (x86_64, and arm64's aarch64, which boots with GRUB's EFI image
+# alone): Alpine's standard ISO plus GNOME. The Pi's image: Alpine's Pi
 # image, one FAT partition with the firmware, kernel, apks and apkovl;
 # section_rpi_config only builds the Pi's boot files (config.txt,
 # cmdline.txt, firmware) for hostname rpi.
@@ -26,11 +27,13 @@ profile_gnomelive() {
 		profile_abbrev="gnome"
 		title="GNOME Live"
 		desc="Alpine standard plus GNOME, booting straight into GDM."
-		arch="x86_64"
+		arch="x86_64 aarch64"
 		# CPU microcode, loaded by the ISO's boot loaders (as in
 		# profile_extended)
-		boot_addons="amd-ucode intel-ucode"
-		initrd_ucode="/boot/amd-ucode.img /boot/intel-ucode.img"
+		if [ "$ARCH" = x86_64 ]; then
+			boot_addons="amd-ucode intel-ucode"
+			initrd_ucode="/boot/amd-ucode.img /boot/intel-ucode.img"
+		fi
 		hostname="alpine"
 	fi
 	kernel_cmdline="$kernel_cmdline $gnomelive_kernel_opts"

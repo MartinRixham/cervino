@@ -279,7 +279,12 @@ if [ -n "$pi" ]; then
 	sync
 	replace "$esp"/autoboot.txt.new "$esp"/autoboot.txt
 else
-	copy "$esp/cervino/$start"/linux.efi "$esp"/EFI/BOOT/BOOTX64.EFI
+	# The firmware's fallback, named for the architecture it runs.
+	case $(uname -m) in
+	aarch64) fallback=BOOTAA64.EFI ;;
+	*) fallback=BOOTX64.EFI ;;
+	esac
+	copy "$esp/cervino/$start"/linux.efi "$esp"/EFI/BOOT/$fallback
 	sync
 
 	# The boot entries, "Alpine Linux" and the date and time the version was

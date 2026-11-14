@@ -5,7 +5,8 @@
 # shellcheck disable=SC2086,SC2046,SC2116,SC2153
 #
 # build-alpine-gnome-iso.sh: builds Cervino's GNOME live image, an x86_64
-# ISO or (TARGET=rpi) an aarch64 Raspberry Pi SD card image. README.md
+# ISO, (TARGET=arm64) an aarch64 ISO for UEFI machines and VMs, or
+# (TARGET=rpi) an aarch64 Raspberry Pi SD card image. README.md
 # describes what it holds, its settings (environment variables) and how it
 # is built; CLAUDE.md, this script's phases.
 
@@ -14,8 +15,9 @@ set -euo pipefail
 TARGET=${TARGET:-iso}
 case $TARGET in
 iso) ARCH=x86_64 image_ext=iso ;;
+arm64) ARCH=aarch64 image_ext=iso ;;
 rpi) ARCH=aarch64 image_ext=img.gz ;;
-*) echo "error: bad TARGET: $TARGET (iso or rpi)" >&2; exit 1 ;;
+*) echo "error: bad TARGET: $TARGET (iso, arm64 or rpi)" >&2; exit 1 ;;
 esac
 MIRROR=${MIRROR:-https://dl-cdn.alpinelinux.org/alpine}
 LIVE_USER=${LIVE_USER:-alpine}
@@ -292,8 +294,8 @@ build_rootfs() {
 # .PKGINFO: abuild can't trace the libraries again, as those they link
 # aren't installed here. The only install scripts among them are vlc-libs'
 # plug-in cache scripts, which become cervino-vlc's. With none built
-# (cervino-vlc on a PC, cervino-terminal, cervino-upnp), NAME has only its
-# own files.
+# (cervino-vlc but on the Pi, cervino-terminal, cervino-upnp), NAME has only
+# its own files.
 build_bundle() {
 	local bundle=$1 version=$2 src=/work/cervino/$1 name file pkg info ver script dep
 	local provides= depends= licenses= dep_name
@@ -339,6 +341,7 @@ build_bundle() {
 	done
 	# shellcheck disable=SC2086
 	printf '%s=%s\n' PKGVER "$(shquote "$version")" \
+		TARGET "$(shquote "$TARGET")" \
 		TARGET_ARCH "$(shquote "$ARCH")" \
 		PROVIDES "$(shquote "$(echo $provides)")" \
 		DEPENDS "$(shquote "$(printf '%s\n' $depends | sort -u | xargs)")" \
@@ -424,6 +427,7 @@ builder_main() {
 	# with a boot entry of its own.
 	iso) features="$features intel-media-driver libva-intel-driver amd-ucode intel-ucode
 		$atomic efibootmgr ukify" ;;
+	arm64) features="$features $atomic efibootmgr ukify" ;;
 	# The firmware's package, so that each version of an atomic install
 	# brings the firmware it is to start with.
 	rpi) features="$features $atomic raspberrypi-bootloader" ;;
@@ -455,12 +459,13 @@ builder_main() {
 		kbd-bkeymaps apparmor-profiles"
 	case $TARGET in
 	iso) disc_apks="$disc_apks syslinux grub-bios grub-efi efibootmgr" ;;
+	arm64) disc_apks="$disc_apks grub-efi efibootmgr" ;;
 	rpi) disc_apks="$disc_apks raspberrypi-bootloader" ;;
 	esac
 
 	# --- Patched packages ----------------------------------------------------
 	# Alpine's, with patches (README.md says what for): Raspberry Pi OS's
-	# and ours from rpi/ on the Pi, ours from patched/ on both. mutter
+	# and ours from rpi/ on the Pi, ours from patched/ on every target. mutter
 	# comes first, so that it builds with Alpine's mesa-dev.
 	# wpa_supplicant, bluez, mesa, mutter, dnsmasq and libsoup3 rank above
 	# Alpine's and so replace them (but for their -dbg packages, too big to
@@ -538,7 +543,7 @@ builder_main() {
 			# makedepends from.
 			abuild -P /work/packages index || die "could not index $name"
 		else
-			# Without TARGET (iso or rpi), which bindgen, run by mesa's
+			# Without TARGET (iso, arm64 or rpi), which bindgen, run by mesa's
 			# build, takes for the Rust target triple.
 			env -u TARGET abuild -r -P /work/packages || die "could not build $name"
 			mkdir -p /work/pkgcache/"$name"
@@ -582,14 +587,18 @@ builder_main() {
 	cp -R /cervino-desktop/. /apparmor.d "$pkgsrc"/
 	wget -qO "$pkgsrc"/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo ||
 		die "could not download the Flathub remote"
-	# The package brings the public key, and with APK_REPO, the repo.
-	local pubkey
+	# The package brings the public key, and with APK_REPO, the repo: the
+	# Pi's packages in a repo of their own under rpi/, as the arm64 ISO's
+	# are aarch64 too.
+	local pubkey repo=${APK_REPO:+$APK_REPO/$ALPINE_BRANCH}
+	[[ -z $repo || $TARGET != rpi ]] || repo=$APK_REPO/rpi/$ALPINE_BRANCH
 	pubkey=$(. /home/build/.abuild/abuild.conf && echo "$PACKAGER_PRIVKEY".pub)
 	cp "$pubkey" "$pkgsrc"/
 	printf '%s=%s\n' PKGVER "$(shquote "$PKGVER")" \
 		DEPENDS "$(shquote "$(echo $features)")" \
 		PUBKEY "$(shquote "$(basename "$pubkey")")" \
-		REPO "$(shquote "${APK_REPO:+$APK_REPO/$ALPINE_BRANCH}")" \
+		REPO "$(shquote "$repo")" \
+		TARGET "$(shquote "$TARGET")" \
 		TARGET_ARCH "$(shquote "$ARCH")" > "$pkgsrc"/cervino-desktop.conf
 	(cd "$pkgsrc" && abuild -d -P /work/packages) || die "could not build cervino-desktop"
 	mapfile -t -O "${#published[@]}" published < <(cd "$pkgsrc" && abuild listpkg |

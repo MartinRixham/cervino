@@ -31,6 +31,12 @@
 set -eu
 
 notes=/var/lib/cervino-ci
+# The firmware's fallback image, which update-boot names for the
+# architecture.
+case $(uname -m) in
+aarch64) fallback=BOOTAA64.EFI ;;
+*) fallback=BOOTX64.EFI ;;
+esac
 # shellcheck source=../../cervino-desktop/atomic.sh
 . /usr/libexec/cervino/atomic.sh
 
@@ -53,7 +59,7 @@ boots_first() {
 	n=$(boot_num "$1")
 	[ -n "$n" ] && [ "$(efibootmgr | sed -n 's/^BootOrder: \([^,]*\).*/\1/p')" = "$n" ] &&
 		! efibootmgr | grep -q '^BootNext:' &&
-		cmp -s /boot/efi/cervino/"$1"/linux.efi /boot/efi/EFI/BOOT/BOOTX64.EFI
+		cmp -s /boot/efi/cervino/"$1"/linux.efi /boot/efi/EFI/BOOT/"$fallback"
 }
 
 # started ID: waits for version ID, on trial, to be made the one that starts,

@@ -67,11 +67,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # iso: the x86_64 ISO; rpi: the aarch64 Raspberry Pi image, on an
-        # arm64 runner, as the build runs the target's packages' scripts.
+        # iso: the x86_64 ISO; arm64: the aarch64 ISO; rpi: the aarch64
+        # Raspberry Pi image. The aarch64 ones on an arm64 runner, as the
+        # build runs the target's packages' scripts.
         include:
           - target: iso
             runner: ubuntu-latest
+          - target: arm64
+            runner: ubuntu-24.04-arm
           - target: rpi
             runner: ubuntu-24.04-arm
     steps:
@@ -622,11 +625,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The ISOs' packages in one repo (x86_64 and aarch64), the Pi's in
+      # another, under rpi/, as they are aarch64 too.
       - uses: actions/download-artifact@v7
         with:
-          pattern: cervino-repo-*
+          name: cervino-repo-iso
           path: new
-          merge-multiple: true
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: cervino-repo-arm64
+          path: new
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: cervino-repo-rpi
+          path: new-rpi
 
       - name: Check out gh-pages
         run: |
@@ -637,6 +651,21 @@ jobs:
             git worktree add --orphan -b gh-pages pages
           fi
 
+      # Releases up to v3.24.4 published the Pi's packages as the repo's
+      # aarch64 ones: they move to rpi/ once, so that the arm64 ISO's don't
+      # land among them
+      # (ci/publish-repo.sh keeps a file already published, and the
+      # versions match).
+      - name: Move the Pi's packages to rpi/
+        working-directory: pages
+        run: |
+          [ ! -e rpi ] || exit 0
+          for dir in v*/aarch64; do
+            [ -d "$dir" ] || continue
+            mkdir -p "rpi/${dir%/*}"
+            git mv "$dir" "rpi/$dir"
+          done
+
       # In a container of each branch's release, so its apk can read the index.
       - name: Add the packages
         env:
@@ -644,12 +673,17 @@ jobs:
         run: |
           umask 077
           printf '%s\n' "$KEY" > "$RUNNER_TEMP/cervino.rsa"
-          for dir in new/v*; do
-            branch=${dir#new/}
-            docker run --rm -v "$PWD":/src -v "$RUNNER_TEMP/cervino.rsa":/cervino.rsa:ro \
-              "docker.io/library/alpine:${branch#v}" \
-              sh /src/ci/publish-repo.sh /src/new /src/pages /cervino.rsa "$branch"
-          done
+          publish() {
+            for dir in "$1"/v*; do
+              branch=${dir#"$1"/}
+              mkdir -p "$2"
+              docker run --rm -v "$PWD":/src -v "$RUNNER_TEMP/cervino.rsa":/cervino.rsa:ro \
+                "docker.io/library/alpine:${branch#v}" \
+                sh /src/ci/publish-repo.sh /src/"$1" /src/"$2" /cervino.rsa "$branch"
+            done
+          }
+          publish new pages
+          publish new-rpi pages/rpi
 
       - name: Push
         working-directory: pages

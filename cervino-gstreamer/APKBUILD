@@ -27,7 +27,7 @@ depends="$DEPENDS"
 options="!check !strip !tracedeps"
 
 # Showtime is noarch; the Pi's plug-ins are not.
-[ "$TARGET_ARCH" = aarch64 ] && arch="aarch64"
+[ "$TARGET" = rpi ] && arch="aarch64"
 
 package() {
 	mkdir -p "$pkgdir"
