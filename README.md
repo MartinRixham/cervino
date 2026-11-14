@@ -276,7 +276,9 @@ hold aarch64 packages, so they need a repository each), through
 `/etc/apk/repositories.d/cervino.list`, and trust its signing key. A new
 `cervino-desktop` arrives with the next `apk upgrade`, or in GNOME
 Software's updates, like any other package. If it depends on a new
-package, that comes from Alpine's own repositories along with it.
+package, that comes from Alpine's own repositories along with it. The
+patched packages' debug symbols are there too, as their `-dbg` packages
+(`doas apk add mutter-dbg`, say).
 
 **Update Alpine Linux** in the app grid (or `doas update-alpine` in a
 terminal) asks for your password, upgrades every package in a terminal
@@ -316,12 +318,17 @@ bash completes the IDs where doas doesn't ask for a password (right after
 you entered it), or in a root shell.
 `/var` and `/home` are shared, so data is never rolled back.
 
-Each `v*` tag publishes the release's packages to the `gh-pages` branch,
-which holds nothing but those repositories (written by CI alone, never
-merged): `<branch>/<arch>/APKINDEX.tar.gz` (and `rpi/<branch>/aarch64/`)
-with the newest five versions of each package (a version already there
-stays as it was), and the
-public key, `cervino.rsa.pub`. Release builds and the repo are signed with
+Each `v*` tag publishes the release's packages, keeping the newest five
+versions of each (a version already there stays as it was). The packages
+themselves are the assets of a GitHub release per repository and
+architecture, `packages-<branch>-<arch>` (and `packages-rpi-<branch>-aarch64`),
+which CI creates and keeps up to date; they are not meant to be downloaded
+from there by hand. The `gh-pages` branch, which Pages serves, holds only
+the indexes, `<branch>/<arch>/APKINDEX.tar.gz` (and
+`rpi/<branch>/aarch64/`), each naming its release as where its packages
+are, and the public key, `cervino.rsa.pub`. apk checks every package it
+downloads against the signed index. The branch is written by CI alone, as
+a single commit each time. Release builds and the repo are signed with
 the `APK_SIGNING_KEY` secret of the `release` environment, which only `v*`
 tags can use. To set this up for a fork:
 
@@ -331,7 +338,8 @@ tags can use. To set this up for a fork:
    deployment branches and tags to the tag pattern `v*`, and save the key's
    contents as its `APK_SIGNING_KEY` secret. If others can push to the
    repository, also restrict who can create `v*` tags with a tag ruleset.
-3. Push a `v*` tag. The first release creates the `gh-pages` branch.
+3. Push a `v*` tag. The first release creates the `gh-pages` branch and
+   the `packages-*` releases.
 4. In Settings → Pages, serve the `gh-pages` branch (root).
 
 To replace the key (if it leaked, say), make a new one as in step 1 and
@@ -344,9 +352,9 @@ gh secret set APK_SIGNING_KEY -e release < cervino.rsa
 ```
 
 Before the first release has been published, that is all. After it, delete
-the `gh-pages` branch too, so the next release publishes every package
-signed with the new key (a package already published would stay signed
-with the old one). Installed systems trust only the old public key, so they
+the `gh-pages` branch and the `packages-*` releases (with their tags) too,
+so the next release publishes every package signed with the new key (a
+package already published would stay signed with the old one). Installed systems trust only the old public key, so they
 won't take packages signed with the new one: each has to be given the new
 `cervino.rsa.pub` from the `gh-pages` branch in `/etc/apk/keys` by hand.
 

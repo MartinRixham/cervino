@@ -468,10 +468,9 @@ builder_main() {
 	# and ours from rpi/ on the Pi, ours from patched/ on every target. mutter
 	# comes first, so that it builds with Alpine's mesa-dev.
 	# wpa_supplicant, bluez, mesa, mutter, dnsmasq and libsoup3 rank above
-	# Alpine's and so replace them (but for their -dbg packages, too big to
-	# publish); the rest go in cervino-vlc and cervino-gstreamer (below),
-	# but rpi/linux-rpi, published as cervino-kernel, which users add (see
-	# its APKBUILD).
+	# Alpine's and so replace them, their -dbg packages too; the rest go in
+	# cervino-vlc and cervino-gstreamer (below), but rpi/linux-rpi, published
+	# as cervino-kernel, which users add (see its APKBUILD).
 	# Each is Alpine's APKBUILD of one version (its _alpine) with the
 	# patches: stop if Alpine's has moved on, as its changes (security
 	# fixes, rebuilds for libraries' new sonames) would be missing.
@@ -567,7 +566,6 @@ builder_main() {
 	for name in $replaces $extra; do
 		# shellcheck disable=SC2086
 		for file in ${pkgfiles[$name]}; do
-			[[ $file == *-dbg-[0-9]* ]] && continue
 			published+=("$repodir/$file")
 		done
 	done

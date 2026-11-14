@@ -642,54 +642,14 @@ jobs:
           name: cervino-repo-rpi
           path: new-rpi
 
-      - name: Check out gh-pages
-        run: |
-          if git ls-remote --exit-code --heads origin gh-pages > /dev/null; then
-            git fetch --depth 1 origin gh-pages
-            git worktree add --detach pages FETCH_HEAD
-          else
-            git worktree add --orphan -b gh-pages pages
-          fi
-
-      # Releases up to v3.24.4 published the Pi's packages as the repo's
-      # aarch64 ones: they move to rpi/ once, so that the arm64 ISO's don't
-      # land among them
-      # (ci/publish-repo.sh keeps a file already published, and the
-      # versions match).
-      - name: Move the Pi's packages to rpi/
-        working-directory: pages
-        run: |
-          [ ! -e rpi ] || exit 0
-          for dir in v*/aarch64; do
-            [ -d "$dir" ] || continue
-            mkdir -p "rpi/${dir%/*}"
-            git mv "$dir" "rpi/$dir"
-          done
-
-      # In a container of each branch's release, so its apk can read the index.
-      - name: Add the packages
+      # See ci/publish-repo.sh.
+      - name: Publish the packages
         env:
           KEY: ${{ secrets.APK_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           umask 077
           printf '%s\n' "$KEY" > "$RUNNER_TEMP/cervino.rsa"
-          publish() {
-            for dir in "$1"/v*; do
-              branch=${dir#"$1"/}
-              mkdir -p "$2"
-              docker run --rm -v "$PWD":/src -v "$RUNNER_TEMP/cervino.rsa":/cervino.rsa:ro \
-                "docker.io/library/alpine:${branch#v}" \
-                sh /src/ci/publish-repo.sh /src/"$1" /src/"$2" /cervino.rsa "$branch"
-            done
-          }
-          publish new pages
-          publish new-rpi pages/rpi
-
-      - name: Push
-        working-directory: pages
-        run: |
-          git add -A
-          git -c user.name='github-actions[bot]' \
-            -c user.email='41898333+github-actions[bot]@users.noreply.github.com' \
-            commit -q -m "Packages from $GITHUB_REF_NAME"
-          git push origin HEAD:gh-pages
+          umask 022
+          ci/publish-repo.sh "$RUNNER_TEMP/cervino.rsa" new rpi=new-rpi

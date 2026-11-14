@@ -327,21 +327,30 @@ other.
   `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`, `mutter`,
   `dnsmasq`, `libsoup3`, `extra/`'s packages, and for
   `rpi` `wpa_supplicant`, `bluez`, `mesa` and `cervino-kernel`, with their
-  subpackages but `-dbg`) as `cervino-repo-<target>`. The build points
+  subpackages, `-dbg` included) as `cervino-repo-<target>`. The build points
   `rpi`'s installs at `$APK_REPO/rpi/<branch>`, the ISOs' at
   `$APK_REPO/<branch>`: `rpi` and `arm64` are both aarch64, so they need a
   repo each.
-- **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` (on the
-  `iso` and `arm64` packages into the worktree's root, on `rpi`'s into its
-  `rpi/`) in an `alpine:<branch>` container per branch (so the index is in a format that
-  branch's apk reads) on a worktree of the `gh-pages` branch. That is an
-  orphan branch holding only the published repo, created on the first
-  release, written only by this job, one run at a time. It adds the packages
-  (but a file already published stays as it was: the Pi's packages are
-  rebuilt at the same version each release), keeps the newest five versions
-  of each package, indexes each arch with `--rewrite-arch`, signs the index
-  and pushes. GitHub Pages serves that branch; Pages must be set to it in
-  the repository settings.
+- **`repo`** (also after the VM tests): runs `ci/publish-repo.sh` on the
+  runner, on the `iso` and `arm64` packages (the root repo) and `rpi`'s
+  (`rpi=`, the repo under `rpi/`), one run at a time. Modelled on
+  rpmfission's `publish.sh`, it keeps the packages as the assets of a
+  GitHub release per repo and arch (`packages-[rpi-]<branch>-<arch>`,
+  created on first use, `--latest=false`), and on the `gh-pages` branch
+  only each one's index: `apk mkndx` in an `alpine:<branch>` container (so
+  the index is in a format that branch's apk reads), signed with the key,
+  with `--pkgname-spec` naming the release's download URL, so the
+  packages' own arch doesn't matter (no `--rewrite-arch`, which mkndx
+  lacks). It downloads the release's assets, adds the new packages (but an
+  asset already published stays as it was: most packages are rebuilt at
+  the same version each release), keeps the newest five versions of each,
+  uploads what is new, checks every file the index names is an asset,
+  force-pushes `gh-pages` as a single orphan commit, and only then deletes
+  the assets no longer kept. A name with characters GitHub would rename
+  in an asset stops it. It also moves, once, packages still on `gh-pages`
+  from before into their release (the Pi's, published as the root repo's
+  `aarch64` ones until v3.24.4, to `rpi/` first). GitHub Pages serves that
+  branch; Pages must be set to it in the repository settings.
 
 ## How the script is structured
 
@@ -547,8 +556,8 @@ trial. Its version is Alpine's, so a change of ours needs a new `pkgrel`,
 which also changes the kernel release (`6.18.60-<pkgrel>-rpi16k`).
 
 `wpa_supplicant`, `bluez`, `mesa`, `mutter`, `dnsmasq` and `libsoup3`
-are published as they are (but their `-dbg` packages, too big for GitHub
-Pages), and so replace Alpine's. `cervino-kernel` is published as it is
+are published as they are, their `-dbg` packages too, and so replace
+Alpine's. `cervino-kernel` is published as it is
 too, but users add it. A change to one of them needs a new `pkgrel`, as
 `ci/publish-repo.sh` keeps a file already published. The other five are
 published only inside `cervino-vlc` (`vlc` and `ffmpeg7`) and
