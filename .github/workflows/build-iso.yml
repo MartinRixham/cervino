@@ -62,7 +62,7 @@ jobs:
     timeout-minutes: 240
     # Tag builds sign with the APK_SIGNING_KEY secret of the release
     # environment, which only v* tags may deploy to; other builds run
-    # without an environment, and so without the key.
+    # without an environment, and so without the key (see Package repo).
     environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     strategy:
       fail-fast: false
@@ -94,15 +94,38 @@ jobs:
           sudo docker image prune --all --force
           df -h /
 
+      # Every build points installs at the published repo, on this
+      # repository's GitHub Pages. Other builds than a release's can't sign
+      # with its key, so their package brings its public key, the
+      # repository variable APK_PUBLIC_KEY, next to their own; without the
+      # variable they get no repo.
+      - name: Package repo
+        env:
+          PUBKEY: ${{ vars.APK_PUBLIC_KEY }}
+        run: |
+          pages=https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}
+          case $GITHUB_REF in
+            refs/tags/v*) ;;
+            *)
+              [ -n "$PUBKEY" ] || {
+                echo "::notice::No APK_PUBLIC_KEY variable: the image gets no package repo"
+                exit 0
+              }
+              printf '%s\n' "$PUBKEY" > "$RUNNER_TEMP/cervino.rsa.pub"
+              echo "APK_REPO_KEY=$RUNNER_TEMP/cervino.rsa.pub" >> "$GITHUB_ENV"
+              ;;
+          esac
+          echo "APK_REPO=$pages" >> "$GITHUB_ENV"
+
       # Release builds sign cervino-desktop and the image's repo with the
       # release environment's APK_SIGNING_KEY secret, as the repo job signs
-      # the published repo, and
-      # point installs at that repo, on this repository's GitHub Pages. apk
-      # knows the key by its file name, the same in both jobs.
+      # the published repo. apk knows the key by its file name, the same in
+      # both jobs. It must be the key other builds trust (Package repo).
       - name: Signing key
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           KEY: ${{ secrets.APK_SIGNING_KEY }}
+          PUBKEY: ${{ vars.APK_PUBLIC_KEY }}
         run: |
           [ -n "$KEY" ] || {
             echo "::error::The release environment has no APK_SIGNING_KEY secret"
@@ -110,9 +133,12 @@ jobs:
           }
           umask 077
           printf '%s\n' "$KEY" > "$RUNNER_TEMP/cervino.rsa"
+          pub=$(openssl rsa -in "$RUNNER_TEMP/cervino.rsa" -pubout 2> /dev/null)
+          [ -z "$PUBKEY" ] || [ "$pub" = "$PUBKEY" ] || {
+            echo "::error::The APK_PUBLIC_KEY variable is not APK_SIGNING_KEY's public key"
+            exit 1
+          }
           echo "SIGNING_KEY=$RUNNER_TEMP/cervino.rsa" >> "$GITHUB_ENV"
-          pages=https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}
-          echo "APK_REPO=$pages" >> "$GITHUB_ENV"
 
       # The packages built from rpi/, patched/ and extra/ take most of the
       # build, so each is kept in a cache of its own (CACHEDIR), keyed on

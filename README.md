@@ -203,7 +203,8 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 | `CONTAINER`     | `podman`, else `docker`                    | Container runtime to use                                            |
 | `MIRROR`        | `https://dl-cdn.alpinelinux.org/alpine`    | Alpine package mirror                                               |
 | `SIGNING_KEY`   | a new key each build                       | abuild private key to sign the packages built here and the image's repo; its public key, derived from it, is named after its file plus `.pub` |
-| `APK_REPO`      | none                                       | URL (without the branch) of the repo installs get updates of the packages built here from; its packages must be signed with `SIGNING_KEY` |
+| `APK_REPO`      | none                                       | URL (without the branch) of the repo installs get updates of the packages built here from; its packages must be signed with `SIGNING_KEY`, or with `APK_REPO_KEY`'s key |
+| `APK_REPO_KEY`  | none                                       | Public key `APK_REPO`'s packages are signed with, when that is not `SIGNING_KEY`'s; installs trust it, under its file name, as well as the build's own |
 | `CACHEDIR`      | none                                       | Where the packages built from `rpi/`, `patched/` and `extra/` are kept; later builds take them from there (signed again with their own key) while their sources, Alpine's version of them and the release are the same |
 
 ### Prebuilt ISOs
@@ -334,21 +335,26 @@ tags can use. To set this up for a fork:
 
 1. Make a key: `openssl genrsa -out cervino.rsa 2048` (or `abuild-keygen
    -n`). Keep it safe: whoever holds it can change every installed system.
-2. In Settings → Environments, create a `release` environment, limit its
+2. Save its public key as the repository variable `APK_PUBLIC_KEY`
+   (Settings → Secrets and variables → Actions → Variables, or
+   `openssl rsa -in cervino.rsa -pubout | gh variable set APK_PUBLIC_KEY`);
+   a release stops if that is not the secret's.
+3. In Settings → Environments, create a `release` environment, limit its
    deployment branches and tags to the tag pattern `v*`, and save the key's
    contents as its `APK_SIGNING_KEY` secret. If others can push to the
    repository, also restrict who can create `v*` tags with a tag ruleset.
-3. Push a `v*` tag. The first release creates the `gh-pages` branch and
+4. Push a `v*` tag. The first release creates the `gh-pages` branch and
    the `packages-*` releases.
-4. In Settings → Pages, serve the `gh-pages` branch (root).
+5. In Settings → Pages, serve the `gh-pages` branch (root).
 
 To replace the key (if it leaked, say), make a new one as in step 1 and
 save it over the old `APK_SIGNING_KEY` secret, from the environment's
-settings page or with:
+settings page or as below, with its public key:
 
 ```sh
 openssl genrsa -out cervino.rsa 2048
 gh secret set APK_SIGNING_KEY -e release < cervino.rsa
+openssl rsa -in cervino.rsa -pubout | gh variable set APK_PUBLIC_KEY
 ```
 
 Before the first release has been published, that is all. After it, delete
@@ -358,8 +364,13 @@ package already published would stay signed with the old one). Installed systems
 won't take packages signed with the new one: each has to be given the new
 `cervino.rsa.pub` from the `gh-pages` branch in `/etc/apk/keys` by hand.
 
-Images built without `SIGNING_KEY` and `APK_REPO`, such as CI builds of pushes and pull
-requests, get no update repository: only tag builds are signed for it.
+CI builds of pushes and pull requests can't use the secret, so they are
+signed with a key of their own, but their installs get updates from the
+same repository when its public key is in the repository variable
+`APK_PUBLIC_KEY`: they trust that key too (`APK_REPO_KEY`). They keep the
+packages they were built with until a release publishes newer ones.
+Without the variable, as without `APK_REPO`, an image gets no update
+repository.
 
 ## Booting the ISO
 

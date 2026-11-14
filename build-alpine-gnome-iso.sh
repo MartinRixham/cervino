@@ -26,6 +26,7 @@ AUTOLOGIN=${AUTOLOGIN:-1}
 BROWSER=${BROWSER:-firefox}
 SIGNING_KEY=${SIGNING_KEY-}
 APK_REPO=${APK_REPO-}
+APK_REPO_KEY=${APK_REPO_KEY-}
 CACHEDIR=${CACHEDIR-}
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -100,6 +101,12 @@ host_main() {
 			-e SIGNING_KEY_NAME="$(basename "$SIGNING_KEY")")
 	fi
 	[[ -z $APK_REPO || $APK_REPO == https://* ]] || die "APK_REPO must be an https:// URL"
+	if [[ -n $APK_REPO_KEY ]]; then
+		[[ -n $APK_REPO ]] || die "APK_REPO_KEY needs APK_REPO"
+		[[ -r $APK_REPO_KEY ]] || die "cannot read APK_REPO_KEY: $APK_REPO_KEY"
+		keyopts+=(-v "$(realpath "$APK_REPO_KEY")":/repo-key:ro
+			-e APK_REPO_KEY_NAME="$(basename "$APK_REPO_KEY")")
+	fi
 	local cacheopts=()
 	if [[ -n $CACHEDIR ]]; then
 		mkdir -p "$CACHEDIR"
@@ -592,10 +599,21 @@ builder_main() {
 	[[ -z $repo || $TARGET != rpi ]] || repo=$APK_REPO/rpi/$ALPINE_BRANCH
 	pubkey=$(. /home/build/.abuild/abuild.conf && echo "$PACKAGER_PRIVKEY".pub)
 	cp "$pubkey" "$pkgsrc"/
+	# With APK_REPO_KEY, the repo is signed with another key than this
+	# build's, which the package brings too.
+	local repokey=${APK_REPO_KEY_NAME:-}
+	if [[ -n $repokey ]]; then
+		[[ $repokey != "$(basename "$pubkey")" ]] ||
+			die "APK_REPO_KEY has the name of SIGNING_KEY's public key: $repokey"
+		openssl pkey -pubin -in /repo-key -noout 2> /dev/null ||
+			die "APK_REPO_KEY is not a public key"
+		cp /repo-key "$pkgsrc/$repokey"
+	fi
 	printf '%s=%s\n' PKGVER "$(shquote "$PKGVER")" \
 		DEPENDS "$(shquote "$(echo $features)")" \
 		PUBKEY "$(shquote "$(basename "$pubkey")")" \
 		REPO "$(shquote "$repo")" \
+		REPOKEY "$(shquote "$repokey")" \
 		TARGET "$(shquote "$TARGET")" \
 		TARGET_ARCH "$(shquote "$ARCH")" > "$pkgsrc"/cervino-desktop.conf
 	(cd "$pkgsrc" && abuild -d -P /work/packages) || die "could not build cervino-desktop"

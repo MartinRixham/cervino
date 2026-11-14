@@ -5,8 +5,9 @@
 # cervino-desktop.conf (PKGVER, the version; DEPENDS, the packages of the
 # desktop features; PUBKEY, the file name of the public key it is signed with,
 # which is copied next to it; REPO, the URL of the repo it is published in,
-# or empty; TARGET, the image it is for, iso, arm64 or rpi; TARGET_ARCH, its
-# architecture), flathub.flatpakrepo and the repo's AppArmor profiles
+# or empty; REPOKEY, the file name of that repo's public key, copied next to
+# it too, or empty when it is PUBKEY; TARGET, the image it is for, iso,
+# arm64 or rpi; TARGET_ARCH, its architecture), flathub.flatpakrepo and the repo's AppArmor profiles
 # (apparmor.d/) next to it.
 #
 # Some of the files belong to other packages (alpine-baselayout's inittab and
@@ -66,6 +67,9 @@ package() {
 	makefile root:root 0644 "$pkgdir"/etc/apk/keys/"$PUBKEY" < "$startdir"/"$PUBKEY"
 	if [ -n "$REPO" ]; then
 		echo "$REPO" | makefile root:root 0644 "$pkgdir"/etc/apk/repositories.d/cervino.list
+	fi
+	if [ -n "$REPOKEY" ]; then
+		makefile root:root 0644 "$pkgdir"/etc/apk/keys/"$REPOKEY" < "$startdir"/"$REPOKEY"
 	fi
 
 	# Login shells: nano as the default editor, ~/.local/bin first in PATH

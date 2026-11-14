@@ -36,7 +36,7 @@ Besides the script, the repo holds:
 `README.md` documents the user-facing behaviour and the environment
 variables (`TARGET`, `ALPINE_BRANCH`, `OUTDIR`, `LIVE_USER`,
 `LIVE_PASSWORD`, `AUTOLOGIN`, `BROWSER`, `CONTAINER`, `MIRROR`,
-`SIGNING_KEY`, `APK_REPO`, `CACHEDIR`). Keep the README table and the
+`SIGNING_KEY`, `APK_REPO`, `APK_REPO_KEY`, `CACHEDIR`). Keep the README table and the
 workflow in sync when you add or change a setting; the script's header
 comment only points to the README.
 
@@ -322,7 +322,10 @@ other.
   it, the build job only on tags (its `environment:` expression is empty
   otherwise).
 - **The packages**: the build jobs set `APK_REPO` to the repository's GitHub
-  Pages URL, and each uploads its `out/repo` (the packages as
+  Pages URL (and, except on tags, `APK_REPO_KEY` to the repository variable
+  `APK_PUBLIC_KEY`, the release key's public key, without which they set
+  neither, and which the tag builds' signing step checks
+  against the secret), and each uploads its `out/repo` (the packages as
   `<branch>/<arch>/*.apk`: `cervino-desktop`, `cervino-vlc`,
   `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`, `mutter`,
   `dnsmasq`, `libsoup3`, `extra/`'s packages, and for
@@ -719,7 +722,8 @@ next to the APKBUILD:
 - `cervino-desktop.conf`, as `sh` assignments: `PKGVER`; `DEPENDS`, the
   features; `PUBKEY`, the file name of the signing key's public key, copied
   next to it; `REPO`, `$APK_REPO/$ALPINE_BRANCH` (for `rpi`
-  `$APK_REPO/rpi/$ALPINE_BRANCH`) or empty; `TARGET`; and `TARGET_ARCH`,
+  `$APK_REPO/rpi/$ALPINE_BRANCH`) or empty; `REPOKEY`, the file name of
+  `APK_REPO_KEY`'s key, copied next to it too, or empty; `TARGET`; and `TARGET_ARCH`,
   `$ARCH`;
 - Flathub's downloaded `flathub.flatpakrepo`;
 - the `apparmor.d/` directory.
