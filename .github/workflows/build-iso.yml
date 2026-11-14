@@ -67,11 +67,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # iso: the x86_64 ISO; arm64: the aarch64 ISO; rpi: the aarch64
+        # x86_64: the x86_64 ISO; arm64: the aarch64 ISO; rpi: the aarch64
         # Raspberry Pi image. The aarch64 ones on an arm64 runner, as the
         # build runs the target's packages' scripts.
         include:
-          - target: iso
+          - target: x86_64
             runner: ubuntu-latest
           - target: arm64
             runner: ubuntu-24.04-arm
@@ -544,7 +544,7 @@ jobs:
       # release and the one before (see the script). The package is the same
       # for both targets, so it is tested once.
       - name: Test update-alpine
-        if: matrix.target == 'iso'
+        if: matrix.target == 'x86_64'
         env:
           CONTAINER: docker
         run: ci/update-test.sh out/repo
@@ -573,7 +573,7 @@ jobs:
 
       - uses: actions/download-artifact@v7
         with:
-          name: alpine-gnome-iso
+          name: alpine-gnome-x86_64
           path: out
 
       # The packages the image leaves out (cervino-gstreamer,
@@ -581,7 +581,7 @@ jobs:
       # running the tests.
       - uses: actions/download-artifact@v7
         with:
-          name: cervino-repo-iso
+          name: cervino-repo-x86_64
           path: out/repo
 
       - name: Enable KVM
@@ -655,7 +655,7 @@ jobs:
       # another, under rpi/, as they are aarch64 too.
       - uses: actions/download-artifact@v7
         with:
-          name: cervino-repo-iso
+          name: cervino-repo-x86_64
           path: new
 
       - uses: actions/download-artifact@v7

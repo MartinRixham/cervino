@@ -193,7 +193,7 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 
 | Variable        | Default                                    | Description                                                         |
 | --------------- | ------------------------------------------ | ------------------------------------------------------------------- |
-| `TARGET`        | `iso`                                      | `iso` for the x86_64 ISO, `arm64` for the aarch64 ISO, `rpi` for the aarch64 Raspberry Pi image |
+| `TARGET`        | `x86_64`                                   | `x86_64` for the x86_64 ISO, `arm64` for the aarch64 ISO, `rpi` for the aarch64 Raspberry Pi image |
 | `ALPINE_BRANCH` | latest stable                              | Alpine release branch, e.g. `v3.24`                                 |
 | `OUTDIR`        | `./out`                                    | Where the image is written                                          |
 | `LIVE_USER`     | `alpine`                                   | Desktop user created at boot                                        |

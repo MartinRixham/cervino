@@ -12,12 +12,12 @@
 
 set -euo pipefail
 
-TARGET=${TARGET:-iso}
+TARGET=${TARGET:-x86_64}
 case $TARGET in
-iso) ARCH=x86_64 image_ext=iso ;;
+x86_64) ARCH=x86_64 image_ext=iso ;;
 arm64) ARCH=aarch64 image_ext=iso ;;
 rpi) ARCH=aarch64 image_ext=img.gz ;;
-*) echo "error: bad TARGET: $TARGET (iso, arm64 or rpi)" >&2; exit 1 ;;
+*) echo "error: bad TARGET: $TARGET (x86_64, arm64 or rpi)" >&2; exit 1 ;;
 esac
 MIRROR=${MIRROR:-https://dl-cdn.alpinelinux.org/alpine}
 LIVE_USER=${LIVE_USER:-alpine}
@@ -180,7 +180,7 @@ container_main() {
 	# The container runs $ARCH, and syslinux (for the ISO's boot loader)
 	# only exists for x86.
 	local syslinux=
-	[[ $TARGET == iso ]] && syslinux=syslinux
+	[[ $TARGET == x86_64 ]] && syslinux=syslinux
 	apk add --quiet alpine-sdk alpine-conf apk-tools busybox fakeroot \
 		$syslinux xorriso squashfs-tools mtools dosfstools sfdisk grub grub-efi git \
 		clang lld mkinitfs patch
@@ -432,7 +432,7 @@ builder_main() {
 	# a sys install's boot loader, an atomic install's UKI). UEFI starts
 	# atomic installs, each version a unified kernel image (made by ukify)
 	# with a boot entry of its own.
-	iso) features="$features intel-media-driver libva-intel-driver amd-ucode intel-ucode
+	x86_64) features="$features intel-media-driver libva-intel-driver amd-ucode intel-ucode
 		$atomic efibootmgr ukify" ;;
 	arm64) features="$features $atomic efibootmgr ukify" ;;
 	# The firmware's package, so that each version of an atomic install
@@ -465,7 +465,7 @@ builder_main() {
 	local disc_apks="e2fsprogs xfsprogs lvm2 mdadm dosfstools sfdisk cryptsetup btrfs-progs
 		kbd-bkeymaps apparmor-profiles"
 	case $TARGET in
-	iso) disc_apks="$disc_apks syslinux grub-bios grub-efi efibootmgr" ;;
+	x86_64) disc_apks="$disc_apks syslinux grub-bios grub-efi efibootmgr" ;;
 	arm64) disc_apks="$disc_apks grub-efi efibootmgr" ;;
 	rpi) disc_apks="$disc_apks raspberrypi-bootloader" ;;
 	esac
@@ -549,7 +549,7 @@ builder_main() {
 			# makedepends from.
 			abuild -P /work/packages index || die "could not index $name"
 		else
-			# Without TARGET (iso, arm64 or rpi), which bindgen, run by mesa's
+			# Without TARGET (x86_64, arm64 or rpi), which bindgen, run by mesa's
 			# build, takes for the Rust target triple.
 			env -u TARGET abuild -r -P /work/packages || die "could not build $name"
 			mkdir -p /work/pkgcache/"$name"

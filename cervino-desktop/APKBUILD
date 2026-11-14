@@ -6,8 +6,8 @@
 # desktop features; PUBKEY, the file name of the public key it is signed with,
 # which is copied next to it; REPO, the URL of the repo it is published in,
 # or empty; REPOKEY, the file name of that repo's public key, copied next to
-# it too, or empty when it is PUBKEY; TARGET, the image it is for, iso,
-# arm64 or rpi; TARGET_ARCH, its architecture), flathub.flatpakrepo and the repo's AppArmor profiles
+# it too, or empty when it is PUBKEY; TARGET, the image it is for,
+# x86_64, arm64 or rpi; TARGET_ARCH, its architecture), flathub.flatpakrepo and the repo's AppArmor profiles
 # (apparmor.d/) next to it.
 #
 # Some of the files belong to other packages (alpine-baselayout's inittab and

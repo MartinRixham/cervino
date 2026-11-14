@@ -1,6 +1,6 @@
 # mkimg.gnomelive.sh: the gnomelive mkimage profile. build-alpine-gnome-iso.sh
 # copies it into aports/scripts/, with mkimg.gnomelive.conf (the build
-# settings: gnomelive_target, iso, arm64 or rpi; gnomelive_kernel_opts, the
+# settings: gnomelive_target, x86_64, arm64 or rpi; gnomelive_kernel_opts, the
 # kernel arguments; gnomelive_apks, the on-disc repo's packages) and, for
 # the Raspberry Pi, usercfg.txt next to it.
 # mkimage reads the variables set here and sets the ones used (ARCH among
