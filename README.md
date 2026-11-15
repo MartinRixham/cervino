@@ -372,6 +372,53 @@ packages they were built with until a release publishes newer ones.
 Without the variable, as without `APK_REPO`, an image gets no update
 repository.
 
+### Upgrading to a CI build
+
+To put a CI build's packages on an installed machine before a release
+publishes them, run [`ci/local-repo.sh`](ci/local-repo.sh) on that machine,
+from a clone of this repository, as your user:
+
+```sh
+ci/local-repo.sh            # the last successful run of the checked out branch
+ci/local-repo.sh 43640904096   # or a workflow run, by its ID
+```
+
+It needs `gh` (`doas apk add github-cli`, then `gh auth login`: GitHub only
+gives artifacts to logged in users), and CI keeps a run's artifacts for 14
+days. The script downloads the run's `cervino-repo-<target>` artifact for
+the machine (`TARGET=rpi`, `arm64` or `x86_64` to choose another) and
+serves it on `http://127.0.0.1:8080` (`PORT`) until you stop it with
+Ctrl-C. The artifact's packages are signed with that build's own key, and
+it has no index, so the script makes one, signed with a key made for the
+run, whose private half it deletes before serving. It needs no root, and
+changes nothing on the system: it prints the commands that do, with the
+paths filled in. In another terminal, have apk trust the two public keys
+(the build's, which the `cervino-desktop` package brings, and the index's,
+`cervino-local.rsa.pub`), add the repository, and upgrade:
+
+```sh
+doas cp /tmp/tmp.XXXXXX/keys/*.pub /etc/apk/keys/   # the directory the script prints
+echo http://127.0.0.1:8080/v3.24 | doas tee /etc/apk/repositories.d/local.list
+doas update-alpine
+```
+
+Then, before restarting, remove the repository and the index's key again,
+and stop the script:
+
+```sh
+doas rm /etc/apk/repositories.d/local.list /etc/apk/keys/cervino-local.rsa.pub
+```
+
+On an atomic install the shutdown takes them out of the new version too.
+The build's key (`build-<id>.rsa.pub`) stays in `/etc/apk/keys`, as the
+upgraded `cervino-desktop` owns it; if the upgrade did not go through,
+remove it as well.
+
+Packages whose version is the one installed are left as they are, though
+the build made them anew. The upgraded `cervino-desktop` names the update
+repository the build was made for, so the machine goes on to take releases
+from there.
+
 ## Booting the ISO
 
 The live system runs from a read-only image of the installed system on the
