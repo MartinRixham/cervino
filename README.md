@@ -165,6 +165,20 @@ The update repo also has packages that Alpine lacks, built from
   terminal interface and command line client for searching and
   downloading from Library Genesis (run `tomesole`, or `tomesole doctor`
   to check its setup). `doas apk add tomesole` adds it.
+- `spotatui` ([spotatui](https://github.com/LargeModGames/spotatui)), a
+  terminal Spotify client (Premium accounts only), built with its Soloist
+  engine. Spotify refuses the keys of some accounts' tracks to librespot,
+  the open source player inside spotatui and Alpine's `ncspot`: they log
+  in and nothing plays. Soloist, Spotify's own headless player, plays for
+  those accounts. To use it, make an API key at
+  <https://developer.spotify.com/dashboard/soloist>, then in spotatui's
+  Settings have Soloist Path download Soloist from Spotify (it may not be
+  passed on, so the package has none), set Playback Engine to Soloist,
+  and choose spotatui in the device menu of a Spotify app on the same
+  network, once. Soloist is built for glibc: the package brings the few
+  glibc functions that `gcompat` lacks, and spotatui loads them into it.
+  Spotify's builds of Soloist stop working after 90 days: download it
+  again then. `doas apk add spotatui` adds it.
 
 ## Requirements
 
@@ -219,7 +233,7 @@ the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publi
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
 `mutter`, `dnsmasq`, `libsoup3`, `tui-torrent`, `bapk`, `qstop`,
-`bijiben`, `rpi-keyboard-config`, `tomesole`, and the Pi's
+`bijiben`, `rpi-keyboard-config`, `tomesole`, `spotatui`, and the Pi's
 `wpa_supplicant`, `bluez`, `mesa`, `rpi-keyboard-fw-update` and
 `cervino-kernel`) to the update repos (see [Updates](#updates)).
 
@@ -724,7 +738,7 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      from stopping after a second;
    - for every target, the packages in [`extra/`](extra), which Alpine
      lacks (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
-     `rpi-keyboard-config`, `tomesole`, and for the Pi only
+     `rpi-keyboard-config`, `tomesole`, `spotatui`, and for the Pi only
      `rpi-keyboard-fw-update`), built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and

@@ -1,0 +1,25 @@
+Soloist, which spotatui downloads from Spotify and runs, is built for glibc.
+Alpine's gcompat runs it on musl but for a few glibc functions it lacks:
+preload the library that has them (soloist-musl.c, installed by the
+APKBUILD) into every Soloist spotatui starts.
+
+--- a/src/infra/soloist/supervisor.rs
++++ b/src/infra/soloist/supervisor.rs
+@@ -280,6 +280,17 @@
+     .kill_on_drop(true);
+   #[cfg(windows)]
+   command.creation_flags(CREATE_NO_WINDOW);
++  // Soloist is built for glibc: on musl it runs with gcompat and the few
++  // glibc functions gcompat lacks, which this library has.
++  #[cfg(target_env = "musl")]
++  {
++    let mut preload = std::ffi::OsString::from("/usr/lib/spotatui/soloist-musl.so");
++    if let Some(others) = std::env::var_os("LD_PRELOAD").filter(|others| !others.is_empty()) {
++      preload.push(":");
++      preload.push(others);
++    }
++    command.env("LD_PRELOAD", preload);
++  }
+   command
+ }
+ 

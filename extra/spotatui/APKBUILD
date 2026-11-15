@@ -1,0 +1,60 @@
+# spotatui, a terminal Spotify client, which Alpine doesn't package, built
+# with its Soloist engine: Spotify refuses librespot (which spotatui and
+# Alpine's ncspot otherwise play with) the keys of some accounts' tracks,
+# and Soloist, Spotify's own headless player, is what plays for them.
+# spotatui downloads Soloist from Spotify when asked to (Settings, Soloist
+# Path); it may not be passed on. Soloist is built for glibc: gcompat runs
+# it, with soloist-musl.c, ours, for the glibc functions gcompat lacks,
+# which soloist-musl.patch, ours, has spotatui preload into it. Without
+# upstream's self-update (apk upgrades it) and telemetry. Published to the
+# update repo but not in world, so installs add it with apk. A change here
+# needs a new pkgrel, as ci/publish-repo.sh keeps a file already published.
+pkgname=spotatui
+pkgver=0.48.0
+pkgrel=0
+pkgdesc="Terminal Spotify client, with Spotify Soloist as a playback engine"
+url="https://github.com/LargeModGames/spotatui"
+arch="all"
+license="MIT"
+# What Soloist links and loads: abuild can't trace a program that isn't here.
+depends="gcompat libatomic libgcc pipewire-libs"
+makedepends="cargo cargo-auditable openssl-dev alsa-lib-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/LargeModGames/spotatui/archive/refs/tags/v$pkgver.tar.gz
+	soloist-musl.patch
+	soloist-musl.c
+	"
+# cargo fetches the crates in prepare().
+options="net"
+
+# On musl spotatui asks openssl-sys to build its own OpenSSL: link Alpine's.
+export OPENSSL_NO_VENDOR=1
+
+_features="tui,streaming,soloist,mpris,scripting,audio-viz-cpal,discord-rpc"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen --bin spotatui \
+		--no-default-features --features "$_features"
+	${CC:-cc} $CFLAGS -fPIC -shared $LDFLAGS -o soloist-musl.so \
+		"$srcdir"/soloist-musl.c
+}
+
+check() {
+	cargo test --frozen --lib --no-default-features --features "$_features"
+}
+
+package() {
+	install -Dm755 target/release/spotatui -t "$pkgdir"/usr/bin
+	install -Dm755 soloist-musl.so -t "$pkgdir"/usr/lib/spotatui
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+sha512sums="
+696e0b9b196e15793ed9e4f56a1c549a79bbb34cb337b1f6952c8612f5c134e022a523a65871be4baed53daa83ed26872a4b9db37e5008902534852e278568bc  spotatui-0.48.0.tar.gz
+3550fea6e3cc1fd010c5280162d9b98e712d9d919d2e7bbd634f95e87501391949ac148cb5000b21acca2daaaf4bae0f40b6c20a44cc3e97e2f08f0ba7dc6f95  soloist-musl.patch
+2d0b786032f7173f1dc1e02df29397b4958b524948ff0d6e0d3985f898c5534c8c5d60b857478e4d45fd094c0cf484a6ac81601f7e8426886cba92324d8917b0  soloist-musl.c
+"
