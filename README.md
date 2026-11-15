@@ -179,7 +179,8 @@ The update repo also has packages that Alpine lacks, built from
   Settings have Soloist Path download Soloist from Spotify (it may not be
   passed on, so the package has none), set Playback Engine to Soloist,
   and choose spotatui in the device menu of a Spotify app on the same
-  network, once. Soloist is built for glibc: the package brings the few
+  network, once (the package opens the firewall to local networks for
+  that, on the ports Soloist may listen on). Soloist is built for glibc: the package brings the few
   glibc functions that `gcompat` lacks, and spotatui loads them into it.
   Spotify's builds of Soloist stop working after 90 days: download it
   again then. `doas apk add spotatui` adds it.

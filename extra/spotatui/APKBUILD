@@ -6,18 +6,21 @@
 # Path); it may not be passed on. Soloist is built for glibc: gcompat runs
 # it, with soloist-musl.c, ours, for the glibc functions gcompat lacks,
 # which soloist-musl.patch, ours, has spotatui preload into it. Without
-# upstream's self-update (apk upgrades it) and telemetry. Published to the
+# upstream's self-update (apk upgrades it) and telemetry. With the firewall
+# rule that lets a Spotify app on the network reach Soloist, which the
+# install scripts load. Published to the
 # update repo but not in world, so installs add it with apk. A change here
 # needs a new pkgrel, as ci/publish-repo.sh keeps a file already published.
 pkgname=spotatui
 pkgver=0.48.0
-pkgrel=0
+pkgrel=1
 pkgdesc="Terminal Spotify client, with Spotify Soloist as a playback engine"
 url="https://github.com/LargeModGames/spotatui"
 arch="all"
 license="MIT"
 # What Soloist links and loads: abuild can't trace a program that isn't here.
 depends="gcompat libatomic libgcc pipewire-libs"
+install="$pkgname.post-install $pkgname.post-upgrade $pkgname.post-deinstall"
 makedepends="cargo cargo-auditable openssl-dev alsa-lib-dev"
 source="$pkgname-$pkgver.tar.gz::https://github.com/LargeModGames/spotatui/archive/refs/tags/v$pkgver.tar.gz
 	soloist-musl.patch
@@ -51,6 +54,20 @@ package() {
 	install -Dm755 target/release/spotatui -t "$pkgdir"/usr/bin
 	install -Dm755 soloist-musl.so -t "$pkgdir"/usr/lib/spotatui
 	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname
+
+	# Soloist's Connect port, where a Spotify app that found it by mDNS
+	# hands it the account, once: without it spotatui is missing from the
+	# app's device menu. Soloist has no option for the port and listens,
+	# on IPv4 only, on one the kernel picks, so this is the kernel's whole
+	# range (net.ipv4.ip_local_port_range), from local networks only.
+	install -d "$pkgdir"/etc/nftables.d
+	cat > "$pkgdir"/etc/nftables.d/60-spotatui.nft <<'EOF'
+table inet filter {
+	chain input {
+		ip saddr { 10.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } tcp dport 32768-60999 accept comment "Spotify Connect (spotatui's Soloist)"
+	}
+}
+EOF
 }
 
 sha512sums="
