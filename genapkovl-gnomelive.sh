@@ -169,7 +169,7 @@ makefile root:root 0755 "$tmp"/usr/local/sbin/adduser < "$here"/live/adduser
 # its initramfs, so apk itself only adds what the image lacks: the boot
 # loader (from the disc), firmware for hardware the image has none for, and
 # packages added in the live session. Then it removes the SPICE guest agent
-# outside a VM and makes the boot loader's configuration, which the packages' triggers would have made when the
+# and cervino-desktop-vm outside a VM and makes the boot loader's configuration, which the packages' triggers would have made when the
 # kernel was installed. Everything else goes to apk as it is.
 makefile root:root 0755 "$tmp"/usr/local/sbin/apk < "$here"/live/apk
 

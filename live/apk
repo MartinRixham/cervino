@@ -29,10 +29,12 @@ for a; do
 done
 /usr/sbin/apk "$@" || exit
 
-# The SPICE guest agent only in a VM (see the setup-disk shim).
+# The SPICE guest agent and cervino-desktop-vm only in a VM (see the
+# setup-disk shim).
 if [ -z "$CERVINO_VM" ]; then
-	/usr/sbin/apk del --root "$root" --quiet spice-vdagent spice-vdagent-openrc ||
-		echo "The SPICE guest agent could not be removed." >&2
+	/usr/sbin/apk del --root "$root" --quiet spice-vdagent spice-vdagent-openrc \
+		cervino-desktop-vm ||
+		echo "The packages for virtual machines could not be removed." >&2
 	rm -f "$root"/etc/runlevels/default/spice-vdagentd
 fi
 

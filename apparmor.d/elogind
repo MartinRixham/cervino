@@ -43,6 +43,8 @@ profile elogind /usr/libexec/elogind/elogind flags=(attach_disconnected) {
   /usr/lib/elogind/{,**} r,
 
   @{run}/elogind.pid rwk,
+  # Drop-ins written at boot (no suspend in a virtual machine)
+  @{run}/elogind/{,**} r,
   @{run}/systemd/{,**} rwlk,
   @{run}/user/{,**} rwlk,
   @{run}/udev/{,**} r,
@@ -79,7 +81,9 @@ profile elogind /usr/libexec/elogind/elogind flags=(attach_disconnected) {
   # system-sleep and system-shutdown hooks, unconfined.
   /bin/busybox Ux,
   /usr/sbin/kexec Ux,
+  /usr/libexec/elogind/system-sleep/ r,
   /usr/libexec/elogind/system-sleep/* Ux,
+  /usr/libexec/elogind/system-shutdown/ r,
   /usr/libexec/elogind/system-shutdown/* Ux,
   /etc/elogind/system-sleep/* Ux,
 

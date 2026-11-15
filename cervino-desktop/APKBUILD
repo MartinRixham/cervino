@@ -36,6 +36,10 @@ depends="/bin/sh doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc ava
 replaces="alpine-baselayout alpine-baselayout-data busybox-openrc dbus-openrc
 	earlyoom-openrc openrc shadow zram-init-openrc"
 install="$pkgname.post-install $pkgname.post-upgrade"
+# What only a virtual machine needs (see vm below): in the image's world, and
+# left out of a system installed on real hardware, as the SPICE guest agent
+# is (see live/setup-disk).
+subpackages="$pkgname-vm"
 triggers="$pkgname.trigger=/etc/apparmor.d:/etc/apparmor.d/*:/boot"
 # abuild would make the package provide a cmd: for each of its commands,
 # and cmd:apk, for the apk wrapper, conflicts with apk-tools' own; so no
@@ -506,6 +510,50 @@ EOF
 flatpak remotes >/dev/null 2>&1 || true
 EOF
 
+	# A virtual machine must not suspend itself. Its clocks keep counting
+	# while the host sleeps, so when the host wakes GNOME sees hours without
+	# input and suspends the guest at once; and a guest in s2idle looks
+	# "running" to the hypervisor, whose keyboard and pointer do not wake it.
+	# gnome-settings-daemon leaves the idle suspend out in a VM, but asks
+	# systemd whether it is in one, so here it never knows. elogind reads its
+	# sleep settings on every request, so this drop-in, written on each boot
+	# to /run, takes effect whenever it lands, and GNOME then hides Suspend.
+	# It goes in the -vm subpackage, which the installer leaves out on real
+	# hardware; the script still checks, as the live image, which has the
+	# package, starts on both.
+	makefile root:root 0755 "$pkgdir"/etc/local.d/vm-no-suspend.start <<'EOF'
+#!/bin/sh
+# Turns suspend and hibernation off when the system runs in a virtual
+# machine: see cervino-desktop's APKBUILD. The installer tells a VM the
+# same way (live/setup-disk).
+is_vm() {
+	# x86 CPUs flag a hypervisor; ARM guests have a device tree node or
+	# only the firmware's DMI strings to tell by.
+	grep -qsw hypervisor /proc/cpuinfo && return 0
+	[ -e /proc/device-tree/hypervisor ] && return 0
+	[ -e /sys/hypervisor/type ] && return 0
+	for f in sys_vendor product_name board_vendor bios_vendor; do
+		read -r id < /sys/class/dmi/id/$f || continue
+		case $id in
+		QEMU*|KVM*|Bochs*|VMware*|VirtualBox*|innotek*|Xen*|Parallels*|\
+		"Apple Virtualization"*|*"Virtual Machine"*|OpenStack*|Amazon\ EC2*|\
+		Google*)
+			return 0 ;;
+		esac
+	done 2>/dev/null
+	return 1
+}
+is_vm || exit 0
+mkdir -p /run/elogind/sleep.conf.d
+cat > /run/elogind/sleep.conf.d/50-vm.conf <<'CONF'
+[Sleep]
+AllowSuspend=no
+AllowHibernation=no
+AllowSuspendThenHibernate=no
+AllowHybridSleep=no
+CONF
+EOF
+
 	# GNOME Software lists Alpine's packages from the AppStream catalog of the
 	# repositories in /etc/apk/repositories, which nothing fetches by default.
 	# Fetch it daily (anacron, see above) and whenever a connection
@@ -619,4 +667,14 @@ Exec=kgx -T "Update Alpine Linux" -- sh -c "doas /usr/sbin/update-alpine; echo; 
 Icon=software-update-available
 Categories=System;
 EOF
+}
+
+# The files of the main package's that are only of use in a virtual machine.
+vm() {
+	pkgdesc="Cervino desktop settings for virtual machines (no suspend)"
+	depends=""
+	replaces=""
+	install=""
+	triggers=""
+	amove etc/local.d/vm-no-suspend.start
 }

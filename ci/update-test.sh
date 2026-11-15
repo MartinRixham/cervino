@@ -198,7 +198,7 @@ die() {
 
 host_main() {
 	repo=${1:?usage: ci/update-test.sh REPO_DIR}
-	set -- "$repo"/v*/*/cervino-desktop-*.apk
+	set -- "$repo"/v*/*/cervino-desktop-[0-9]*.apk
 	[ -f "$1" ] || die "no cervino-desktop package in $repo"
 	pkg=$(realpath "$1")
 	branch=${1#"$repo"/}

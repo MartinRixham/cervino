@@ -155,6 +155,23 @@ t_update_launcher() {
 
 t_update_launcher || true
 
+# These tests run in a virtual machine, where elogind has to refuse to
+# suspend: a guest that suspends itself (as GNOME does when idle, and at
+# once when the host wakes from its own sleep) cannot be woken from the
+# hypervisor's console.
+t_no_suspend_in_vm() {
+	desc="No suspend in a virtual machine"
+	can=$(gdbus call --system --dest org.freedesktop.login1 \
+		--object-path /org/freedesktop/login1 \
+		--method org.freedesktop.login1.Manager.CanSuspend 2>&1) ||
+		{ fail "$desc" "elogind did not answer CanSuspend: $can"; return 1; }
+	[ "$can" = "('no',)" ] ||
+		{ fail "$desc" "elogind's CanSuspend is $can, not 'no'"; return 1; }
+	pass "$desc"
+}
+
+t_no_suspend_in_vm || true
+
 # An atomic install's system files are read-only, while /etc, /var, /home
 # and root's home can be written to. A sys install is an ordinary system.
 t_read_only_system() {

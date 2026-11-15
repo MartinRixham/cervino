@@ -38,6 +38,10 @@ from a desktop distribution:
   installed, and not to the one the installer makes. An update gives them
   to users of older installs. The `tun` module is loaded at boot, as their
   network (and userspace VPNs) needs `/dev/net/tun`
+- suspend turned off in a virtual machine (`cervino-desktop-vm`, installed
+  only in a VM): GNOME would otherwise suspend an idle guest, and at once
+  when the host wakes from its own sleep, leaving a blank display that the
+  hypervisor's keyboard and pointer do not wake
 - OpenSSH installed, but sshd not enabled until you turn it on
   (`rc-update add sshd`): the installer's SSH step defaults to none. sftp
   runs the external `sftp-server`, so sshd's AppArmor profile need not
@@ -497,9 +501,10 @@ puts a wrapper in front of it that:
   installed system when you create an admin user (the default), who gets
   root with `doas` instead,
 - leaves the live session out of the installed system,
-- leaves the SPICE guest agent (`spice-vdagent`) out of the installed system
-  unless it is installed in a VM (`apk add spice-vdagent
-  spice-vdagent-openrc` adds it back),
+- leaves the SPICE guest agent (`spice-vdagent`) and `cervino-desktop-vm`
+  (no suspend in a VM) out of the installed system unless it is installed
+  in a VM (`apk add spice-vdagent spice-vdagent-openrc cervino-desktop-vm`
+  adds them back),
 - offers an atomic install, a system kept as versions (see below).
 
 An answer file passed with `-f` still overrides these defaults.

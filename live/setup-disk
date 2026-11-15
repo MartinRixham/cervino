@@ -46,7 +46,8 @@ case $disks in *" "*) stock=1 ;; esac
 [ -d "${disks:-/nonexistent}" ] && stock=1
 
 # Alpine's setup-disk, for what it does, copies the system (see the apk shim
-# in genapkovl-gnomelive.sh). Both leave out the SPICE guest agent but in a
+# in genapkovl-gnomelive.sh). Both leave out the SPICE guest agent and
+# cervino-desktop-vm (no suspend in a VM) but in a
 # VM, which a hypervisor shows on x86 with the CPU flag, and on aarch64
 # (which has none) in the firmware's SMBIOS tables: the maker or the
 # machine's name (Hyper-V's is "Virtual Machine").
@@ -381,8 +382,9 @@ if mount --bind /proc "$mnt"/proc && mount --bind /dev "$mnt"/dev; then
 	# keeps Flatpak, and update-alpine add installs packages.
 	apk del --root "$mnt" --quiet gnome-software-plugin-apk2 ||
 		echo "GNOME Software's apk plugin could not be removed." >&2
-	[ -n "$CERVINO_VM" ] || apk del --root "$mnt" --quiet spice-vdagent spice-vdagent-openrc ||
-		echo "The SPICE guest agent could not be removed." >&2
+	[ -n "$CERVINO_VM" ] || apk del --root "$mnt" --quiet spice-vdagent spice-vdagent-openrc \
+		cervino-desktop-vm ||
+		echo "The packages for virtual machines could not be removed." >&2
 	umount "$mnt"/dev "$mnt"/proc
 fi
 

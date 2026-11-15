@@ -446,14 +446,14 @@ builder_main() {
 	# apps stay in world, where they can be removed one by one. Also
 	# cervino-vlc, built below, which can be removed; not cervino-gstreamer,
 	# cervino-terminal or cervino-upnp, which users add from the repo. And
-	# the SPICE guest agent, which the installer leaves out but in a VM (see
-	# live/setup-disk).
+	# the SPICE guest agent and cervino-desktop-vm (no suspend in a VM),
+	# which the installer leaves out but in a VM (see live/setup-disk).
 	local world
 	world=$(printf '%s\n' alpine-base doas \
 		elogind polkit-elogind "$BROWSER" \
 		eudev udev-init-scripts udev-init-scripts-openrc \
 		spice-vdagent spice-vdagent-openrc \
-		$gnome_deps cervino-desktop cervino-vlc |
+		$gnome_deps cervino-desktop cervino-desktop-vm cervino-vlc |
 		sort -u)
 
 	# The image's on-disc apk repo, for Alpine's setup-disk (sys installs,
