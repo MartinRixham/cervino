@@ -179,6 +179,16 @@ The update repo also has packages that Alpine lacks, built from
   glibc functions that `gcompat` lacks, and spotatui loads them into it.
   Spotify's builds of Soloist stop working after 90 days: download it
   again then. `doas apk add spotatui` adds it.
+- `mullvad-containers`, which lets Firefox Multi-Account Containers send
+  each container through a different [Mullvad](https://mullvad.net)
+  server, picked by country and city in the container's settings. The
+  extension offers this for Mozilla VPN, which runs on Mullvad's servers:
+  the package answers it in the Mozilla VPN client's place, with Mullvad's
+  SOCKS5 proxies, which are reachable while connected to Mullvad by any
+  means, such as WireGuard in NetworkManager. After `doas apk add
+  mullvad-containers`, allow the native messaging and proxy permissions
+  in the extension's preferences, then restart Firefox. The extension
+  still calls the servers Mozilla VPN's.
 
 ## Requirements
 
@@ -233,7 +243,8 @@ the Actions tab and choose an Alpine branch there. Pushing a `v*` tag also publi
 as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
 `mutter`, `dnsmasq`, `libsoup3`, `tui-torrent`, `bapk`, `qstop`,
-`bijiben`, `rpi-keyboard-config`, `tomesole`, `spotatui`, and the Pi's
+`bijiben`, `rpi-keyboard-config`, `tomesole`, `spotatui`,
+`mullvad-containers`, and the Pi's
 `wpa_supplicant`, `bluez`, `mesa`, `rpi-keyboard-fw-update` and
 `cervino-kernel`) to the update repos (see [Updates](#updates)).
 
@@ -738,8 +749,9 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      from stopping after a second;
    - for every target, the packages in [`extra/`](extra), which Alpine
      lacks (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
-     `rpi-keyboard-config`, `tomesole`, `spotatui`, and for the Pi only
-     `rpi-keyboard-fw-update`), built the same way;
+     `rpi-keyboard-config`, `tomesole`, `spotatui`,
+     `mullvad-containers`, and for the Pi only `rpi-keyboard-fw-update`),
+     built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and
      [`cervino-gstreamer/APKBUILD`](cervino-gstreamer/APKBUILD): for the

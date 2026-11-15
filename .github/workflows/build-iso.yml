@@ -233,6 +233,14 @@ jobs:
           key: ${{ matrix.target }}-spotatui-${{ github.sha }}
           restore-keys: ${{ matrix.target }}-spotatui-
 
+      - name: Restore mullvad-containers
+        id: restore-mullvad-containers
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/mullvad-containers
+          key: ${{ matrix.target }}-mullvad-containers-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-mullvad-containers-
+
       - name: Restore rpi-keyboard-fw-update
         id: restore-rpi-keyboard-fw-update
         if: matrix.target == 'rpi'
@@ -526,6 +534,16 @@ jobs:
         with:
           path: ${{ runner.temp }}/pkgcache/spotatui
           key: ${{ steps.keys.outputs.spotatui }}
+
+      - name: Save mullvad-containers
+        if: >-
+          always() && steps.keys.outputs.mullvad_containers &&
+          steps.keys.outputs.mullvad_containers !=
+          steps.restore-mullvad-containers.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/mullvad-containers
+          key: ${{ steps.keys.outputs.mullvad_containers }}
 
       - name: Save rpi-keyboard-fw-update
         if: >-

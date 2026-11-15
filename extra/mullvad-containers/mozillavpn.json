@@ -1,0 +1,7 @@
+{
+  "name": "mozillavpn",
+  "description": "Mullvad servers for Multi-Account Containers' Mozilla VPN integration",
+  "path": "/usr/libexec/mullvad-containers/mozillavpn-shim",
+  "type": "stdio",
+  "allowed_extensions": ["@testpilot-containers"]
+}

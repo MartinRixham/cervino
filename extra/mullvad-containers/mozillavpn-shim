@@ -1,0 +1,97 @@
+#!/usr/bin/python3 -I
+"""Fake "mozillavpn" native-messaging host for Firefox Multi-Account Containers.
+
+Answers the extension's {"t":"status"} and {"t":"servers"} requests using
+Mullvad's public relay list, so the built-in server picker offers Mullvad's
+SOCKS5 proxies while you're connected to Mullvad by any means (e.g. NetworkManager).
+"""
+import json
+import socket
+import struct
+import sys
+import threading
+import time
+import urllib.request
+
+RELAYS_URL = "https://api.mullvad.net/www/relays/wireguard/"
+POLL_SECONDS = 5
+_out_lock = threading.Lock()
+
+
+def send(msg):
+    data = json.dumps(msg).encode()
+    with _out_lock:
+        sys.stdout.buffer.write(struct.pack("@I", len(data)) + data)
+        sys.stdout.buffer.flush()
+
+
+def read():
+    raw = sys.stdin.buffer.read(4)
+    if len(raw) < 4:
+        return None
+    (length,) = struct.unpack("@I", raw)
+    return json.loads(sys.stdin.buffer.read(length))
+
+
+def on_mullvad():
+    # 10.64.0.1:1080 is Mullvad's in-tunnel SOCKS5 proxy; reachable only when connected.
+    try:
+        with socket.create_connection(("10.64.0.1", 1080), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def status_msg():
+    return {"t": "status", "status": {"vpn": "StateOn" if on_mullvad() else "StateOff"}}
+
+
+def servers_msg():
+    with urllib.request.urlopen(RELAYS_URL, timeout=15) as r:
+        relays = json.load(r)
+    countries = {}
+    for rel in relays:
+        if not rel.get("active") or not rel.get("socks_name"):
+            continue
+        c = countries.setdefault(rel["country_code"], {
+            "code": rel["country_code"], "name": rel["country_name"], "cities": {}})
+        city = c["cities"].setdefault(rel["city_code"], {
+            "code": rel["city_code"], "name": rel["city_name"], "servers": []})
+        # Extension builds `socks://${socksName}.mullvad.net:1080`
+        city["servers"].append({
+            "hostname": rel["hostname"],
+            "socksName": rel["socks_name"].removesuffix(".mullvad.net"),
+            "weight": 1,
+        })
+    out = []
+    for c in sorted(countries.values(), key=lambda c: c["name"]):
+        c["cities"] = sorted(c["cities"].values(), key=lambda x: x["name"])
+        out.append(c)
+    return {"t": "servers", "servers": {"countries": out}}
+
+
+def watch_status():
+    last = None
+    while True:
+        msg = status_msg()
+        if msg != last:
+            send(msg)
+            last = msg
+        time.sleep(POLL_SECONDS)
+
+
+def main():
+    threading.Thread(target=watch_status, daemon=True).start()
+    while (msg := read()) is not None:
+        t = msg.get("t")
+        try:
+            if t == "status":
+                send(status_msg())
+            elif t == "servers":
+                send(servers_msg())
+        except Exception as e:  # never crash the port; extension just retries later
+            print(f"mozillavpn-shim: {e}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,62 @@
+# mullvad-containers, ours: a stand-in for the Mozilla VPN client's native
+# messaging host, so that Firefox Multi-Account Containers offers Mullvad's
+# SOCKS5 proxies in its Mozilla VPN server picker. Mozilla VPN runs on
+# Mullvad's servers, and the extension only ever turns a server's socksName
+# into socks://<socksName>.mullvad.net:1080, so any Mullvad connection will
+# do, such as WireGuard set up in NetworkManager.
+#
+# The protocol is the extension's (js/background/mozillaVpnBackground.js in
+# its 8.x releases): it sends {"t":"status"} and {"t":"servers"}, and reads
+# back the VPN state (StateOn/StateOff) and the server list by country and
+# city. The shim answers from Mullvad's public relay list, and reports the
+# VPN on while Mullvad's in-tunnel proxy, 10.64.0.1:1080, accepts
+# connections.
+#
+# Published to the update repo but not in world, so installs add it with
+# apk. A change here needs a new pkgrel, as ci/publish-repo.sh keeps a file
+# already published.
+pkgname=mullvad-containers
+pkgver=1
+pkgrel=0
+pkgdesc="Mullvad servers in Firefox Multi-Account Containers"
+url="https://github.com/martinrixham/cervino"
+arch="noarch"
+license="MIT"
+depends="python3"
+checkdepends="python3"
+source="mozillavpn-shim
+	mozillavpn.json
+	"
+builddir="$srcdir"
+
+# A status request gets a status reply, framed as native messaging is. With
+# no Mullvad connection, as in the build, the VPN is off.
+check() {
+	python3 -m json.tool mozillavpn.json > /dev/null
+	python3 - mozillavpn-shim <<-'EOF'
+	import json, struct, subprocess, sys
+	p = subprocess.Popen([sys.executable, "-I", sys.argv[1]],
+	                     stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+	req = json.dumps({"t": "status"}).encode()
+	p.stdin.write(struct.pack("@I", len(req)) + req)
+	p.stdin.flush()
+	(n,) = struct.unpack("@I", p.stdout.read(4))
+	msg = json.loads(p.stdout.read(n))
+	p.kill()
+	assert msg["t"] == "status" and msg["status"]["vpn"] in ("StateOn", "StateOff"), msg
+	EOF
+}
+
+package() {
+	install -Dm755 mozillavpn-shim -t "$pkgdir"/usr/libexec/$pkgname
+	# The system directory Alpine's Firefox reads manifests from. The
+	# manifest's name, mozillavpn, is the one the extension asks for (and
+	# the Mozilla VPN client's, which Alpine doesn't package).
+	install -Dm644 mozillavpn.json \
+		-t "$pkgdir"/usr/lib/mozilla/native-messaging-hosts
+}
+
+sha512sums="
+a63cbb855d282783f52869770676dcec67fc5056d1cf93ae54301560ef018e916fb67fd0f4e5e04435591c22865fdd37132ec8ec638f36880bef05a1f2a9541d  mozillavpn-shim
+f419c4fb9bb4facb788be6ed58a3c8ed8382da288b031c6b71f91ff3435cb24c4a5b29ff534f0f7ee541ef1cce237bceae138ea11c6ed720bb63bb55c8b34e23  mozillavpn.json
+"

@@ -496,6 +496,7 @@ builder_main() {
 	local name file repodir=/work/packages/cervino/$ARCH
 	local patched="mutter showtime dnsmasq libsoup3" replaces="mutter dnsmasq libsoup3"
 	local extra="tui-torrent bapk qstop bijiben rpi-keyboard-config tomesole spotatui"
+	extra+=" mullvad-containers"
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"
