@@ -596,6 +596,37 @@ elif [ ! -e /boot/vmlinuz-"$flavor" ]; then
 fi
 exec /usr/libexec/cervino/update-boot
 EOF
+	# An encrypted atomic install's initramfs asks for the disk's passphrase
+	# with disk-passphrase (cryptkey=EXEC= on the command line), which keeps
+	# it in the kernel keyring for an automatic login to unlock the login
+	# keyring with. The installer adds the feature, which puts it in the
+	# initramfs, to mkinitfs.conf; cryptsetup's feature has the rest, but
+	# is listed too, so the feature stands alone. keyctl is /bin's or
+	# /usr/bin's, as keyutils installs it.
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/disk-passphrase \
+		< "$startdir"/disk-passphrase
+	makefile root:root 0644 "$pkgdir"/etc/mkinitfs/features.d/cervino-passphrase.files <<'EOF'
+/usr/libexec/cervino/disk-passphrase
+/sbin/cryptsetup
+/bin/keyctl
+/usr/bin/keyctl
+EOF
+	# At GDM's automatic login, pam_cryptsetup_keyring (pam-cryptsetup-keyring,
+	# from extra/, one of DEPENDS) hands that passphrase to pam_gnome_keyring,
+	# which unlocks the login keyring with it if it is the keyring's
+	# password. This is Alpine's GDM service, in /usr/lib/pam.d, which it
+	# overrides, with those two lines added; both are optional and do
+	# nothing without the key. GDM's own pam_gdm would do the same, but
+	# Alpine builds it without keyutils.
+	makefile root:root 0644 "$pkgdir"/etc/pam.d/gdm-autologin <<'EOF'
+#%PAM-1.0
+auth       required    pam_rootok.so
+-auth      optional    pam_cryptsetup_keyring.so
+-auth      optional    pam_gnome_keyring.so
+account    include     base-account
+password   include     base-auth
+session    include     base-session
+EOF
 
 	# At shutdown, the staged version is finished and made the one to boot:
 	# the service runs in the shutdown runlevel, after the others have

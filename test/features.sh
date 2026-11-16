@@ -1032,6 +1032,33 @@ t_secret_service() {
 		{ echo "no Secret Service (org.freedesktop.secrets) on the session bus"; return 1; }
 }
 
+# An automatic login unlocks the login keyring with the passphrase the
+# encrypted disk was opened with: pam_cryptsetup_keyring reads it from the
+# kernel keyring, where the initramfs's disk-passphrase (on an encrypted
+# atomic install's command line) left it, for pam_gnome_keyring.
+t_autologin_keyring() {
+	# PAM reads /etc/pam.d's over the package's, in /usr/lib/pam.d.
+	local pam=/etc/pam.d/gdm-autologin mod=/usr/lib/security/pam_cryptsetup_keyring.so auth
+	[[ -r $pam ]] || pam=/usr/lib/pam.d/gdm-autologin
+	[[ -r $pam ]] || { echo "no gdm-autologin PAM service (GDM not installed)"; return 2; }
+	auth=$(awk '$1 ~ /^-?auth$/ { print $3 }' "$pam" | tr '\n' ' ')
+	[[ $auth == *"pam_cryptsetup_keyring.so "*"pam_gnome_keyring.so "* ]] ||
+		{ echo "$pam has no pam_cryptsetup_keyring then pam_gnome_keyring in auth: $auth"; return 1; }
+	grep -aq libkeyutils "$mod" 2>/dev/null ||
+		{ echo "$mod not built with keyutils"; return 1; }
+	case " $(cat /proc/cmdline) " in
+	*" cryptroot="*) ;;
+	*) echo "root not encrypted"; return 2 ;;
+	esac
+	[[ -f /etc/kernel/cmdline ]] || { echo "not an atomic install"; return 2; }
+	case " $(cat /proc/cmdline) " in
+	*" cryptkey=EXEC=/usr/libexec/cervino/disk-passphrase "*) ;;
+	*) echo "the initramfs does not ask for the passphrase with disk-passphrase"; return 1 ;;
+	esac
+	grep -q '^features=.*[" ]cervino-passphrase[" ]' /etc/mkinitfs/mkinitfs.conf ||
+		{ echo "mkinitfs.conf lacks the cervino-passphrase feature"; return 1; }
+}
+
 t_app_store_sandbox() {
 	have flatpak || { echo "Flatpak not installed"; return 1; }
 	[[ -n $(flatpak remotes --columns=name 2>/dev/null) ]] || {
@@ -1399,6 +1426,7 @@ run_test "xdg-open available"                          t_xdg_open
 run_test "Terminal (Zellij in foot, AstroNvim)"        t_terminal
 run_test "Media sharing (Rygel) from GNOME Settings"    t_media_sharing
 run_test "Password storage (Secret Service)"           t_secret_service
+run_test "Autologin unlocks keyring (disk passphrase)"  t_autologin_keyring
 run_test "Sandboxed app store (Flatpak)"               t_app_store_sandbox
 run_test "Package repositories fetched over HTTPS"     t_package_repos_https
 run_test "Distribution packages in GNOME Software"     t_app_store_distro_packages

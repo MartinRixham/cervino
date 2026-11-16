@@ -334,6 +334,9 @@ fi
 if [ -n "$crypt" ]; then
 	cmdline="root=/dev/mapper/root cryptroot=UUID=$(cryptsetup luksUUID "$rootpart")"
 	cmdline="$cmdline cryptdm=root"
+	# The passphrase is asked for by cervino-desktop's disk-passphrase,
+	# which keeps it for an automatic login to unlock the login keyring with.
+	cmdline="$cmdline cryptkey=EXEC=/usr/libexec/cervino/disk-passphrase"
 else
 	cmdline="root=UUID=$uuid"
 fi
@@ -356,13 +359,14 @@ esac
 mkdir -p "$mnt"/etc/kernel
 echo "$cmdline" > "$mnt"/etc/kernel/cmdline
 
-# The initramfs's features, as Alpine's setup-disk picks them, and the
-# kernel hook builds it rather than mkinitfs's trigger.
+# The initramfs's features, as Alpine's setup-disk picks them (with
+# cervino-desktop's disk-passphrase on an encrypted disk), and the kernel
+# hook builds it rather than mkinitfs's trigger.
 features="ata base scsi usb virtio"
 [ -z "$pi" ] || features="base mmc usb"
 features="$features btrfs"
 case $d in nvme*) features="$features nvme" ;; mmcblk*) features="$features mmc" ;; esac
-[ -z "$crypt" ] || features="$features cryptsetup keymap"
+[ -z "$crypt" ] || features="$features cryptsetup keymap cervino-passphrase"
 printf 'features="%s"\ndisable_trigger=yes\n' "$features" > "$mnt"/etc/mkinitfs/mkinitfs.conf ||
 	die "could not write mkinitfs.conf"
 

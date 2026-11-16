@@ -72,6 +72,10 @@ profile gdm-session-worker /usr/libexec/gdm-session-worker flags=(attach_disconn
   @{PROC}/@{pid}/fd/ r,
   @{PROC}/@{pid}/attr/{,apparmor/}exec rw,
   @{PROC}/@{pid}/task/@{tid}/attr/{,apparmor/}exec rw,
+  # pam_cryptsetup_keyring, for an automatic login, looks for the disk's
+  # passphrase (cervino-desktop's disk-passphrase) here when its keyrings
+  # don't reach it
+  @{PROC}/keys r,
 
   # The sessions, the keyring daemon pam_gnome_keyring starts, and the
   # scripts GDM runs as root around them. The keyring daemon gets ux, not

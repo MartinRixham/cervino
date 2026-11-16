@@ -1,0 +1,33 @@
+# pam-cryptsetup-keyring, ours: a PAM module that hands the passphrase an
+# encrypted disk was opened with at boot (cervino-desktop's disk-passphrase
+# leaves it in the kernel keyring) to pam_gnome_keyring at GDM's automatic
+# login, as GDM's pam_gdm would if Alpine built it with keyutils.
+# cervino-desktop depends on it and puts it in /etc/pam.d/gdm-autologin. A
+# change here needs a new pkgrel, as ci/publish-repo.sh keeps a file already
+# published.
+pkgname=pam-cryptsetup-keyring
+pkgver=1.0
+pkgrel=0
+pkgdesc="PAM module passing the disk's boot passphrase to the login keyring"
+url="https://github.com/MartinRixham/cervino"
+arch="all"
+license="Apache-2.0"
+makedepends="keyutils-dev linux-pam-dev"
+source="pam_cryptsetup_keyring.c"
+builddir="$srcdir"
+options="!check" # No tests: test/features.sh checks the installed system.
+
+build() {
+	# shellcheck disable=SC2086 # CFLAGS and LDFLAGS are lists
+	${CC:-cc} $CFLAGS -Wall -Wextra -Werror -fPIC -shared \
+		-o pam_cryptsetup_keyring.so pam_cryptsetup_keyring.c \
+		$LDFLAGS -lpam -lkeyutils
+}
+
+package() {
+	install -Dm755 pam_cryptsetup_keyring.so -t "$pkgdir"/usr/lib/security
+}
+
+sha512sums="
+c6fe142959b45770805b95be940d30fcecb2e3f69883398af82b64b4683b42655f5ba0f433f564720759acc97a936006074c335449f10307cc06c9c9494edcdd  pam_cryptsetup_keyring.c
+"

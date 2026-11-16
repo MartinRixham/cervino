@@ -249,7 +249,7 @@ as a GitHub release, and the packages built for them (`cervino-desktop`,
 `cervino-vlc`, `cervino-gstreamer`, `cervino-terminal`, `cervino-upnp`,
 `mutter`, `dnsmasq`, `libsoup3`, `tui-torrent`, `bapk`, `qstop`,
 `bijiben`, `rpi-keyboard-config`, `tomesole`, `spotatui`,
-`mullvad-containers`, and the Pi's
+`mullvad-containers`, `pam-cryptsetup-keyring`, and the Pi's
 `wpa_supplicant`, `bluez`, `mesa`, `rpi-keyboard-fw-update` and
 `cervino-kernel`) to the update repos (see [Updates](#updates)).
 
@@ -532,7 +532,8 @@ On a PC, an atomic install erases the disk and makes three partitions: a
 `/boot/efi`), swap (twice the RAM, at most 4 GiB or a quarter of
 the disk, as Alpine sizes it; encrypted with a new random key at each boot
 if the disk is) and a btrfs volume, inside LUKS2 if you chose encryption
-(its passphrase is asked for at every boot). The volume holds each version
+(its passphrase is asked for at every boot; see
+[Encryption and automatic login](#encryption-and-automatic-login)). The volume holds each version
 of the system as a read-only subvolume, `roots/<date and time>`, with a
 writable `/etc` of its own nested in it, beside `@var` and `@home`, which
 all versions share and which are mounted on `/var` and `/home` (root's
@@ -556,6 +557,35 @@ desktop features' configuration) and your changes under `/etc`. The live user, i
 home directory, its doas and polkit rules, its init script and GDM autologin
 are dropped from that copy, so create a user in `setup-alpine`'s user step and
 log in as that user. Without one there is no account GDM can log in to.
+
+#### Encryption and automatic login
+
+On an encrypted atomic install with **Automatic Login** turned on (GNOME
+Settings, Users), the disk's passphrase also unlocks the login keyring, so
+apps' saved passwords are there without a second prompt, as on Fedora. The
+initramfs asks for it with `cervino-desktop`'s
+[`disk-passphrase`](cervino-desktop/disk-passphrase) (the kernel argument
+`cryptkey=EXEC=/usr/libexec/cervino/disk-passphrase`, and the
+`cervino-passphrase` feature in `/etc/mkinitfs/mkinitfs.conf`), which
+leaves it in root's kernel keyring as `cryptsetup`, readable by root only
+and gone after five minutes. At the automatic login a PAM module,
+`pam_cryptsetup_keyring` ([`extra/pam-cryptsetup-keyring`](extra/pam-cryptsetup-keyring),
+added to `/etc/pam.d/gdm-autologin` by `cervino-desktop`), reads it and
+hands it to `pam_gnome_keyring`. GDM's own `pam_gdm` does this on other
+distributions, but Alpine builds it without keyutils, which it needs.
+
+That only unlocks a login keyring whose password is the disk's passphrase.
+The keyring is made at the first login, with the password it was given:
+your account's, if you logged in with it before turning on the automatic
+login, as you do on a new install. Change the keyring's password to the
+disk's passphrase in Passwords and Keys (Seahorse): right-click Login,
+Change Password. Do it again after changing the disk's passphrase
+(`cryptsetup luksChangeKey`). When they differ, nothing is unlocked, as
+before. Atomic installs encrypted before this get it with the update that
+brings it, which rebuilds the initramfs; to have the initramfs ask for the
+passphrase itself again, take `cryptkey=...` out of `/etc/kernel/cmdline`
+and run `doas /usr/libexec/cervino/update-boot`. A `sys` install, with
+Alpine's own disk setup, doesn't have it.
 
 ## aarch64 ISO
 
@@ -756,7 +786,8 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
    - for every target, the packages in [`extra/`](extra), which Alpine
      lacks (`tui-torrent`, `bapk`, `qstop`, `bijiben`,
      `rpi-keyboard-config`, `tomesole`, `spotatui`,
-     `mullvad-containers`, and for the Pi only `rpi-keyboard-fw-update`),
+     `mullvad-containers`, `pam-cryptsetup-keyring`, and for the Pi only
+     `rpi-keyboard-fw-update`),
      built the same way;
    - the `cervino-vlc` and `cervino-gstreamer` packages, built with
      abuild from [`cervino-vlc/APKBUILD`](cervino-vlc/APKBUILD) and

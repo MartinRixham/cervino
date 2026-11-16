@@ -1,0 +1,74 @@
+#!/bin/sh
+# disk-passphrase: asks for the encrypted root's passphrase at boot, and
+# leaves it in root's kernel keyring for an automatic login to unlock the
+# login keyring with (pam-cryptsetup-keyring's PAM module reads it, as
+# GDM's pam_gdm does on distributions whose systemd opens the disk).
+#
+# The initramfs runs it: an atomic install's kernel command line has
+# cryptkey=EXEC=/usr/libexec/cervino/disk-passphrase, and its mkinitfs.conf
+# the cervino-passphrase feature, which puts it, cryptsetup and keyctl in
+# the initramfs. nlplug-findfs runs it once it has found the disk, with no
+# arguments or environment, its standard input the console's, and opens the
+# disk with what it prints; it doesn't ask again if that fails, so this asks
+# until the passphrase opens the disk, as nlplug-findfs itself would.
+#
+# The key, "cryptsetup" in root's user keyring, which outlives the
+# initramfs, is root's alone, and gone after five minutes, by which time
+# an automatic login has had it.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+cryptroot=
+# shellcheck disable=SC2013
+for opt in $(cat /proc/cmdline); do
+	case $opt in cryptroot=*) cryptroot=${opt#cryptroot=} ;; esac
+done
+
+# The disk: cryptroot is UUID= (the installer's), or a device, or another
+# tag findfs knows. Without it the passphrase is not checked.
+dev=
+case $cryptroot in
+UUID=*)
+	for d in /sys/class/block/*; do
+		d=/dev/${d##*/}
+		[ "$(cryptsetup luksUUID "$d" 2>/dev/null)" = "${cryptroot#UUID=}" ] || continue
+		dev=$d
+		break
+	done
+	;;
+/dev/*) dev=$cryptroot ;;
+?*) dev=$(findfs "$cryptroot" 2>/dev/null) ;;
+esac
+
+trap 'stty echo 2>/dev/null' EXIT
+trap 'exit 1' INT TERM HUP
+
+tries=5
+while [ "$tries" -gt 0 ]; do
+	tries=$((tries - 1))
+	printf 'Enter passphrase for %s: ' "${dev:-$cryptroot}" >&2
+	stty -echo 2>/dev/null
+	IFS= read -r pass || { stty echo 2>/dev/null; echo >&2; exit 1; }
+	stty echo 2>/dev/null
+	echo >&2
+	if [ -n "$dev" ] &&
+		! printf %s "$pass" | cryptsetup open --test-passphrase --key-file=- "$dev" 2>/dev/null; then
+		echo "No key available with this passphrase." >&2
+		continue
+	fi
+	# Changing the key takes possessing it: the user keyring, where it goes,
+	# is linked to the session keyring, if it isn't already (a process
+	# without a session keyring of its own has root's user session keyring,
+	# which links it). The timeout first, so that the key goes even if the
+	# rest fails. Root's processes with a session keyring that doesn't link
+	# the user keyring (pam_keyinit's) can still read it, as its owner's
+	# (setperm).
+	keyctl link @u @s 2>/dev/null
+	id=$(printf %s "$pass" | keyctl padd user cryptsetup @u 2>/dev/null) &&
+		keyctl timeout "$id" 300 && keyctl setperm "$id" 0x3f0b0000 ||
+		echo "The passphrase could not be kept for the login keyring." >&2
+	printf %s "$pass"
+	exit 0
+done
+echo "Opening ${dev:-$cryptroot} failed, amount of tries exhausted." >&2
+exit 1

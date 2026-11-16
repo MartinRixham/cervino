@@ -424,9 +424,14 @@ builder_main() {
 	# The installer's setup-disk shim (see live/setup-disk) offers an
 	# atomic install: the system on a btrfs volume, optionally encrypted,
 	# booted from a FAT boot partition. Installed systems need the same tools
-	# to keep that partition up to date, and kernel-hooks to run
-	# cervino-desktop's hook after a kernel upgrade.
-	local atomic="btrfs-progs cryptsetup cryptsetup-openrc blkid dosfstools sfdisk kernel-hooks"
+	# to keep that partition up to date, kernel-hooks to run
+	# cervino-desktop's hook after a kernel upgrade, keyutils's keyctl, with
+	# which the initramfs keeps an encrypted disk's passphrase for an
+	# automatic login (cervino-desktop's disk-passphrase), and
+	# pam-cryptsetup-keyring (from extra/), which hands it to the login
+	# keyring.
+	local atomic="btrfs-progs cryptsetup cryptsetup-openrc blkid dosfstools sfdisk kernel-hooks
+		keyutils pam-cryptsetup-keyring"
 	case $TARGET in
 	# CPU microcode updates: the images in /boot go before the initramfs (in
 	# a sys install's boot loader, an atomic install's UKI). UEFI starts
@@ -482,7 +487,8 @@ builder_main() {
 	# patches: stop if Alpine's has moved on, as its changes (security
 	# fixes, rebuilds for libraries' new sonames) would be missing.
 	# Built the same way, those in extra/ are packages Alpine lacks, with
-	# no _alpine: published as they are, but not in world.
+	# no _alpine: published as they are, but not in world
+	# (pam-cryptsetup-keyring comes with cervino-desktop, which depends on it).
 	# abuild -r installs what they build with (abuild-apk, which the abuild
 	# group may run) and adds the packages it built before to the repos, so
 	# vlc builds with ffmpeg7-dev and gst-plugins-bad with
@@ -496,7 +502,7 @@ builder_main() {
 	local name file repodir=/work/packages/cervino/$ARCH
 	local patched="mutter showtime dnsmasq libsoup3" replaces="mutter dnsmasq libsoup3"
 	local extra="tui-torrent bapk qstop bijiben rpi-keyboard-config tomesole spotatui"
-	extra+=" mullvad-containers"
+	extra+=" mullvad-containers pam-cryptsetup-keyring"
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"
