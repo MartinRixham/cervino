@@ -86,13 +86,20 @@ EOF
 	# GDM's "Cervino Terminal" session: foot running zellij, alone in cage,
 	# which shows one app full screen and exits when it does, so leaving
 	# Zellij logs out. -d has foot leave out its title bar (cage draws
-	# none) and -s lets Ctrl Alt F<n> switch virtual terminals.
+	# none) and -s lets Ctrl Alt F<n> switch virtual terminals. The command
+	# is a script because GDM wraps Exec in double quotes to hand it to
+	# gdm-wayland-session as one argument, so quotes of its own, as round
+	# the font's name, would split it into several and the login fail.
+	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino-terminal-session <<'EOF'
+#!/bin/sh
+exec cage -d -s -- foot --app-id=zellij --font="DroidSansM Nerd Font:size=11" zellij
+EOF
 	makefile root:root 0644 "$pkgdir"/usr/share/wayland-sessions/cervino-terminal.desktop <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=Cervino Terminal
 Comment=Zellij in foot, full screen, without GNOME
-Exec=cage -d -s -- foot --app-id=zellij --font="DroidSansM Nerd Font:size=11" zellij
+Exec=/usr/libexec/cervino-terminal-session
 DesktopNames=cage
 EOF
 
