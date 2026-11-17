@@ -15,10 +15,10 @@
 #    only when rpi/linux-rpi or Alpine's linux-rpi changed), signed with a
 #    throwaway key, and checks it (check_package): what it provides, its
 #    config against Alpine's linux-rpi's, the page size in its kernel
-#    image's header, that it takes linux-rpi's place and gives it back as
-#    the apk wrapper deletes it, and that its pre-install script turns down
-#    a system that is not an atomic install (and, on a Pi 5 or 500 that is
-#    one, accepts it). --check does the same for REPO_DIR's package.
+#    image's header, that it takes linux-rpi's place and installs for its
+#    flavor's name (linux-rpi16k), and that its pre-install script turns
+#    down an earlier Pi (and, on a Pi 5 or 500, accepts it). --check does
+#    the same for REPO_DIR's package.
 # 2. --vm, in another: installs this machine's world, cervino-kernel in
 #    place of linux-rpi, with linux-virt and the packages the VM test adds,
 #    into a btrfs disk image set up as an install would be (a user, tester,
@@ -103,10 +103,9 @@ host_main() {
 	image=docker.io/library/alpine:${ALPINE_BRANCH#v}
 
 	# The pre-install script, which only reads, on this machine: it must
-	# accept a Pi 5 or 500 that is an atomic install.
-	local desc="pre-install accepts this machine (a BCM2712, an atomic install)"
-	if tr '\0' '\n' < /proc/device-tree/compatible 2>/dev/null | grep -qx 'brcm,bcm2712' &&
-		[[ -f /etc/kernel/cmdline ]]; then
+	# accept a Pi 5 or 500.
+	local desc="pre-install accepts this machine (a BCM2712)"
+	if tr '\0' '\n' < /proc/device-tree/compatible 2>/dev/null | grep -qx 'brcm,bcm2712'; then
 		if sh "$here"/rpi/linux-rpi/cervino-kernel.pre-install; then
 			pass "$desc"
 		else
@@ -297,8 +296,11 @@ check_package() {
 	# What the package provides and runs.
 	local info
 	info=$(tar -xzOf "$apk" .PKGINFO 2>/dev/null)
-	local desc="cervino-kernel provides linux-rpi at Alpine's version"
-	if grep -qx "provides = linux-rpi=$base" <<< "$info"; then
+	local version
+	version=$(sed -n 's/^pkgver = //p' <<< "$info")
+	local desc="cervino-kernel provides linux-rpi at Alpine's version, and linux-rpi16k"
+	if grep -qx "provides = linux-rpi=$base" <<< "$info" &&
+		grep -qx "provides = linux-rpi16k=$version" <<< "$info"; then
 		pass "$desc"
 	else
 		fail "$desc" "provides: $(sed -n 's/^provides = //p' <<< "$info" | xargs)"
@@ -355,8 +357,9 @@ check_package() {
 		fail "$desc" "header flags: ${flags:-none}"
 	fi
 
-	# Taking linux-rpi's place, and giving it back as the apk wrapper deletes
-	# cervino-kernel: a conflict in world first (!cervino-kernel), then del.
+	# Taking linux-rpi's place (an install made before it has linux-rpi in
+	# world), and installing for linux-rpi16k (as mkimage's update-kernel
+	# and setup-disk do for the flavor).
 	scratch=$(mktemp -d)
 	mkdir -p "$scratch"/etc/apk
 	cp -R /etc/apk/keys "$scratch"/etc/apk/
@@ -371,25 +374,30 @@ check_package() {
 	else
 		pass "$desc"
 	fi
-	desc="Deleting cervino-kernel (as the apk wrapper does) brings linux-rpi back"
-	if ! apk_scratch add '!cervino-kernel' || ! apk_scratch del cervino-kernel; then
-		fail "$desc" "apk failed"
-	elif [[ " $(installed) " == *" cervino-kernel "* || -e $scratch/boot/vmlinuz-rpi16k ||
-		! -f $scratch/boot/vmlinuz-rpi ||
-		$(xargs < "$scratch"/etc/apk/world) != linux-rpi ]]; then
-		fail "$desc" "installed: $(installed); world: $(xargs < "$scratch"/etc/apk/world)"
+	rm -rf "$scratch"
+	scratch=$(mktemp -d)
+	mkdir -p "$scratch"/etc/apk
+	cp -R /etc/apk/keys "$scratch"/etc/apk/
+	desc="Adding linux-rpi16k installs cervino-kernel"
+	if ! apk_scratch add --initdb linux-rpi16k; then
+		fail "$desc" "apk add linux-rpi16k failed"
+	elif [[ " $(installed) " != *" cervino-kernel "* || " $(installed) " == *" linux-rpi "* ||
+		! -f $scratch/boot/vmlinuz-rpi16k ]]; then
+		fail "$desc" "installed: $(installed)"
 	else
 		pass "$desc"
 	fi
 	rm -rf "$scratch"
 
-	# This container is no atomic install (no /etc/kernel/cmdline).
-	desc="pre-install turns down a system that is not an atomic install"
+	# An earlier Pi: the script reads a device tree naming the BCM2711 (a
+	# Pi 4) in place of this machine's.
+	desc="pre-install turns down an earlier Pi (a BCM2711)"
 	tar -xzOf "$apk" .pre-install > /tmp/pre-install 2>/dev/null
-	if [[ ! -s /tmp/pre-install ]]; then
-		fail "$desc" "the package has no pre-install script"
-	elif sh /tmp/pre-install 2>/dev/null; then
-		fail "$desc" "it accepted this container"
+	printf 'raspberrypi,4-model-b\0brcm,bcm2711\0' > /tmp/compatible
+	if [[ ! -s /tmp/pre-install ]] || ! grep -q '^dt=/proc/device-tree/compatible$' /tmp/pre-install; then
+		fail "$desc" "the package has no pre-install script that reads the device tree"
+	elif sed 's|^dt=.*|dt=/tmp/compatible|' /tmp/pre-install | sh 2>/dev/null; then
+		fail "$desc" "it accepted a BCM2711"
 	else
 		pass "$desc"
 	fi
@@ -417,8 +425,8 @@ make_system() {
 	fi
 	# As on an atomic install, where the kernel hook builds the initramfs
 	# (and update-boot then does nothing, as this is none), here with the
-	# VM's drivers, and cervino-kernel's pre-install accepts it. The small
-	# system has no hook: mkinitfs's trigger builds it.
+	# VM's drivers. The small system has no hook: mkinitfs's trigger builds
+	# it.
 	echo "root=LABEL=cervino-root" > "$root"/etc/kernel/cmdline
 	echo 'features="base btrfs keymap kms virtio"' > "$root"/etc/mkinitfs/mkinitfs.conf
 	[[ -n $small ]] || echo disable_trigger=yes >> "$root"/etc/mkinitfs/mkinitfs.conf

@@ -6,17 +6,19 @@
 # cervino-kernel, kernel flavor rpi16k (vmlinuz-rpi16k). Its config is
 # Alpine's, but from bcm2712_defconfig, Raspberry Pi OS's for that kernel
 # (bcm2711_defconfig with 16 KB pages and 47-bit addresses), plus
-# cervino-changes.config. It provides linux-rpi at Alpine's version, so it
-# takes linux-rpi's place in world, and deleting it (through the apk
-# wrapper) brings that back. Only an atomic install starts it (see
-# cervino-kernel.pre-install). The -dev subpackage is left out.
-# build-alpine-gnome-iso.sh stops when Alpine's linux-rpi is no longer
-# _alpine.
+# cervino-changes.config. It is the Pi's only kernel: the Pi's
+# cervino-desktop depends on it and the image's world names it. It
+# provides linux-rpi at Alpine's version, so that it takes linux-rpi's
+# place (in an older install's world too), and linux-rpi16k, the package
+# mkimage's update-kernel and setup-disk install for flavor rpi16k. Its
+# pre-install script turns down an earlier Pi. The -dev subpackage is left
+# out. build-alpine-gnome-iso.sh stops when Alpine's linux-rpi is no
+# longer _alpine.
 _alpine=6.18.60-r0
 pkgname=cervino-kernel
 pkgver=6.18.60
 _kernver=${pkgver%.*}
-pkgrel=0
+pkgrel=1
 pkgdesc="Linux kernel with Raspberry Pi patches and 16 KB pages, for the Pi 5"
 url="https://github.com/raspberrypi/linux"
 depends="initramfs-generator linux-firmware-brcm"
@@ -231,8 +233,9 @@ _package() {
 
 package() {
 	# linux-rpi's name, at Alpine's version, so that the two never install
-	# together (their device trees and overlays are the same files).
-	provides="linux-rpi=$_alpine"
+	# together (their device trees and overlays are the same files), and
+	# the flavor's.
+	provides="linux-rpi=$_alpine linux-rpi16k=$pkgver-r$pkgrel"
 	replaces="linux-rpi"
 	_package rpi16k "$pkgdir"
 }

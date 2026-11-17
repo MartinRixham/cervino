@@ -629,21 +629,23 @@ TARGET=rpi ./build-alpine-gnome-iso.sh
 ```
 
 builds `out/alpine-gnomelive-<release>-aarch64.img.gz`, an SD card image for
-the Raspberry Pi 4, 400, 5 and 500. Like the ISO's, the live system runs
+the Raspberry Pi 5, 500 and CM5, whose kernel has 16 KB memory pages, which
+the earlier Pis can't use (see
+[The 16 KB page kernel](#the-16-kb-page-kernel)). Like the ISO's, the live system runs
 from a read-only image on the card. The image is built from Alpine's own Pi
 image, with the same packages, settings and features as the ISO (except
 the Intel VA-API drivers and the CPU microcode). It also turns on the GPU's
 KMS driver (`dtoverlay=vc4-kms-v3d` in `usercfg.txt`), which GNOME needs.
 
 The Pi image also has VLC, built with Raspberry Pi OS's patches for the
-Pi's video decoders, as Raspberry Pi OS ships it: HEVC (H.265) on the Pi 4
-and 5, and H.264 on the Pi 4 (the Pi 5 has no H.264 decoder), decoded by
-the hardware and shown without copying the frames. It plays through
+Pi's video decoder, as Raspberry Pi OS ships it: HEVC (H.265; the Pi 5
+has no H.264 decoder), decoded by the hardware and shown without copying
+the frames. It plays through
 `ffmpeg7`'s libraries, built with Raspberry Pi OS's FFmpeg patch, which
 replace Alpine's for every program that uses them. GStreamer's base and bad
 plug-ins are built with Raspberry Pi OS's patches too, but left out of the
 image: with them added (below), what plays through GStreamer (GNOME's
-Showtime, GNOME Web, the file previews) decodes HEVC on the Pi 4's and 5's
+Showtime, GNOME Web, the file previews) decodes HEVC on the Pi's
 decoder. Firefox uses Alpine's FFmpeg 8, and so
 decodes in software on the Pi.
 
@@ -694,9 +696,9 @@ to a USB or NVMe drive, but for now not to the SD card the Pi booted from:
 the live system runs from an image on it, so it can't be unmounted. The
 installed system's boot partition gets the same `usercfg.txt`.
 
-An atomic install on the Pi needs firmware with tryboot (the Pi 4 and 5
-families with a current bootloader); on other Pis the installer makes
-Alpine's standard install (sys). It erases the disk and makes a GPT
+An atomic install on the Pi needs firmware with tryboot (a current
+bootloader has it); with an older one the installer makes Alpine's
+standard install (sys). It erases the disk and makes a GPT
 partition table: a small FAT partition (mounted on `/boot/firmware`)
 holding only `autoboot.txt` and `usercfg.txt` (your settings), two 256 MiB
 FAT boot partitions, A and B, swap only if asked for (`-s`, as Alpine does
@@ -722,29 +724,22 @@ another computer, which starts the version in the other partition.
 
 ### The 16 KB page kernel
 
-The Pi 5, 500 and CM5 can run the kernel with 16 KB memory pages instead
-of 4 KB, as Raspberry Pi OS does on them, which makes some work faster
-(fewer misses in the CPU's address translation cache, cheaper page
-faults). `cervino-kernel` is Alpine's Pi kernel, `linux-rpi`, built that
-way (its configuration is Raspberry Pi OS's for that kernel), from the
-update repo. It takes `linux-rpi`'s place:
+The Pi's kernel has 16 KB memory pages instead of 4 KB, as Raspberry Pi
+OS's has on the Pi 5, 500 and CM5, which makes some work faster (fewer
+misses in the CPU's address translation cache, cheaper page faults).
+`cervino-kernel` is Alpine's Pi kernel, `linux-rpi`, built that way (its
+configuration is Raspberry Pi OS's for that kernel), and the only kernel
+the Pi image and its installs have: the Pi's `cervino-desktop` depends on
+it, so it can't be removed, and it takes the place of `linux-rpi` in an
+install made before it, at its next update. The earlier Pis' cores can't
+use 16 KB pages, so the image and installs start only on a Pi 5, 500 or
+CM5 (on an earlier Pi, the package refuses to install).
 
-```sh
-doas apk add cervino-kernel    # the 16 KB page kernel
-doas apk del cervino-kernel    # back to Alpine's linux-rpi
-```
-
-Only an atomic install on a Pi 5, 500 or CM5 can add it: the earlier
-Pis' cores can't use 16 KB pages, and only an atomic install starts a new
-kernel on trial, falling back to the version before if it doesn't start
-(see above); elsewhere the package refuses to install. Programs that
-assume 4 KB pages fail under it: some builds of jemalloc, x86 emulators
-(box64, FEX) and Wine, and some programs built for other systems. A disk
-with it installed won't start on an earlier Pi. Swap is made for one page
-size: an unencrypted swap partition (installs with `-s`) made under the
-4 KB kernel isn't used under this one, nor the other way round, until
-`swapon --fixpgsz` formats it again; encrypted swap is made anew at each
-boot.
+Programs that assume 4 KB pages fail under it: some builds of jemalloc,
+x86 emulators (box64, FEX) and Wine, and some programs built for other
+systems. Swap is made for one page size: an unencrypted swap partition
+(installs with `-s`) made under an older install's 4 KB kernel isn't used until `swapon --fixpgsz` formats it again; encrypted
+swap is made anew at each boot.
 
 The build compiles it too, which adds about an hour on an arm64 host.
 [`test/kernel.sh`](test/kernel.sh) builds and tests it on a Pi 5 or 500

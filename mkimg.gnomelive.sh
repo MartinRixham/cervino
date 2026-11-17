@@ -22,6 +22,9 @@ profile_gnomelive() {
 		arch="aarch64"
 		output_format="gnomelive"
 		hostname="rpi"
+		# cervino-kernel (16 KB pages), which provides linux-rpi16k, the
+		# package update-kernel installs for the flavor.
+		kernel_flavors="rpi16k"
 	else
 		profile_standard
 		profile_abbrev="gnome"
@@ -41,8 +44,22 @@ profile_gnomelive() {
 	apkovl="aports/scripts/genapkovl-gnomelive.sh"
 }
 
-# The Pi's config.txt includes usercfg.txt, for settings of our own (see
-# build-alpine-gnome-iso.sh).
+# The Pi's config.txt: mkimg.arm.sh's, which names vmlinuz-rpi, for the
+# image's kernel flavor. It includes usercfg.txt, for settings of our own
+# (see build-alpine-gnome-iso.sh).
+rpi_gen_config() {
+	cat <<-EOF
+		# do not modify this file as it will be overwritten on upgrade.
+		# create and/or modify usercfg.txt instead.
+		# https://www.raspberrypi.com/documentation/computers/config_txt.html
+
+		kernel=boot/vmlinuz-rpi16k
+		initramfs boot/initramfs-rpi16k
+		arm_64bit=1
+		include usercfg.txt
+	EOF
+}
+
 section_gnomelive_usercfg() {
 	[ "$PROFILE" = gnomelive ] && [ -f /work/aports/scripts/usercfg.txt ] || return 0
 	build_section gnomelive_usercfg $(checksum < /work/aports/scripts/usercfg.txt)

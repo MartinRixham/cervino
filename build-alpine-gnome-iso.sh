@@ -441,8 +441,11 @@ builder_main() {
 		$atomic efibootmgr ukify" ;;
 	arm64) features="$features $atomic efibootmgr ukify" ;;
 	# The firmware's package, so that each version of an atomic install
-	# brings the firmware it is to start with.
-	rpi) features="$features $atomic raspberrypi-bootloader" ;;
+	# brings the firmware it is to start with, and the kernel, the Pi's only
+	# one (16 KB pages, so a Pi 5, 500 or CM5): built here from
+	# rpi/linux-rpi, it takes the place of linux-rpi, which an install made
+	# before it names in world.
+	rpi) features="$features $atomic raspberrypi-bootloader cervino-kernel" ;;
 	esac
 
 	# /etc/apk/world: what setup-desktop gnome puts there, plus
@@ -482,7 +485,7 @@ builder_main() {
 	# wpa_supplicant, bluez, mesa, mutter, dnsmasq and libsoup3 rank above
 	# Alpine's and so replace them, their -dbg packages too; the rest go in
 	# cervino-vlc and cervino-gstreamer (below), but rpi/linux-rpi, published
-	# as cervino-kernel, which users add (see its APKBUILD).
+	# as cervino-kernel, the Pi's kernel (see its APKBUILD).
 	# Each is Alpine's APKBUILD of one version (its _alpine) with the
 	# patches: stop if Alpine's has moved on, as its changes (security
 	# fixes, rebuilds for libraries' new sonames) would be missing.
@@ -643,15 +646,15 @@ builder_main() {
 	# installed from did not have. The modloop's firmware is no substitute:
 	# it has only the files modules declare, and drivers load many by names
 	# they make up (Intel Bluetooth, laptop speaker amps, ath11k/ath12k).
-	local kernel=lts firmware
+	local kernel=linux-lts firmware
 	local unused='qcom|mellanox|qed|netronome|dpaa2|liquidio|cxgb4|bnx2x|vxge|amlogic|s5p-mfc|amphion'
-	[[ $TARGET == rpi ]] && kernel=rpi
+	[[ $TARGET == rpi ]] && kernel=cervino-kernel
 	firmware=$(apk --root "$apkroot" info --quiet --depends linux-firmware |
 		sed -e 's/[<>=~].*//' | grep -v '^$' | grep -vxE "linux-firmware-($unused)") ||
 		die "could not resolve linux-firmware's packages"
 	# The root file system's world, and the live system's (in the apkovl).
 	local image_world
-	image_world=$(printf '%s\n' $world "linux-$kernel" $firmware wireless-regdb | sort -u)
+	image_world=$(printf '%s\n' $world "$kernel" $firmware wireless-regdb | sort -u)
 	echo "$image_world" > /work/rootfs-packages
 
 	# The live system installs the world at boot, and goes on without it if

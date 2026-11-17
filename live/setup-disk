@@ -68,7 +68,7 @@ asked=
 nofw=
 if [ -n "$pi" ]; then
 	[ -e /proc/device-tree/chosen/bootloader/tryboot ] ||
-		nofw="This Pi's firmware has no tryboot (a Pi 4 or 5 with a current bootloader has)"
+		nofw="This Pi's firmware has no tryboot (a current bootloader has)"
 elif [ ! -d /sys/firmware/efi ]; then
 	nofw="This PC started without UEFI"
 fi
