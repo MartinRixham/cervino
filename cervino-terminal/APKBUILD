@@ -3,7 +3,10 @@
 # has the symbols Zellij's bars draw with. Its "Zellij" launcher starts foot
 # running zellij with the app id zellij, which GNOME Shell matches to the
 # launcher; /etc/zellij/config.kdl is Zellij's configuration for users who
-# have none of their own. zellij.svg, the launcher's icon, is Zellij's logo.
+# have none of their own. GDM also offers a "Cervino Terminal" session: the
+# same Zellij in foot, but alone in the cage kiosk compositor rather than in
+# GNOME, the session ending when Zellij does. zellij.svg, the launcher's
+# icon, is Zellij's logo.
 # Also Neovim, set up as AstroNvim (see init.lua), with the programs
 # AstroNvim runs, Alpine's Tree-sitter parsers and its own launcher; the
 # command line tools bat, ripgrep, fd and GNU less.
@@ -20,7 +23,7 @@ pkgdesc="Zellij in foot and AstroNvim, the terminal of the Cervino GNOME desktop
 url="https://github.com/MartinRixham/cervino"
 arch="noarch"
 license="Apache-2.0 AND MIT"
-depends="zellij foot font-droid-sans-mono-nerd
+depends="zellij foot font-droid-sans-mono-nerd cage
 	neovim git ripgrep lazygit bottom gdu tree-sitter-grammars
 	bat fd less"
 # foot's launchers, which this package's copies hide, and Neovim's.
@@ -78,6 +81,19 @@ Terminal=false
 Categories=System;TerminalEmulator;
 Keywords=terminal;multiplexer;zellij;
 StartupWMClass=zellij
+EOF
+
+	# GDM's "Cervino Terminal" session: foot running zellij, alone in cage,
+	# which shows one app full screen and exits when it does, so leaving
+	# Zellij logs out. -d has foot leave out its title bar (cage draws
+	# none) and -s lets Ctrl Alt F<n> switch virtual terminals.
+	makefile root:root 0644 "$pkgdir"/usr/share/wayland-sessions/cervino-terminal.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Cervino Terminal
+Comment=Zellij in foot, full screen, without GNOME
+Exec=cage -d -s -- foot --app-id=zellij --font="DroidSansM Nerd Font:size=11" zellij
+DesktopNames=cage
 EOF
 
 	# Neovim's launcher, running it in foot, in the Nerd Font, rather than

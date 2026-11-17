@@ -95,7 +95,10 @@ from a desktop distribution:
   selections copied to the primary selection, pasted with the middle
   button, rather than the clipboard (`/etc/zellij/config.kdl`, which a
   `~/.config/zellij/config.kdl` of your own replaces). foot's own
-  launchers are hidden, so the app grid shows Zellij alone. With it
+  launchers are hidden, so the app grid shows Zellij alone. GDM's login
+  screen also offers a **Cervino Terminal** session (the cog under the
+  password field): the same Zellij in foot, full screen in the cage kiosk
+  compositor rather than in GNOME, which logs out when Zellij exits. With it
   comes **Neovim** set up as AstroNvim, for users without a
   `~/.config/nvim` of their own, its launcher running it in foot too.
   AstroNvim and its plugins download on its first start, so that
