@@ -35,9 +35,9 @@ from a desktop distribution:
 - subordinate user and group IDs (`/etc/subuid`, `/etc/subgid`) for every
   user, so rootless containers (podman, toolbox, distrobox) work once
   installed; Alpine gives them only to users made after podman is
-  installed, and not to the one the installer makes. An update gives them
-  to users of older installs. The `tun` module is loaded at boot, as their
-  network (and userspace VPNs) needs `/dev/net/tun`
+  installed, and not to the one the installer makes. The `tun` module is
+  loaded at boot, as their network (and userspace VPNs) needs
+  `/dev/net/tun`
 - suspend turned off in a virtual machine (`cervino-desktop-vm`, installed
   only in a VM): GNOME would otherwise suspend an idle guest, and at once
   when the host wakes from its own sleep, leaving a blank display that the
@@ -585,9 +585,9 @@ login, as you do on a new install. Change the keyring's password to the
 disk's passphrase in Passwords and Keys (Seahorse): right-click Login,
 Change Password. Do it again after changing the disk's passphrase
 (`cryptsetup luksChangeKey`). When they differ, nothing is unlocked, as
-before. Atomic installs encrypted before this get it with the update that
-brings it, which rebuilds the initramfs; to have the initramfs ask for the
-passphrase itself again, take `cryptkey=...` out of `/etc/kernel/cmdline`
+before. Only atomic installs made since get it: those encrypted before
+keep the initramfs asking for the passphrase itself. To have it do so on a
+new install, take `cryptkey=...` out of `/etc/kernel/cmdline`
 and run `doas /usr/libexec/cervino/update-boot`. A `sys` install, with
 Alpine's own disk setup, doesn't have it.
 

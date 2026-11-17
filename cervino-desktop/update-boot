@@ -289,8 +289,7 @@ else
 
 	# The boot entries, "Alpine Linux" and the date and time the version was
 	# made, on this partition (other disks' are left alone). entries prints
-	# each one's number and version, or "-" for the one that started Limine,
-	# which atomic installs used before.
+	# each one's number and version.
 	part=$(awk -v m="$esp" '$2 == m { print $1 }' /proc/mounts)
 	part=$(basename "$(readlink -f "$part")")
 	disk=/dev/$(basename "$(readlink -f /sys/class/block/"$part"/..)")
@@ -306,8 +305,7 @@ else
 				if (label ~ /^Alpine Linux [0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+:[0-9]+$/) {
 					gsub(/[^0-9]/, "", label)
 					print substr($1, 5, 4), label
-				} else if (label == "Alpine Linux")
-					print substr($1, 5, 4), "-"
+				}
 			}'
 	}
 
@@ -352,12 +350,6 @@ else
 	elif [ -n "$next" ] && echo "$ents" | grep -qi "^$next "; then
 		efi -N
 	fi
-
-	# Limine's files and the kernels it started, from before.
-	rm -rf "$esp"/limine
-	for dir in "$esp"/cervino/*; do
-		rm -f "$dir"/vmlinuz-* "$dir"/initramfs-* "$dir"/*-ucode.img
-	done
 fi
 
 # For the next start: the version on trial, on the volume to tell whether it

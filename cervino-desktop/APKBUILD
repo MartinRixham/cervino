@@ -35,7 +35,7 @@ depends="/bin/sh doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc ava
 	nftables-openrc openrc openrc-settingsd-openrc zram-init-openrc $DEPENDS"
 replaces="alpine-baselayout alpine-baselayout-data busybox-openrc dbus-openrc
 	earlyoom-openrc openrc shadow zram-init-openrc"
-install="$pkgname.post-install $pkgname.post-upgrade"
+install="$pkgname.post-install"
 # What only a virtual machine needs (see vm below): in the image's world, and
 # left out of a system installed on real hardware, as the SPICE guest agent
 # is (see live/setup-disk).
@@ -117,7 +117,7 @@ UID_MIN 1000
 HOME_MODE 0700
 EOF
 	# Subordinate IDs for rootless containers, for the users useradd gives
-	# none (see the script; the post-upgrade script runs it).
+	# none (see the script).
 	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/subids < "$startdir"/subids
 
 	# NetworkManager manages all interfaces; ifupdown only brings up lo.

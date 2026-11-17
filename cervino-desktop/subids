@@ -10,8 +10,7 @@
 # shadow-subids, a dependency of podman, installs empty; busybox adduser
 # (setup-user) gives none. So the live image's adduser shim runs this for
 # the user it makes (creating the files, after which useradd gives them
-# too), and the package's post-upgrade script for the users installs had
-# already.
+# too).
 
 set -eu
 count=65536
