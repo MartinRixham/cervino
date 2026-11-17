@@ -416,13 +416,14 @@ ci/local-repo.sh            # the last successful run of the checked out branch
 ci/local-repo.sh 43640904096   # or a workflow run, by its ID
 ```
 
-It needs `gh` (`doas apk add github-cli`, then `gh auth login`: GitHub only
-gives artifacts to logged in users), and CI keeps a run's artifacts for 14
-days. The script downloads the run's `cervino-repo-<target>` artifact for
-the machine (`TARGET=rpi`, `arm64` or `x86_64` to choose another) and
-serves it on `http://127.0.0.1:8080` (`PORT`) until you stop it with
-Ctrl-C. The artifact's packages are signed with that build's own key, and
-it has no index, so the script makes one, signed with a key made for the
+It needs no GitHub login. Each CI run but a tag's (or a pull request's
+from a fork) puts its packages on a prerelease of its own, `ci-<run id>`,
+as anyone may download release assets but only logged in users artifacts,
+and deletes those of runs more than 14 days old. The script downloads the
+run's `cervino-repo-<target>.tar` for the machine (`TARGET=rpi`, `arm64` or
+`x86_64` to choose another) and serves it on `http://127.0.0.1:8080`
+(`PORT`) until you stop it with Ctrl-C. Its packages are signed with that
+build's own key, and it has no index, so the script makes one, signed with a key made for the
 run, whose private half it deletes before serving. It needs no root, and
 changes nothing on the system: it prints the commands that do, with the
 paths filled in. In another terminal, have apk trust the two public keys

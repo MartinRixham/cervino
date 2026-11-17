@@ -3,21 +3,23 @@
 #
 # Serves the packages of a CI build on 127.0.0.1 as an apk repository, to
 # upgrade this machine to them before a release publishes them: downloads
-# the build's repo (the cervino-repo-<target> artifact) with gh, from
-# workflow run RUN_ID or else the last successful run of the checked out
-# branch, and serves it until it is stopped (Ctrl-C). It needs no root:
+# the build's repo (cervino-repo-<target>.tar, which CI puts on the
+# prerelease ci-<run id>) of workflow run RUN_ID or else the last
+# successful run of the checked out branch, and serves it until it is
+# stopped (Ctrl-C). It needs no GitHub login, nor root:
 # it prints the commands that add the repository and its keys, upgrade,
 # and remove them again, which README.md (Upgrading to a CI build)
 # describes.
 #
-# The artifact's packages are signed with the build's own key and have no
+# Its packages are signed with the build's own key and have no
 # index. The key is taken from the cervino-desktop package, which brings it,
 # and the index is made here, signed with a key made for this run, whose
 # private half is deleted before the repo is served. Both public keys are
 # written next to the repo, for apk to be made to trust them.
 #
 # TARGET (rpi, arm64 or x86_64) is the build to take, by default this
-# machine's; PORT (8080) is the port to serve on.
+# machine's; PORT (8080) is the port to serve on; REPO (owner/name) the
+# GitHub repository, by default that of the remote origin.
 
 set -eu
 
@@ -32,7 +34,7 @@ indexkey=cervino-local.rsa.pub
 
 [ $# -le 1 ] || die "usage: $0 [RUN_ID]"
 run=${1:-}
-for cmd in gh python3 openssl; do
+for cmd in python3 openssl; do
 	command -v "$cmd" > /dev/null || die "$cmd is not installed"
 done
 
@@ -52,10 +54,15 @@ fi
 arch=$(apk --print-arch)
 
 cd "$(dirname "$0")"/..
+repo=${REPO:-$(git remote get-url origin |
+	sed -n 's,^.*github\.com[:/]\([^/]*/[^/]*\)$,\1,p' | sed 's/\.git$//')}
+[ -n "$repo" ] || die "the remote origin is not on GitHub: set REPO"
 if [ -z "$run" ]; then
 	branch=$(git rev-parse --abbrev-ref HEAD)
-	run=$(gh run list --workflow "$workflow" --branch "$branch" --status success \
-		--limit 1 --json databaseId --jq '.[0].databaseId') || die "gh run list failed"
+	# The API, which needs no login for a public repository.
+	run=$(wget -q -O - "https://api.github.com/repos/$repo/actions/workflows/$workflow/runs?branch=$branch&status=success&per_page=1" |
+		python3 -c 'import json, sys; print(*(r["id"] for r in json.load(sys.stdin)["workflow_runs"]))') ||
+		die "could not list the runs of $repo"
 	[ -n "$run" ] || die "no successful $workflow run of $branch"
 fi
 
@@ -70,12 +77,16 @@ trap cleanup EXIT
 trap 'exit 0' HUP INT TERM
 
 echo ">>> Downloading cervino-repo-$target from run $run"
-gh run download "$run" -n "cervino-repo-$target" -D "$work"/repo ||
-	die "could not download cervino-repo-$target from run $run"
+wget -q -O "$work"/repo.tar \
+	"https://github.com/$repo/releases/download/ci-$run/cervino-repo-$target.tar" ||
+	die "could not download cervino-repo-$target of run $run (CI keeps them for 14 days)"
+mkdir "$work"/repo
+tar -xf "$work"/repo.tar -C "$work"/repo
+rm "$work"/repo.tar
 # Laid out as <branch>/<arch>/.
 release=$(ls "$work"/repo)
 dir=$work/repo/$release/$arch
-[ -d "$dir" ] || die "the artifact does not hold $arch packages of one release"
+[ -d "$dir" ] || die "the download does not hold $arch packages of one release"
 [ "$(sed -n 's/^VERSION_ID=\([0-9]*\.[0-9]*\).*/v\1/p' /etc/os-release)" = "$release" ] ||
 	die "the packages are for Alpine $release, not this system's release"
 

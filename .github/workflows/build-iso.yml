@@ -645,6 +645,57 @@ jobs:
           path: ${{ runner.temp }}/vm-test/*.log
           retention-days: 14
 
+  # The build's packages, as assets of a prerelease ci-<run id>, for
+  # ci/local-repo.sh (README.md, Upgrading to a CI build): anyone may
+  # download a public repository's release assets, but only logged in
+  # users its artifacts. Not for tags, which publish their packages to the
+  # repo, nor pull requests from forks, whose token can't write. Those of
+  # runs more than 14 days old, as long as artifacts are kept, are deleted.
+  ci-packages:
+    needs: build
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: cervino-repo-*
+          path: repos
+
+      - name: Publish the packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ci-${{ github.run_id }}
+          # A pull request's head: its merge commit is on no branch.
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          # Laid out as in the artifact, <branch>/<arch>/.
+          for dir in repos/cervino-repo-*; do
+            tar -cf "$dir.tar" -C "$dir" .
+          done
+          gh release create "$TAG" repos/cervino-repo-*.tar --target "$SHA" \
+            --prerelease --latest=false --title "CI build $GITHUB_RUN_ID of $BRANCH" \
+            --notes "The packages of [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID), for ci/local-repo.sh (README.md, Upgrading to a CI build). Deleted after 14 days."
+
+      - name: Delete old CI packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cutoff=$(date -u -d '14 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh api --paginate "repos/$GH_REPO/releases" --jq \
+            ".[] | select((.tag_name | startswith(\"ci-\")) and .created_at < \"$cutoff\") | .tag_name" |
+            while read -r tag; do
+              # Another run may be deleting it too.
+              gh release delete "$tag" --cleanup-tag --yes || echo "::warning::could not delete $tag"
+            done
+
   release:
     needs: [build, vm-test]
     if: startsWith(github.ref, 'refs/tags/v')
