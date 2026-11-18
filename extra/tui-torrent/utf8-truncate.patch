@@ -1,0 +1,44 @@
+tui-torrent shortens long torrent names, and the download directory, by
+slicing the string at a byte offset, which panics when that offset falls
+inside a multi-byte character: searching for "96khz" finds PirateBay
+names ending in "⭐️", and the program crashes drawing the results.
+Count characters instead.
+
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -71,8 +71,9 @@
+     // Update status based on aria2 availability
+     if aria2_available {
+         let download_dir = aria2_manager.get_download_dir();
+-        let short_path = if download_dir.len() > 40 {
+-            format!("...{}", &download_dir[download_dir.len() - 37..])
++        let short_path = if download_dir.chars().count() > 40 {
++            let skip = download_dir.chars().count() - 37;
++            format!("...{}", download_dir.chars().skip(skip).collect::<String>())
+         } else {
+             download_dir
+         };
+--- a/src/tui.rs
++++ b/src/tui.rs
+@@ -157,8 +157,8 @@
+ 
+                             let display_name = match name {
+                                 Some(n) => {
+-                                    if n.len() > 50 {
+-                                        format!("{}...", &n[..47])
++                                    if n.chars().count() > 50 {
++                                        format!("{}...", n.chars().take(47).collect::<String>())
+                                     } else {
+                                         n
+                                     }
+@@ -237,8 +237,8 @@
+                             };
+ 
+                             // Truncate long names
+-                            let display_name = if result.name.len() > 60 {
+-                                format!("{}...", &result.name[..57])
++                            let display_name = if result.name.chars().count() > 60 {
++                                format!("{}...", result.name.chars().take(57).collect::<String>())
+                             } else {
+                                 result.name.clone()
+                             };
