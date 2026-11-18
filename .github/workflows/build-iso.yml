@@ -57,15 +57,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The Pi's Firefox (rpi/firefox) takes hours to build, longer than the
-  # build job may run, so it is built here, into the cache the rpi build
-  # takes it from (CACHE_ONLY there), and only when its sources or
-  # Alpine's version of it change; otherwise this job just finds it in the
-  # cache.
-  firefox:
-    runs-on: ubuntu-24.04-arm
-    # The most a GitHub-hosted runner allows.
-    timeout-minutes: 360
+  # The packages built from rpi/, patched/ and extra/, each in a job of
+  # its own (ONLY), so that those that need building build side by side
+  # rather than one after another, and the Pi's Firefox, which takes
+  # hours, gets a job's whole time. Each is kept in a cache of its own,
+  # keyed on the target and the hash the build writes next to it: the
+  # newest is restored, and the build takes it from there while that hash
+  # still matches its sources, so most of these jobs only find it there.
+  # The image's build then takes them all from these jobs' artifacts.
+  packages:
+    runs-on: ${{ matrix.target == 'x86_64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
+    # The most a GitHub-hosted runner allows, for firefox.
+    timeout-minutes: ${{ matrix.pkg == 'firefox' && 360 || 240 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, arm64, rpi]
+        pkg:
+          - mutter
+          - showtime
+          - dnsmasq
+          - libsoup3
+          - tui-torrent
+          - bapk
+          - qstop
+          - bijiben
+          - rpi-keyboard-config
+          - tomesole
+          - spotatui
+          - mullvad-containers
+          - pam-cryptsetup-keyring
+        # The Pi's own. A package that builds with another's (dep) is
+        # built in the same job, after it, as its key includes the other's.
+        include:
+          - { target: rpi, pkg: vlc, dep: ffmpeg7 }
+          - { target: rpi, pkg: gst-plugins-bad, dep: gst-plugins-base }
+          - { target: rpi, pkg: wpa_supplicant }
+          - { target: rpi, pkg: bluez }
+          - { target: rpi, pkg: mesa }
+          - { target: rpi, pkg: linux-rpi }
+          - { target: rpi, pkg: firefox }
+          - { target: rpi, pkg: rpi-keyboard-fw-update }
     steps:
       - uses: actions/checkout@v7
 
@@ -79,6 +111,7 @@ jobs:
       # Linking libxul with LTO (and Rust's) needs more memory than the
       # runner's 16 GB.
       - name: Swap
+        if: matrix.pkg == 'firefox'
         run: |
           sudo fallocate -l 16G /swapfile-firefox
           sudo chmod 600 /swapfile-firefox
@@ -86,44 +119,81 @@ jobs:
           sudo swapon /swapfile-firefox
           free -h
 
-      - name: Restore firefox
-        id: restore-firefox
+      - name: Restore ${{ matrix.dep }}
+        id: restore-dep
+        if: matrix.dep
         uses: actions/cache/restore@v6
         with:
-          path: ${{ runner.temp }}/pkgcache/firefox
-          key: rpi-firefox-${{ github.sha }}
-          restore-keys: rpi-firefox-
+          path: ${{ runner.temp }}/pkgcache/${{ matrix.dep }}
+          key: ${{ matrix.target }}-${{ matrix.dep }}-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-${{ matrix.dep }}-
 
-      - name: Build firefox
+      - name: Restore ${{ matrix.pkg }}
+        id: restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/${{ matrix.pkg }}
+          key: ${{ matrix.target }}-${{ matrix.pkg }}-${{ github.sha }}
+          restore-keys: ${{ matrix.target }}-${{ matrix.pkg }}-
+
+      - name: Build ${{ matrix.pkg }}
         env:
-          TARGET: rpi
+          TARGET: ${{ matrix.target }}
           CONTAINER: docker
           ALPINE_BRANCH: ${{ inputs.alpine_branch }}
           CACHEDIR: ${{ runner.temp }}/pkgcache
-          ONLY: firefox
+          ONLY: ${{ matrix.dep }} ${{ matrix.pkg }}
         run: ./build-alpine-gnome-iso.sh
 
-      - name: Cache key
+      # Each package the build made (its hash is not the restored one's)
+      # goes in the cache, even if the build stopped after it.
+      - name: Cache keys
         id: keys
         if: always()
+        env:
+          TARGET: ${{ matrix.target }}
+          DEP: ${{ matrix.dep }}
+          PKG: ${{ matrix.pkg }}
         run: |
-          key=$RUNNER_TEMP/pkgcache/firefox/key
-          [ ! -f "$key" ] || echo "firefox=rpi-firefox-$(cat "$key")" >> "$GITHUB_OUTPUT"
+          for out in dep pkg; do
+            name=${out^^}
+            name=${!name}
+            key=$RUNNER_TEMP/pkgcache/$name/key
+            [ -z "$name" ] || [ ! -f "$key" ] ||
+              echo "$out=$TARGET-$name-$(cat "$key")" >> "$GITHUB_OUTPUT"
+          done
 
-      - name: Save firefox
+      - name: Save ${{ matrix.dep }}
         if: >-
-          always() && steps.keys.outputs.firefox &&
-          steps.keys.outputs.firefox !=
-          steps.restore-firefox.outputs.cache-matched-key
+          always() && steps.keys.outputs.dep &&
+          steps.keys.outputs.dep != steps.restore-dep.outputs.cache-matched-key
         uses: actions/cache/save@v6
         with:
-          path: ${{ runner.temp }}/pkgcache/firefox
-          key: ${{ steps.keys.outputs.firefox }}
+          path: ${{ runner.temp }}/pkgcache/${{ matrix.dep }}
+          key: ${{ steps.keys.outputs.dep }}
+
+      - name: Save ${{ matrix.pkg }}
+        if: >-
+          always() && steps.keys.outputs.pkg &&
+          steps.keys.outputs.pkg != steps.restore.outputs.cache-matched-key
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/pkgcache/${{ matrix.pkg }}
+          key: ${{ steps.keys.outputs.pkg }}
+
+      # The package's directory (and its dep's), for the image's build.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pkg-${{ matrix.target }}-${{ matrix.pkg }}
+          path: ${{ runner.temp }}/pkgcache
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
 
   build:
-    # After firefox, whose package the rpi build takes from the cache; the
-    # ISOs' builds don't need it, so they run even if it failed.
-    needs: firefox
+    # After the packages, which it takes from their jobs' artifacts; a
+    # target whose packages built builds even if another's failed.
+    needs: packages
     if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
@@ -207,197 +277,12 @@ jobs:
           }
           echo "SIGNING_KEY=$RUNNER_TEMP/cervino.rsa" >> "$GITHUB_ENV"
 
-      # The packages built from rpi/, patched/ and extra/ take most of the
-      # build, so each is kept in a cache of its own (CACHEDIR), keyed on
-      # the target and the hash the build writes next to it: the newest of
-      # each is restored, and the build takes it from there while that hash
-      # still matches its sources.
-      - name: Restore mutter
-        id: restore-mutter
-        uses: actions/cache/restore@v6
+      # The packages jobs' (see packages), each in a directory of its own.
+      - uses: actions/download-artifact@v7
         with:
-          path: ${{ runner.temp }}/pkgcache/mutter
-          key: ${{ matrix.target }}-mutter-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-mutter-
-
-      - name: Restore showtime
-        id: restore-showtime
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/showtime
-          key: ${{ matrix.target }}-showtime-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-showtime-
-
-      - name: Restore dnsmasq
-        id: restore-dnsmasq
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/dnsmasq
-          key: ${{ matrix.target }}-dnsmasq-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-dnsmasq-
-
-      - name: Restore libsoup3
-        id: restore-libsoup3
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/libsoup3
-          key: ${{ matrix.target }}-libsoup3-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-libsoup3-
-
-      - name: Restore tui-torrent
-        id: restore-tui_torrent
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/tui-torrent
-          key: ${{ matrix.target }}-tui-torrent-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-tui-torrent-
-
-      - name: Restore bapk
-        id: restore-bapk
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/bapk
-          key: ${{ matrix.target }}-bapk-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-bapk-
-
-      - name: Restore qstop
-        id: restore-qstop
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/qstop
-          key: ${{ matrix.target }}-qstop-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-qstop-
-
-      - name: Restore bijiben
-        id: restore-bijiben
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/bijiben
-          key: ${{ matrix.target }}-bijiben-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-bijiben-
-
-      - name: Restore rpi-keyboard-config
-        id: restore-rpi-keyboard-config
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/rpi-keyboard-config
-          key: ${{ matrix.target }}-rpi-keyboard-config-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-rpi-keyboard-config-
-
-      - name: Restore tomesole
-        id: restore-tomesole
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/tomesole
-          key: ${{ matrix.target }}-tomesole-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-tomesole-
-
-      - name: Restore spotatui
-        id: restore-spotatui
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/spotatui
-          key: ${{ matrix.target }}-spotatui-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-spotatui-
-
-      - name: Restore mullvad-containers
-        id: restore-mullvad-containers
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/mullvad-containers
-          key: ${{ matrix.target }}-mullvad-containers-${{ github.sha }}
-          restore-keys: ${{ matrix.target }}-mullvad-containers-
-
-      - name: Restore rpi-keyboard-fw-update
-        id: restore-rpi-keyboard-fw-update
-        if: matrix.target == 'rpi'
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/rpi-keyboard-fw-update
-          key: rpi-rpi-keyboard-fw-update-${{ github.sha }}
-          restore-keys: rpi-rpi-keyboard-fw-update-
-
-      - name: Restore ffmpeg7
-        id: restore-ffmpeg7
-        if: matrix.target == 'rpi'
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/ffmpeg7
-          key: rpi-ffmpeg7-${{ github.sha }}
-          restore-keys: rpi-ffmpeg7-
-
-      - name: Restore vlc
-        id: restore-vlc
-        if: matrix.target == 'rpi'
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/vlc
-          key: rpi-vlc-${{ github.sha }}
-          restore-keys: rpi-vlc-
-
-      - name: Restore gst-plugins-base
-        id: restore-gst_plugins_base
-        if: matrix.target == 'rpi'
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/gst-plugins-base
-          key: rpi-gst-plugins-base-${{ github.sha }}
-          restore-keys: rpi-gst-plugins-base-
-
-      - name: Restore gst-plugins-bad
-        id: restore-gst_plugins_bad
-        if: matrix.target == 'rpi'
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/gst-plugins-bad
-          key: rpi-gst-plugins-bad-${{ github.sha }}
-          restore-keys: rpi-gst-plugins-bad-
-
-      - name: Restore wpa_supplicant
-        id: restore-wpa_supplicant
-        if: matrix.target == 'rpi'
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/wpa_supplicant
-          key: rpi-wpa_supplicant-${{ github.sha }}
-          restore-keys: rpi-wpa_supplicant-
-
-      - name: Restore bluez
-        id: restore-bluez
-        if: matrix.target == 'rpi'
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/bluez
-          key: rpi-bluez-${{ github.sha }}
-          restore-keys: rpi-bluez-
-
-      - name: Restore mesa
-        id: restore-mesa
-        if: matrix.target == 'rpi'
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/mesa
-          key: rpi-mesa-${{ github.sha }}
-          restore-keys: rpi-mesa-
-
-      - name: Restore linux-rpi
-        id: restore-linux_rpi
-        if: matrix.target == 'rpi'
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/linux-rpi
-          key: rpi-linux-rpi-${{ github.sha }}
-          restore-keys: rpi-linux-rpi-
-
-      # Built by the firefox job, never here.
-      - name: Restore firefox
-        id: restore-firefox
-        if: matrix.target == 'rpi'
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/firefox
-          key: rpi-firefox-${{ github.sha }}
-          restore-keys: rpi-firefox-
+          pattern: pkg-${{ matrix.target }}-*
+          path: ${{ runner.temp }}/pkgcache
+          merge-multiple: true
 
       - name: Build image
         env:
@@ -406,232 +291,8 @@ jobs:
           ALPINE_BRANCH: ${{ inputs.alpine_branch }}
           OUTDIR: ${{ github.workspace }}/out
           CACHEDIR: ${{ runner.temp }}/pkgcache
-          CACHE_ONLY: ${{ matrix.target == 'rpi' && 'firefox' || '' }}
+          CACHE_ONLY: all
         run: ./build-alpine-gnome-iso.sh
-
-      # Each package the build made (its hash is not the restored one's)
-      # goes in the cache, even if the build stopped after it.
-      - name: Cache keys
-        id: keys
-        if: always()
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          for dir in "$RUNNER_TEMP"/pkgcache/*/; do
-            [ -f "$dir/key" ] || continue
-            name=$(basename "$dir")
-            echo "${name//-/_}=$TARGET-$name-$(cat "$dir/key")" >> "$GITHUB_OUTPUT"
-          done
-
-      - name: Save ffmpeg7
-        if: >-
-          always() && steps.keys.outputs.ffmpeg7 &&
-          steps.keys.outputs.ffmpeg7 !=
-          steps.restore-ffmpeg7.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/ffmpeg7
-          key: ${{ steps.keys.outputs.ffmpeg7 }}
-
-      - name: Save vlc
-        if: >-
-          always() && steps.keys.outputs.vlc &&
-          steps.keys.outputs.vlc !=
-          steps.restore-vlc.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/vlc
-          key: ${{ steps.keys.outputs.vlc }}
-
-      - name: Save gst-plugins-base
-        if: >-
-          always() && steps.keys.outputs.gst_plugins_base &&
-          steps.keys.outputs.gst_plugins_base !=
-          steps.restore-gst_plugins_base.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/gst-plugins-base
-          key: ${{ steps.keys.outputs.gst_plugins_base }}
-
-      - name: Save gst-plugins-bad
-        if: >-
-          always() && steps.keys.outputs.gst_plugins_bad &&
-          steps.keys.outputs.gst_plugins_bad !=
-          steps.restore-gst_plugins_bad.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/gst-plugins-bad
-          key: ${{ steps.keys.outputs.gst_plugins_bad }}
-
-      - name: Save wpa_supplicant
-        if: >-
-          always() && steps.keys.outputs.wpa_supplicant &&
-          steps.keys.outputs.wpa_supplicant !=
-          steps.restore-wpa_supplicant.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/wpa_supplicant
-          key: ${{ steps.keys.outputs.wpa_supplicant }}
-
-      - name: Save bluez
-        if: >-
-          always() && steps.keys.outputs.bluez &&
-          steps.keys.outputs.bluez !=
-          steps.restore-bluez.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/bluez
-          key: ${{ steps.keys.outputs.bluez }}
-
-      - name: Save mesa
-        if: >-
-          always() && steps.keys.outputs.mesa &&
-          steps.keys.outputs.mesa !=
-          steps.restore-mesa.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/mesa
-          key: ${{ steps.keys.outputs.mesa }}
-
-      - name: Save linux-rpi
-        if: >-
-          always() && steps.keys.outputs.linux_rpi &&
-          steps.keys.outputs.linux_rpi !=
-          steps.restore-linux_rpi.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/linux-rpi
-          key: ${{ steps.keys.outputs.linux_rpi }}
-
-      - name: Save mutter
-        if: >-
-          always() && steps.keys.outputs.mutter &&
-          steps.keys.outputs.mutter !=
-          steps.restore-mutter.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/mutter
-          key: ${{ steps.keys.outputs.mutter }}
-
-      - name: Save showtime
-        if: >-
-          always() && steps.keys.outputs.showtime &&
-          steps.keys.outputs.showtime !=
-          steps.restore-showtime.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/showtime
-          key: ${{ steps.keys.outputs.showtime }}
-
-      - name: Save dnsmasq
-        if: >-
-          always() && steps.keys.outputs.dnsmasq &&
-          steps.keys.outputs.dnsmasq !=
-          steps.restore-dnsmasq.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/dnsmasq
-          key: ${{ steps.keys.outputs.dnsmasq }}
-
-      - name: Save libsoup3
-        if: >-
-          always() && steps.keys.outputs.libsoup3 &&
-          steps.keys.outputs.libsoup3 !=
-          steps.restore-libsoup3.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/libsoup3
-          key: ${{ steps.keys.outputs.libsoup3 }}
-
-      - name: Save tui-torrent
-        if: >-
-          always() && steps.keys.outputs.tui_torrent &&
-          steps.keys.outputs.tui_torrent !=
-          steps.restore-tui_torrent.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/tui-torrent
-          key: ${{ steps.keys.outputs.tui_torrent }}
-
-      - name: Save bapk
-        if: >-
-          always() && steps.keys.outputs.bapk &&
-          steps.keys.outputs.bapk !=
-          steps.restore-bapk.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/bapk
-          key: ${{ steps.keys.outputs.bapk }}
-
-      - name: Save qstop
-        if: >-
-          always() && steps.keys.outputs.qstop &&
-          steps.keys.outputs.qstop !=
-          steps.restore-qstop.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/qstop
-          key: ${{ steps.keys.outputs.qstop }}
-
-      - name: Save bijiben
-        if: >-
-          always() && steps.keys.outputs.bijiben &&
-          steps.keys.outputs.bijiben !=
-          steps.restore-bijiben.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/bijiben
-          key: ${{ steps.keys.outputs.bijiben }}
-
-      - name: Save rpi-keyboard-config
-        if: >-
-          always() && steps.keys.outputs.rpi_keyboard_config &&
-          steps.keys.outputs.rpi_keyboard_config !=
-          steps.restore-rpi-keyboard-config.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/rpi-keyboard-config
-          key: ${{ steps.keys.outputs.rpi_keyboard_config }}
-
-      - name: Save tomesole
-        if: >-
-          always() && steps.keys.outputs.tomesole &&
-          steps.keys.outputs.tomesole !=
-          steps.restore-tomesole.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/tomesole
-          key: ${{ steps.keys.outputs.tomesole }}
-
-      - name: Save spotatui
-        if: >-
-          always() && steps.keys.outputs.spotatui &&
-          steps.keys.outputs.spotatui !=
-          steps.restore-spotatui.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/spotatui
-          key: ${{ steps.keys.outputs.spotatui }}
-
-      - name: Save mullvad-containers
-        if: >-
-          always() && steps.keys.outputs.mullvad_containers &&
-          steps.keys.outputs.mullvad_containers !=
-          steps.restore-mullvad-containers.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/mullvad-containers
-          key: ${{ steps.keys.outputs.mullvad_containers }}
-
-      - name: Save rpi-keyboard-fw-update
-        if: >-
-          always() && steps.keys.outputs.rpi_keyboard_fw_update &&
-          steps.keys.outputs.rpi_keyboard_fw_update !=
-          steps.restore-rpi-keyboard-fw-update.outputs.cache-matched-key
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ runner.temp }}/pkgcache/rpi-keyboard-fw-update
-          key: ${{ steps.keys.outputs.rpi_keyboard_fw_update }}
 
       - name: Checksum
         working-directory: out

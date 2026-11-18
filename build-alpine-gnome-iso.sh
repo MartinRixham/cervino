@@ -28,11 +28,11 @@ SIGNING_KEY=${SIGNING_KEY-}
 APK_REPO=${APK_REPO-}
 APK_REPO_KEY=${APK_REPO_KEY-}
 CACHEDIR=${CACHEDIR-}
-# ONLY: build only these packages from rpi/, patched/ and extra/ (none
-# that builds with another's, as vlc does with ffmpeg7), into CACHEDIR,
-# and no image. CACHE_ONLY: take these from CACHEDIR, stopping if it
-# hasn't them, rather than building them. CI builds firefox, which takes
-# hours, in a job of its own like that (see builder_main).
+# ONLY: build only these packages from rpi/, patched/ and extra/ (with
+# any that one builds with, as vlc does with ffmpeg7), into CACHEDIR, and
+# no image. CACHE_ONLY: take these (all: every one) from CACHEDIR,
+# stopping if it hasn't them, rather than building them. CI builds each
+# package in a job of its own like that, then the image (see builder_main).
 ONLY=${ONLY-}
 CACHE_ONLY=${CACHE_ONLY-}
 
@@ -522,8 +522,8 @@ builder_main() {
 	# made them, so they are signed again with this build's key. Packages
 	# built here are left in /work/pkgcache for container_main to keep.
 	# With ONLY, only those are built, and nothing after them; those in
-	# CACHE_ONLY must come from the cache (CI builds firefox, which takes
-	# hours, in a job of its own, before the image's).
+	# CACHE_ONLY (all: every one) must come from the cache (CI builds each
+	# in a job of its own, before the image's).
 	local name file repodir=/work/packages/cervino/$ARCH
 	local patched="mutter showtime dnsmasq libsoup3" replaces="mutter dnsmasq libsoup3"
 	local extra="tui-torrent bapk qstop bijiben rpi-keyboard-config tomesole spotatui"
@@ -581,7 +581,7 @@ builder_main() {
 			# The repo abuild -r installs vlc's and gst-plugins-bad's
 			# makedepends from.
 			abuild -P /work/packages index || die "could not index $name"
-		elif [[ " ${CACHE_ONLY:-} " == *" $name "* ]]; then
+		elif [[ ${CACHE_ONLY:-} == all || " ${CACHE_ONLY:-} " == *" $name "* ]]; then
 			die "$name is not in the cache, or not for these sources: CI builds" \
 				"it in a job of its own (ONLY=$name)"
 		else
