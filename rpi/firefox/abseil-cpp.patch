@@ -1,0 +1,80 @@
+From 58760ddad7e4939fb9d5a7d67ce635b6619cf04e Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=C4=90o=C3=A0n=20Tr=E1=BA=A7n=20C=C3=B4ng=20Danh?=
+ <congdanhqx@gmail.com>
+Date: Sun, 25 Apr 2021 22:53:14 +0700
+Subject: [PATCH] abseil-cpp.patch
+
+Ported from grpc's patches
+
+An all-in-one patch that fixes several issues:
+
+1) UnscaledCycleClock not fully implemented for ppc*-musl (disabled on musl)
+2) powerpc stacktrace implementation only works on glibc (disabled on musl)
+4) examine_stack.cpp makes glibc assumptions on powerpc (fixed)
+
+2025-03-08: adapted from main/abseil-cpp to work with Firefox
+
+Co-Authored-By: Duncan Bellamy <dunk@denkimushi.com>
+Co-Authored-By: ptrcnull <git@ptrcnull.me>
+---
+ .../absl/base/internal/unscaledcycleclock_config.h        | 2 +-
+ .../abseil-cpp/absl/debugging/internal/examine_stack.cc   | 8 +++++++-
+ .../absl/debugging/internal/stacktrace_config.h           | 2 +-
+ 3 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock_config.h b/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock_config.h
+index 9a0841dfa79b3..c4c423e907848 100644
+--- a/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock_config.h
++++ b/third_party/abseil-cpp/absl/base/internal/unscaledcycleclock_config.h
+@@ -21,7 +21,7 @@
+ 
+ // The following platforms have an implementation of a hardware counter.
+ #if defined(__i386__) || defined(__x86_64__) || defined(__aarch64__) || \
+-    defined(__powerpc__) || defined(__ppc__) || defined(_M_IX86) ||     \
++    ((defined(__powerpc__) || defined(__ppc__)) && defined(__GLIBC)) || defined(_M_IX86) ||     \
+     (defined(_M_X64) && !defined(_M_ARM64EC))
+ #define ABSL_HAVE_UNSCALED_CYCLECLOCK_IMPLEMENTATION 1
+ #else
+diff --git a/third_party/abseil-cpp/absl/debugging/internal/examine_stack.cc b/third_party/abseil-cpp/absl/debugging/internal/examine_stack.cc
+index 9869c18a732ec..a4bd2d7cac1b3 100644
+--- a/third_party/abseil-cpp/absl/debugging/internal/examine_stack.cc
++++ b/third_party/abseil-cpp/absl/debugging/internal/examine_stack.cc
+@@ -21,6 +21,10 @@
+ #include <cstdio>
+ #include <iterator>
+ 
++#if defined(__powerpc__)
++#include <asm/ptrace.h>
++#endif
++
+ #include "absl/base/attributes.h"
+ #include "absl/base/config.h"
+ #include "absl/base/internal/raw_logging.h"
+@@ -178,8 +182,10 @@ void* GetProgramCounter(void* const vuc) {
+     return reinterpret_cast<void*>(context->uc_mcontext.pc);
+ #elif defined(__powerpc64__)
+     return reinterpret_cast<void*>(context->uc_mcontext.gp_regs[32]);
++#elif defined(__powerpc__) && defined(__GLIBC__)
++    return reinterpret_cast<void*>(context->uc_mcontext.regs->nip);
+ #elif defined(__powerpc__)
+-    return reinterpret_cast<void*>(context->uc_mcontext.uc_regs->gregs[32]);
++    return reinterpret_cast<void*>(((struct pt_regs *)context->uc_regs)->nip);
+ #elif defined(__riscv)
+     return reinterpret_cast<void*>(context->uc_mcontext.__gregs[REG_PC]);
+ #elif defined(__s390__) && !defined(__s390x__)
+diff --git a/third_party/abseil-cpp/absl/debugging/internal/stacktrace_config.h b/third_party/abseil-cpp/absl/debugging/internal/stacktrace_config.h
+index 1ce2ad6b337f6..9e91350c43db0 100644
+--- a/third_party/abseil-cpp/absl/debugging/internal/stacktrace_config.h
++++ b/third_party/abseil-cpp/absl/debugging/internal/stacktrace_config.h
+@@ -71,7 +71,7 @@
+ #elif defined(__i386__) || defined(__x86_64__)
+ #define ABSL_STACKTRACE_INL_HEADER \
+   "absl/debugging/internal/stacktrace_x86-inl.inc"
+-#elif defined(__ppc__) || defined(__PPC__)
++#elif (defined(__ppc__) || defined(__PPC__)) && defined(__GLIBC__)
+ #define ABSL_STACKTRACE_INL_HEADER \
+   "absl/debugging/internal/stacktrace_powerpc-inl.inc"
+ #elif defined(__aarch64__)
+-- 
+2.56.0
+

@@ -238,6 +238,8 @@ ALPINE_BRANCH=v3.24 LIVE_USER=me LIVE_PASSWORD=secret AUTOLOGIN=0 \
 | `APK_REPO`      | none                                       | URL (without the branch) of the repo installs get updates of the packages built here from; its packages must be signed with `SIGNING_KEY`, or with `APK_REPO_KEY`'s key |
 | `APK_REPO_KEY`  | none                                       | Public key `APK_REPO`'s packages are signed with, when that is not `SIGNING_KEY`'s; installs trust it, under its file name, as well as the build's own |
 | `CACHEDIR`      | none                                       | Where the packages built from `rpi/`, `patched/` and `extra/` are kept; later builds take them from there (signed again with their own key) while their sources, Alpine's version of them and the release are the same |
+| `ONLY`          | none                                       | Build only these packages from `rpi/`, `patched/` and `extra/` (say `firefox`), into `CACHEDIR`, and no image |
+| `CACHE_ONLY`    | none                                       | Take these packages from `CACHEDIR`, and stop if they aren't there, rather than building them |
 
 ### Prebuilt ISOs
 
@@ -253,7 +255,7 @@ as a GitHub release, and the packages built for them (`cervino-desktop`,
 `mutter`, `dnsmasq`, `libsoup3`, `tui-torrent`, `bapk`, `qstop`,
 `bijiben`, `rpi-keyboard-config`, `tomesole`, `spotatui`,
 `mullvad-containers`, `pam-cryptsetup-keyring`, and the Pi's
-`wpa_supplicant`, `bluez`, `mesa`, `rpi-keyboard-fw-update` and
+`wpa_supplicant`, `bluez`, `mesa`, `firefox`, `rpi-keyboard-fw-update` and
 `cervino-kernel`) to the update repos (see [Updates](#updates)).
 
 After building, the workflow tests the ISO in a QEMU/KVM VM with
@@ -771,9 +773,18 @@ a custom profile (`gnomelive`) that extends `profile_standard`:
      for the Pi's hardware video decoders, Wi-Fi and Bluetooth (the build
      stops when Alpine's packages are no longer the versions those are
      based on), `mesa`, with a patch of ours that stops programs
-     inheriting the GPU's render node, and the GPU memory with it, and
+     inheriting the GPU's render node, and the GPU memory with it,
+     `firefox`, with a patch of ours that stops it probing the camera's
+     16 video devices for video decoding at every start, which held up
+     its start by about 0.3 s, and
      `linux-rpi` with 16 KB pages, as `cervino-kernel` (see
-     [The 16 KB page kernel](#the-16-kb-page-kernel));
+     [The 16 KB page kernel](#the-16-kb-page-kernel)). Alpine builds
+     Firefox twice, the first time to record a PGO profile; this build
+     takes Mozilla's profile for the same release instead (which
+     Mozilla's own aarch64 build uses too) and builds it once. That
+     still takes hours, so CI builds it in a job of its own, only when
+     its sources or Alpine's version change, and the image's build takes
+     it from the cache (`ONLY` and `CACHE_ONLY`);
    - for every target, `mutter`, `showtime`, `dnsmasq` and `libsoup3`,
      built from [`patched/`](patched): Alpine's, with patches of ours that keep GNOME
      Shell from crashing when a window's buffer can't be loaded onto the

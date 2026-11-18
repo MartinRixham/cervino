@@ -28,6 +28,13 @@ SIGNING_KEY=${SIGNING_KEY-}
 APK_REPO=${APK_REPO-}
 APK_REPO_KEY=${APK_REPO_KEY-}
 CACHEDIR=${CACHEDIR-}
+# ONLY: build only these packages from rpi/, patched/ and extra/ (none
+# that builds with another's, as vlc does with ffmpeg7), into CACHEDIR,
+# and no image. CACHE_ONLY: take these from CACHEDIR, stopping if it
+# hasn't them, rather than building them. CI builds firefox, which takes
+# hours, in a job of its own like that (see builder_main).
+ONLY=${ONLY-}
+CACHE_ONLY=${CACHE_ONLY-}
 
 die() { echo "error: $*" >&2; exit 1; }
 # Quote $1 for sh: single quotes, with any ' inside written as '\''.
@@ -107,6 +114,7 @@ host_main() {
 		keyopts+=(-v "$(realpath "$APK_REPO_KEY")":/repo-key:ro
 			-e APK_REPO_KEY_NAME="$(basename "$APK_REPO_KEY")")
 	fi
+	[[ -z $ONLY || -n $CACHEDIR ]] || die "ONLY needs CACHEDIR, where the packages go"
 	local cacheopts=()
 	if [[ -n $CACHEDIR ]]; then
 		mkdir -p "$CACHEDIR"
@@ -120,7 +128,11 @@ host_main() {
 	[[ $(uname -m) == "$ARCH" || -e /proc/sys/fs/binfmt_misc/qemu-$ARCH ]] ||
 		die "building for $ARCH on $(uname -m) needs QEMU user emulation (qemu-user-static)"
 
-	echo ">>> Building Alpine ${ALPINE_BRANCH#v} GNOME live $TARGET image ($ARCH) with $runtime"
+	if [[ -n $ONLY ]]; then
+		echo ">>> Building $ONLY for Alpine ${ALPINE_BRANCH#v} $TARGET ($ARCH) with $runtime"
+	else
+		echo ">>> Building Alpine ${ALPINE_BRANCH#v} GNOME live $TARGET image ($ARCH) with $runtime"
+	fi
 	# On SELinux hosts, disable confinement for this container rather than
 	# relabelling the volumes with :Z: a container-private label on $OUTDIR
 	# stops libvirt's qemu from opening the ISO in it.
@@ -158,11 +170,17 @@ host_main() {
 		-e TERMINAL_PKGVER="$terminal_pkgver" \
 		-e UPNP_PKGVER="$upnp_pkgver" \
 		-e APK_REPO="${APK_REPO%/}" \
+		-e ONLY="$ONLY" \
+		-e CACHE_ONLY="$CACHE_ONLY" \
 		"${keyopts[@]}" \
 		"${cacheopts[@]}" \
 		"docker.io/library/alpine:${ALPINE_BRANCH#v}" \
 		sh -c 'apk add --quiet bash && exec bash /build.sh --in-container'
 
+	if [[ -n $ONLY ]]; then
+		echo ">>> Done: $ONLY in $CACHEDIR"
+		return
+	fi
 	echo ">>> Done:"
 	ls -lh "$OUTDIR"/*-"$ARCH.$image_ext" "$OUTDIR"/repo/*/"$ARCH"/*.apk
 }
@@ -226,6 +244,7 @@ container_main() {
 		done
 	fi
 	(( rc == 0 )) || exit "$rc"
+	[[ -z ${ONLY:-} ]] || return 0
 	build_rootfs
 	su build -s /bin/bash -c 'bash /build.sh --mkimage'
 	# The live system loads the root file system's modules for the image's
@@ -482,8 +501,8 @@ builder_main() {
 	# Alpine's, with patches (README.md says what for): Raspberry Pi OS's
 	# and ours from rpi/ on the Pi, ours from patched/ on every target. mutter
 	# comes first, so that it builds with Alpine's mesa-dev.
-	# wpa_supplicant, bluez, mesa, mutter, dnsmasq and libsoup3 rank above
-	# Alpine's and so replace them, their -dbg packages too; the rest go in
+	# wpa_supplicant, bluez, mesa, firefox, mutter, dnsmasq and libsoup3 rank
+	# above Alpine's and so replace them, their -dbg packages too; the rest go in
 	# cervino-vlc and cervino-gstreamer (below), but rpi/linux-rpi, published
 	# as cervino-kernel, the Pi's kernel (see its APKBUILD).
 	# Each is Alpine's APKBUILD of one version (its _alpine) with the
@@ -502,6 +521,9 @@ builder_main() {
 	# package it builds with. Its files keep the signature of the build that
 	# made them, so they are signed again with this build's key. Packages
 	# built here are left in /work/pkgcache for container_main to keep.
+	# With ONLY, only those are built, and nothing after them; those in
+	# CACHE_ONLY must come from the cache (CI builds firefox, which takes
+	# hours, in a job of its own, before the image's).
 	local name file repodir=/work/packages/cervino/$ARCH
 	local patched="mutter showtime dnsmasq libsoup3" replaces="mutter dnsmasq libsoup3"
 	local extra="tui-torrent bapk qstop bijiben rpi-keyboard-config tomesole spotatui"
@@ -509,14 +531,15 @@ builder_main() {
 	local -A pkgfiles alpinever
 	if [[ $TARGET == rpi ]]; then
 		patched+=" ffmpeg7 vlc gst-plugins-base gst-plugins-bad wpa_supplicant bluez mesa"
-		patched+=" linux-rpi"
-		replaces+=" wpa_supplicant bluez mesa linux-rpi"
+		patched+=" linux-rpi firefox"
+		replaces+=" wpa_supplicant bluez mesa linux-rpi firefox"
 		extra+=" rpi-keyboard-fw-update"
 	fi
 	local dir base alpine dep key tmp files
 	local -A keys after=([vlc]=ffmpeg7 [gst-plugins-bad]=gst-plugins-base)
 	mkdir -p /work/cervino /work/pkgcache
 	for name in $patched $extra; do
+		[[ -z ${ONLY:-} || " $ONLY " == *" $name "* ]] || continue
 		dir=/patched/$name
 		[[ -d $dir ]] || dir=/rpi/$name
 		[[ -d $dir ]] || dir=/extra/$name
@@ -558,6 +581,9 @@ builder_main() {
 			# The repo abuild -r installs vlc's and gst-plugins-bad's
 			# makedepends from.
 			abuild -P /work/packages index || die "could not index $name"
+		elif [[ " ${CACHE_ONLY:-} " == *" $name "* ]]; then
+			die "$name is not in the cache, or not for these sources: CI builds" \
+				"it in a job of its own (ONLY=$name)"
 		else
 			# Without TARGET (x86_64, arm64 or rpi), which bindgen, run by mesa's
 			# build, takes for the Rust target triple.
@@ -570,6 +596,7 @@ builder_main() {
 		fi
 		cd /work
 	done
+	[[ -z ${ONLY:-} ]] || return 0
 
 	# --- cervino-vlc, cervino-gstreamer, cervino-terminal, cervino-upnp ------
 	# See build_bundle. The other patched packages, and extra/'s, are

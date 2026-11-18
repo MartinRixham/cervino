@@ -1,0 +1,64 @@
+Probe only memory-to-memory V4L2 devices for video decoding
+
+GfxInfo::GetDataV4L2 starts gfxtest's v4l2 probe for every /dev/video*
+device, one after another, while startup waits. On a Raspberry Pi 5 that
+is 17 devices, of which only the HEVC decoder can decode: the other 16 are
+the camera ISP's (pispbe), and probing them holds up startup by about
+0.3 s. Make the probe's first checks (open, VIDIOC_QUERYCAP, DEVICE_CAPS,
+STREAMING, an M2M mode) here, and only start it for devices that pass;
+those that fail them the probe rejects anyway.
+
+--- a/widget/gtk/GfxInfo.cpp
++++ b/widget/gtk/GfxInfo.cpp
+@@ -11,6 +11,10 @@
+ #include <poll.h>
+ #include <sys/types.h>
+ #include <sys/utsname.h>
++#ifdef MOZ_ENABLE_V4L2
++#  include <linux/videodev2.h>
++#  include <sys/ioctl.h>
++#endif
+ #include <sys/wait.h>
+ #include <unistd.h>
+ 
+@@ -788,6 +792,29 @@
+ #endif
+ }
+ 
++#ifdef MOZ_ENABLE_V4L2
++// Whether gfxtest's v4l2 probe would go on to test a device: the checks it
++// makes first, which only memory-to-memory devices (decoders) pass. Starting
++// the probe takes tens of milliseconds a device and startup waits for each,
++// and a machine can have many other video devices (sixteen for a Raspberry
++// Pi 5's camera ISP), so those are left out here.
++static bool V4L2DeviceIsM2M(const char* aDevice) {
++  int fd = open(aDevice, O_RDWR | O_NONBLOCK | O_CLOEXEC);
++  if (fd < 0) {
++    return false;
++  }
++  struct v4l2_capability cap{};
++  int result;
++  do {
++    result = ioctl(fd, VIDIOC_QUERYCAP, &cap);
++  } while (result < 0 && errno == EINTR);
++  close(fd);
++  return result >= 0 && (cap.capabilities & V4L2_CAP_DEVICE_CAPS) &&
++         (cap.device_caps & V4L2_CAP_STREAMING) &&
++         (cap.device_caps & (V4L2_CAP_VIDEO_M2M | V4L2_CAP_VIDEO_M2M_MPLANE));
++}
++#endif  // MOZ_ENABLE_V4L2
++
+ // Probe all V4L2 devices and check their capabilities
+ void GfxInfo::GetDataV4L2() {
+   if (mIsV4L2Supported.isSome()) {
+@@ -807,7 +834,9 @@
+     if (!strncmp(dir_entry->d_name, "video", 5)) {
+       nsCString path = "/dev/"_ns;
+       path += nsDependentCString(dir_entry->d_name);
+-      V4L2ProbeDevice(path);
++      if (V4L2DeviceIsM2M(path.get())) {
++        V4L2ProbeDevice(path);
++      }
+     }
+   }
+   closedir(dir);
