@@ -30,6 +30,15 @@
 -- module, which finds the speakers still on the network again. That also
 -- happens when a speaker leaves the network, finding the others again, so
 -- it waits while another AirPlay sink is playing.
+--
+-- But not when a sink goes away just after it was added: that's a receiver
+-- turning PipeWire down at the start of its first session (a Mac's AirPlay
+-- Receiver answers OPTIONS with 403), which it will do again. Reloading for
+-- it would recreate every speaker's sink, and each new sink sets up a
+-- session at once (it's always processing), which takes its speaker away
+-- from whatever else it is playing (a KEF LSX II drops a UPnP stream). The
+-- receiver keeps it up as the reloads back off, every 5 minutes for good.
+-- Its sink comes back only once it leaves the network and returns.
 
 log = Log.open_topic ("s-raop")
 
@@ -58,10 +67,14 @@ IDLE_SECONDS = 30
 
 -- Seconds before the discovery module is reloaded after a sink went away,
 -- doubled each time a sink goes away again within STABLE_SECONDS of a
--- reload (a speaker that turns every session down), up to MAX_RETRY_SECONDS
+-- reload, up to MAX_RETRY_SECONDS
 MIN_RETRY_SECONDS = 5
 MAX_RETRY_SECONDS = 300
 STABLE_SECONDS = 60
+
+-- A sink that goes away within this many seconds of being added was turned
+-- down, not lost: setting up a session takes a speaker under a second
+REFUSED_SECONDS = 5
 
 nodes_om = ObjectManager {
   Interest { type = "node" },
@@ -75,6 +88,8 @@ links_om:activate ()
 
 -- Per sink (bound id): the timer that suspends it
 timers = {}
+-- Per sink (bound id): when it was added, in microseconds
+added_at = {}
 
 discover = nil
 -- When the discovery module was last loaded, in microseconds
@@ -177,6 +192,19 @@ SimpleEventHook {
 }:register ()
 
 SimpleEventHook {
+  name = "raop@node-added",
+  interests = {
+    EventInterest {
+      Constraint { "event.type", "=", "node-added" },
+      Constraint { "node.name", "matches", "raop_sink.*" },
+    },
+  },
+  execute = function (event)
+    added_at [event:get_subject () ["bound-id"]] = GLib.get_monotonic_time ()
+  end
+}:register ()
+
+SimpleEventHook {
   name = "raop@node-removed",
   interests = {
     EventInterest {
@@ -185,14 +213,22 @@ SimpleEventHook {
     },
   },
   execute = function (event)
-    local id = event:get_subject () ["bound-id"]
+    local sink = event:get_subject ()
+    local id = sink ["bound-id"]
     if timers [id] ~= nil then
       timers [id]:destroy ()
       timers [id] = nil
     end
+    local added = added_at [id]
+    added_at [id] = nil
 
     if reloaded [id] then
       reloaded [id] = nil
+      return
+    end
+    if added ~= nil and
+        GLib.get_monotonic_time () - added < REFUSED_SECONDS * 1000000 then
+      log:info (sink, "turned down at once by its receiver; not looking for it again")
       return
     end
     if reload_timer ~= nil then
