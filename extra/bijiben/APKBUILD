@@ -1,5 +1,5 @@
 # GNOME Notes (Bijiben), which Alpine doesn't package, built from the
-# 41.0 release of a fork of it: GNOME's last release, 40.2, is GTK 3, so it
+# 41.1 release of a fork of it: GNOME's last release, 40.2, is GTK 3, so it
 # ignores GNOME's dark style, and the fork releases the GTK 4 and
 # libadwaita port. gitlab.gnome.org turns down programs' downloads of a
 # personal project's archives (HTTP 406), so unpack() clones the tag and
@@ -8,15 +8,14 @@
 # change here needs a new pkgrel, as ci/publish-repo.sh keeps a file
 # already published.
 pkgname=bijiben
-pkgver=41.0
-_commit=bae040ec9ff589b510bda2e0461fbc519689573f
+pkgver=41.1
+_commit=781ac8c93c2f223fc70eef036581e4d5816aa311
 pkgrel=0
 pkgdesc="Note editor for GNOME"
-url="https://gitlab.gnome.org/MartinRixham/gnome-notes"
+url="https://gitlab.gnome.org/MartinRixham/bijiben"
 arch="all"
 license="GPL-3.0-or-later"
 makedepends="
-	curl-dev
 	desktop-file-utils
 	evolution-data-server-dev
 	git
@@ -26,6 +25,7 @@ makedepends="
 	itstool
 	json-glib-dev
 	libadwaita-dev
+	libsoup3-dev
 	libxml2-dev
 	meson
 	tinysparql-dev
@@ -35,7 +35,7 @@ makedepends="
 checkdepends="dbus"
 subpackages="$pkgname-doc $pkgname-lang"
 _tag=BIJIBEN_${pkgver//./_}
-builddir="$srcdir/gnome-notes"
+builddir="$srcdir/bijiben"
 
 unpack() {
 	mkdir -p "$srcdir"
