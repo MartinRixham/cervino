@@ -188,6 +188,17 @@ EOF
 		makefile root:root 0644 "$pkgdir"/etc/modprobe.d/cervino-brcmfmac.conf <<'EOF'
 options brcmfmac roamoff=1 feature_disable=0x282000
 EOF
+		# The Pi's kernel cannot suspend (/sys/power/state is empty), and
+		# elogind says so (CanSuspend "na"), but gnome-settings-daemon
+		# does not ask before its idle suspend: every 15 minutes idle it
+		# tries, and fails. So no sleep when idle; the screen still blanks.
+		# glib's trigger compiles the schemas.
+		makefile root:root 0644 \
+			"$pkgdir"/usr/share/glib-2.0/schemas/90-cervino-rpi.gschema.override <<'EOF'
+[org.gnome.settings-daemon.plugins.power]
+sleep-inactive-ac-type='nothing'
+sleep-inactive-battery-type='nothing'
+EOF
 	fi
 	makefile root:root 0755 "$pkgdir"/etc/init.d/wifi-region <<'EOF'
 #!/sbin/openrc-run

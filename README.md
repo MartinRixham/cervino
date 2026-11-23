@@ -638,6 +638,8 @@ from a read-only image on the card. The image is built from Alpine's own Pi
 image, with the same packages, settings and features as the ISO (except
 the Intel VA-API drivers and the CPU microcode). It also turns on the GPU's
 KMS driver (`dtoverlay=vc4-kms-v3d` in `usercfg.txt`), which GNOME needs.
+The Pi can't suspend, so GNOME doesn't try to when it is idle; the screen
+still blanks.
 
 The Pi image also has VLC, built with Raspberry Pi OS's patches for the
 Pi's video decoder, as Raspberry Pi OS ships it: HEVC (H.265; the Pi 5
