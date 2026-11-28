@@ -11,7 +11,11 @@
  * the one it accepts. disk-passphrase runs it in the initramfs, with the
  * console as its standard input, before the root (and udev) is up, so it
  * draws on /dev/fb0 (the firmware's framebuffer, or the KMS driver's), with
- * the console put in graphics mode so that the kernel doesn't draw over it.
+ * the virtual terminal on screen put in graphics mode so that the kernel
+ * doesn't draw over it. It reads keys from that virtual terminal (the
+ * keyboard of the screen it draws on) and from its standard input, which
+ * is a serial console instead when the kernel's console is one (an arm64
+ * VM's firmware or console= on the command line can make it so).
  *
  * Exit status: 0, the passphrase printed; 1, none (end of input, a signal
  * or the tries exhausted); 2, the prompt could not be shown (no
@@ -71,9 +75,10 @@ static float scale = 1;
 static const char *title = "Unlock Disk";
 static const char *description = "Enter the passphrase to start the system";
 
-static int tty = -1, kd = -1;
-static struct termios saved_tio;
-static int tio_saved, graphics;
+/* Where keys come from: standard input and the virtual terminal (kd). */
+static int in[2] = { -1, -1 }, nin;
+static struct termios saved_tio[2];
+static int kd = -1, graphics;
 static volatile sig_atomic_t quit;
 
 static char pass[MAXPASS + 1];
@@ -354,9 +359,9 @@ static void restore(void)
 	if (graphics)
 		ioctl(kd, KDSETMODE, KD_TEXT);
 	graphics = 0;
-	if (tio_saved)
-		tcsetattr(tty, TCSAFLUSH, &saved_tio);
-	tio_saved = 0;
+	for (int i = 0; i < nin; i++)
+		tcsetattr(in[i], TCSAFLUSH, &saved_tio[i]);
+	nin = 0;
 }
 
 static void on_signal(int sig)
@@ -413,25 +418,36 @@ static int open_font(const char *path)
 	return 0;
 }
 
-static int open_tty(void)
+/* A terminal to read keys from, one at a time and without echo. */
+static void add_input(int fd)
 {
-	tty = STDIN_FILENO;
-	if (tcgetattr(tty, &saved_tio))
-		return -1;
-	/* The console's keyboard and display: its virtual terminal. */
-	if (ioctl(tty, KDGKBTYPE, &(char){0}) == 0)
-		kd = tty;
-	else
-		kd = open("/dev/tty0", O_RDWR | O_CLOEXEC | O_NOCTTY);
-	struct termios t = saved_tio;
+	if (tcgetattr(fd, &saved_tio[nin]))
+		return;
+	struct termios t = saved_tio[nin];
 	t.c_lflag &= ~(ICANON | ECHO | ECHONL | ISIG | IEXTEN);
 	t.c_iflag &= ~(ICRNL | INLCR | IGNCR | IXON);
 	t.c_cc[VMIN] = 1;
 	t.c_cc[VTIME] = 0;
-	if (tcsetattr(tty, TCSAFLUSH, &t))
-		return -1;
-	tio_saved = 1;
-	return 0;
+	if (tcsetattr(fd, TCSAFLUSH, &t))
+		return;
+	in[nin++] = fd;
+}
+
+static int open_tty(void)
+{
+	/*
+	 * The screen's keyboard and display: the console's virtual terminal,
+	 * or, when the console is a serial port, the one on screen (tty0).
+	 * Keys typed there never reach a serial console, so it is read too.
+	 */
+	if (ioctl(STDIN_FILENO, KDGKBTYPE, &(char){0}) == 0)
+		kd = STDIN_FILENO;
+	else
+		kd = open("/dev/tty0", O_RDWR | O_CLOEXEC | O_NOCTTY);
+	add_input(STDIN_FILENO);
+	if (kd >= 0 && kd != STDIN_FILENO)
+		add_input(kd);
+	return nin ? 0 : -1;
 }
 
 /* --- Checking ----------------------------------------------------------- */
@@ -483,23 +499,42 @@ static long now_ms(void)
 	return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-/* A byte, or -1 if none comes within ms (-1: wait), or -2 at the end. */
+/*
+ * A byte from either terminal, or -1 if none comes within ms (-1: wait),
+ * or -2 at the end (of both: a serial console that hangs up leaves the
+ * screen's keyboard).
+ */
 static int get_byte(int ms)
 {
-	struct pollfd pf = { .fd = tty, .events = POLLIN };
+	struct pollfd pf[2];
+	for (int i = 0; i < nin; i++)
+		pf[i] = (struct pollfd){ .fd = in[i], .events = POLLIN };
 	for (;;) {
 		if (quit)
 			return -2;
-		int r = poll(&pf, 1, ms);
+		int open = 0;
+		for (int i = 0; i < nin; i++)
+			open += pf[i].fd >= 0;
+		if (!open)
+			return -2;
+		int r = poll(pf, nin, ms);
 		if (r < 0 && errno == EINTR)
 			continue;
+		if (r < 0)
+			return -2;
 		if (r == 0)
 			return -1;
-		unsigned char c;
-		ssize_t n = read(tty, &c, 1);
-		if (n < 0 && (errno == EINTR || errno == EAGAIN))
-			continue;
-		return n == 1 ? c : -2;
+		for (int i = 0; i < nin; i++) {
+			if (!pf[i].revents)
+				continue;
+			unsigned char c;
+			ssize_t n = read(pf[i].fd, &c, 1);
+			if (n == 1)
+				return c;
+			if (n < 0 && (errno == EINTR || errno == EAGAIN))
+				continue;
+			pf[i].fd = -1; /* ended: poll ignores it */
+		}
 	}
 }
 
@@ -578,7 +613,8 @@ int main(int argc, char **argv)
 				if (!check(cmd)) {
 					explicit_bzero(pass, sizeof pass);
 					passlen = 0;
-					tcflush(tty, TCIFLUSH);
+					for (int i = 0; i < nin; i++)
+						tcflush(in[i], TCIFLUSH);
 					if (--tries <= 0 || quit)
 						break;
 					st = WRONG;
