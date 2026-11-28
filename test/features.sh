@@ -1059,6 +1059,46 @@ t_autologin_keyring() {
 		{ echo "mkinitfs.conf lacks the cervino-passphrase feature"; return 1; }
 }
 
+# The initramfs's passphrase prompt is on screen: the console had a frame
+# buffer before the root, which the passphrase opens, was mounted. On a PC
+# the firmware's does; a Pi's firmware leaves one only sometimes, so there
+# the KMS driver (vc4: the initramfs's cervino-pi-display feature, and
+# modules= on the command line, which loads it and what its HDMI waits for
+# before the prompt) has to be up by then.
+# Without one, the screen stays blank at the prompt and the boot looks hung.
+t_passphrase_prompt_visible() {
+	local log fb root pi=
+	case " $(cat /proc/cmdline) " in
+	*" cryptroot="*) ;;
+	*) echo "root not encrypted"; return 2 ;;
+	esac
+	grep -q "Raspberry Pi" /proc/device-tree/model 2>/dev/null && pi=1
+	log=$(dmesg 2>/dev/null) || { echo "cannot read the kernel log"; return 2; }
+	# The kernel log's time stamps ([   71.276119]), in seconds.
+	if [[ -n $pi ]]; then
+		fb=$(sed -n 's/^\[ *\([0-9.]*\)\] \[drm\] Initialized vc4 .*/\1/p' <<<"$log" | head -n1)
+	else
+		fb=$(sed -n 's/^\[ *\([0-9.]*\)\] Console: switching to .*frame buffer device.*/\1/p' <<<"$log" | head -n1)
+	fi
+	root=$(sed -n 's/^\[ *\([0-9.]*\)\] BTRFS info .*: first mount of filesystem.*/\1/p' <<<"$log" | head -n1)
+	[[ -n $root ]] || { echo "the root's mount is not in the kernel log"; return 2; }
+	[[ -n $fb ]] || { echo "no frame buffer console"; return 1; }
+	awk -v fb="$fb" -v root="$root" 'BEGIN { exit !(fb < root) }' && return 0
+	if [[ -n $pi ]]; then
+		echo "vc4 up at ${fb}s, after the root was mounted (${root}s): the prompt is shown only if the firmware left a framebuffer"
+		grep -q '^features=.*[" ]cervino-pi-display[" ]' /etc/mkinitfs/mkinitfs.conf ||
+			echo "mkinitfs.conf lacks the cervino-pi-display feature"
+		local m
+		for m in i2c-brcmstb snd-soc-hdmi-codec vc4; do
+			grep -Eq "(^| )modules=([^ ]*,)?$m(,| |\$)" /proc/cmdline ||
+				echo "the command line's modules= lacks $m"
+		done
+	else
+		echo "frame buffer console at ${fb}s, after the root was mounted (${root}s): the prompt was not shown"
+	fi
+	return 1
+}
+
 t_app_store_sandbox() {
 	have flatpak || { echo "Flatpak not installed"; return 1; }
 	[[ -n $(flatpak remotes --columns=name 2>/dev/null) ]] || {
@@ -1427,6 +1467,7 @@ run_test "Terminal (Zellij in foot, AstroNvim)"        t_terminal
 run_test "Media sharing (Rygel) from GNOME Settings"    t_media_sharing
 run_test "Password storage (Secret Service)"           t_secret_service
 run_test "Autologin unlocks keyring (disk passphrase)"  t_autologin_keyring
+run_test "Disk passphrase prompt on screen"             t_passphrase_prompt_visible
 run_test "Sandboxed app store (Flatpak)"               t_app_store_sandbox
 run_test "Package repositories fetched over HTTPS"     t_package_repos_https
 run_test "Distribution packages in GNOME Software"     t_app_store_distro_packages

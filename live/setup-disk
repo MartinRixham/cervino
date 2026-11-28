@@ -344,6 +344,12 @@ fi
 modules=sd-mod,usb-storage,btrfs
 case $d in nvme*) modules=$modules,nvme ;; esac
 [ ! -e /sys/module/vmd ] || modules=$modules,vmd
+# A Pi's KMS driver and what its HDMI waits for (in the initramfs, the
+# cervino-pi-display feature below), loaded with these, before nlplug-findfs
+# looks for the disk and runs disk-passphrase: else the screen is blank or
+# frozen at the prompt whenever the firmware leaves the kernel no
+# framebuffer, or once vc4 takes it over.
+[ -z "$pi" ] || modules=$modules,i2c-brcmstb,snd-soc-hdmi-codec,vc4
 cmdline="$cmdline rootfstype=btrfs modules=$modules${KERNELOPTS:+ $KERNELOPTS}"
 case " $(cat /proc/cmdline) " in *" nomodeset "*) cmdline="nomodeset $cmdline" ;; esac
 
@@ -361,18 +367,25 @@ echo "$cmdline" > "$mnt"/etc/kernel/cmdline
 
 # The initramfs's features, as Alpine's setup-disk picks them (with
 # cervino-desktop's disk-passphrase on an encrypted disk), and the kernel
-# hook builds it rather than mkinitfs's trigger.
+# hook builds it rather than mkinitfs's trigger. A Pi's initramfs has its
+# KMS driver (cervino-desktop's cervino-pi-display), which modules= on its
+# command line loads (above): the Pi's firmware does not always leave the
+# kernel a framebuffer to show the passphrase prompt on. (A PC's firmware
+# framebuffer shows it.)
 features="ata base scsi usb virtio"
-[ -z "$pi" ] || features="base mmc usb"
+[ -z "$pi" ] || features="base cervino-pi-display mmc usb"
 features="$features btrfs"
 case $d in nvme*) features="$features nvme" ;; mmcblk*) features="$features mmc" ;; esac
 [ -z "$crypt" ] || features="$features cryptsetup keymap cervino-passphrase"
 printf 'features="%s"\ndisable_trigger=yes\n' "$features" > "$mnt"/etc/mkinitfs/mkinitfs.conf ||
 	die "could not write mkinitfs.conf"
 
+# -P: the installed system's features (cervino-desktop's among them), as
+# mkinitfs looks in the running system's /etc/mkinitfs/features.d whatever -b.
 for k in "$mnt"/lib/modules/*; do
 	k=${k##*/}
 	mkinitfs -b "$mnt"/ -c "$mnt"/etc/mkinitfs/mkinitfs.conf \
+		-P "$mnt"/etc/mkinitfs/features.d \
 		-o "$mnt"/boot/initramfs-"${k##*-}" "$k" ||
 		die "could not build the initramfs"
 done

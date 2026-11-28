@@ -622,6 +622,19 @@ EOF
 /bin/keyctl
 /usr/bin/keyctl
 EOF
+	# A Pi's display at that prompt: its firmware does not always leave the
+	# kernel a framebuffer, so the installer adds this feature, which puts
+	# the KMS driver in the initramfs, and has modules= on the command line
+	# load it before the prompt. vc4 binds its HDMI only once the DDC bus's
+	# driver (i2c-brcmstb) and the HDMI audio codec's (snd-soc-hdmi-codec)
+	# are loaded, which nothing else does before the root's udev; it takes
+	# the firmware's framebuffer over as it starts binding, so without them
+	# the screen is left frozen. Their dependencies come with them.
+	makefile root:root 0644 "$pkgdir"/etc/mkinitfs/features.d/cervino-pi-display.modules <<'EOF'
+kernel/drivers/gpu/drm/vc4/vc4.ko*
+kernel/drivers/i2c/busses/i2c-brcmstb.ko*
+kernel/sound/soc/codecs/snd-soc-hdmi-codec.ko*
+EOF
 	# At GDM's automatic login, pam_cryptsetup_keyring (pam-cryptsetup-keyring,
 	# from extra/, one of DEPENDS) hands that passphrase to pam_gnome_keyring,
 	# which unlocks the login keyring with it if it is the keyring's

@@ -638,6 +638,11 @@ from a read-only image on the card. The image is built from Alpine's own Pi
 image, with the same packages, settings and features as the ISO (except
 the Intel VA-API drivers and the CPU microcode). It also turns on the GPU's
 KMS driver (`dtoverlay=vc4-kms-v3d` in `usercfg.txt`), which GNOME needs.
+On an encrypted install the initramfs loads that driver before it asks for
+the disk's passphrase (the `cervino-pi-display` feature in
+`/etc/mkinitfs/mkinitfs.conf`, and `i2c-brcmstb,snd-soc-hdmi-codec,vc4` in
+the kernel's `modules=`), as the Pi's firmware doesn't always leave the
+kernel a framebuffer, and without one the prompt isn't on screen.
 The Pi can't suspend, so GNOME doesn't try to when it is idle; the screen
 still blanks.
 
