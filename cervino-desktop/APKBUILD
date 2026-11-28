@@ -30,7 +30,9 @@ license="Apache-2.0"
 # gjs runs the gnome-shell-compat helper; the "Update Alpine Linux" launcher
 # runs update-alpine with doas in GNOME Console; the post-install script
 # enables the services of the -openrc packages.
-depends="/bin/sh doas gjs gnome-console apk-polkit-rs-openrc apparmor-openrc avahi-openrc
+# freetype and adwaita-fonts: passphrase-prompt and its font, which the
+# initramfs gets from here (see cervino-passphrase below).
+depends="/bin/sh doas freetype adwaita-fonts gjs gnome-console apk-polkit-rs-openrc apparmor-openrc avahi-openrc
 	bluez-openrc chrony-openrc cups-openrc earlyoom-openrc networkmanager-openrc
 	nftables-openrc openrc openrc-settingsd-openrc zram-init-openrc $DEPENDS"
 replaces="alpine-baselayout alpine-baselayout-data busybox-openrc dbus-openrc
@@ -40,16 +42,21 @@ install="$pkgname.post-install"
 # left out of a system installed on real hardware, as the SPICE guest agent
 # is (see live/setup-disk).
 subpackages="$pkgname-vm"
-triggers="$pkgname.trigger=/etc/apparmor.d:/etc/apparmor.d/*:/boot"
+triggers="$pkgname.trigger=/etc/apparmor.d:/etc/apparmor.d/*:/boot:/etc/mkinitfs/features.d"
 # abuild would make the package provide a cmd: for each of its commands,
 # and cmd:apk, for the apk wrapper, conflicts with apk-tools' own; so no
 # tracing, and the /bin/sh the install scripts need is listed by hand.
-# The Pi's package has one program, tryboot, built for aarch64: abuild
-# would refuse that in a noarch package, but the build makes one package per
-# target anyway (its dependencies differ), indexed as its architecture's.
+# The package has programs built for its target (passphrase-prompt, and the
+# Pi's tryboot): abuild would refuse that in a noarch package, but the build
+# makes one package per target anyway (its dependencies differ), indexed as
+# its architecture's.
 options="!check !tracedeps !archcheck"
 
 build() {
+	# shellcheck disable=SC2046
+	${CC:-gcc} -O2 -Wall -Wextra -Werror $(pkg-config --cflags freetype2) \
+		-o "$srcdir"/passphrase-prompt "$startdir"/passphrase-prompt.c \
+		$(pkg-config --libs freetype2) -lm
 	[ "$TARGET" = rpi ] || return 0
 	clang --target=aarch64-linux-musl -O2 -Wall -Wextra -Werror -ffreestanding \
 		-fno-stack-protector -nostdlib -static -fuse-ld=lld -Wl,--build-id=none -s \
@@ -610,14 +617,19 @@ EOF
 	# An encrypted atomic install's initramfs asks for the disk's passphrase
 	# with disk-passphrase (cryptkey=EXEC= on the command line), which keeps
 	# it in the kernel keyring for an automatic login to unlock the login
-	# keyring with. The installer adds the feature, which puts it in the
-	# initramfs, to mkinitfs.conf; cryptsetup's feature has the rest, but
-	# is listed too, so the feature stands alone. keyctl is /bin's or
-	# /usr/bin's, as keyutils installs it.
+	# keyring with, and asks with passphrase-prompt, in Adwaita's dark style
+	# on the framebuffer, with Adwaita Sans. The installer adds the feature,
+	# which puts them in the initramfs (with the libraries the prompt links,
+	# which mkinitfs finds), to mkinitfs.conf; cryptsetup's feature has the
+	# rest, but is listed too, so the feature stands alone. keyctl is /bin's
+	# or /usr/bin's, as keyutils installs it.
 	makefile root:root 0755 "$pkgdir"/usr/libexec/cervino/disk-passphrase \
 		< "$startdir"/disk-passphrase
+	install -Dm755 "$srcdir"/passphrase-prompt "$pkgdir"/usr/libexec/cervino/passphrase-prompt
 	makefile root:root 0644 "$pkgdir"/etc/mkinitfs/features.d/cervino-passphrase.files <<'EOF'
 /usr/libexec/cervino/disk-passphrase
+/usr/libexec/cervino/passphrase-prompt
+/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf
 /sbin/cryptsetup
 /bin/keyctl
 /usr/bin/keyctl

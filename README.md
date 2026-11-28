@@ -574,7 +574,12 @@ initramfs asks for it with `cervino-desktop`'s
 `cryptkey=EXEC=/usr/libexec/cervino/disk-passphrase`, and the
 `cervino-passphrase` feature in `/etc/mkinitfs/mkinitfs.conf`), which
 leaves it in root's kernel keyring as `cryptsetup`, readable by root only
-and gone after five minutes. At the automatic login a PAM module,
+and gone after five minutes. It asks on the framebuffer, in libadwaita's
+dark style, with
+[`passphrase-prompt`](cervino-desktop/passphrase-prompt.c) (a padlock, an
+entry that shows a dot per character, and a message when the passphrase
+is wrong or Caps Lock is on), and on the console as before when there is
+no framebuffer to draw on. At the automatic login a PAM module,
 `pam_cryptsetup_keyring` ([`extra/pam-cryptsetup-keyring`](extra/pam-cryptsetup-keyring),
 added to `/etc/pam.d/gdm-autologin` by `cervino-desktop`), reads it and
 hands it to `pam_gnome_keyring`. GDM's own `pam_gdm` does this on other

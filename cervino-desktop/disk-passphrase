@@ -10,7 +10,8 @@
 # the initramfs. nlplug-findfs runs it once it has found the disk, with no
 # arguments or environment, its standard input the console's, and opens the
 # disk with what it prints; it doesn't ask again if that fails, so this asks
-# until the passphrase opens the disk, as nlplug-findfs itself would.
+# until the passphrase opens the disk, as nlplug-findfs itself would: on
+# the framebuffer with passphrase-prompt, or else on the console.
 #
 # The key, "cryptsetup" in root's user keyring, which outlives the
 # initramfs, is root's alone, and gone after five minutes, by which time
@@ -40,10 +41,51 @@ UUID=*)
 ?*) dev=$(findfs "$cryptroot" 2>/dev/null) ;;
 esac
 
+# Keeps the passphrase for the login keyring, and gives it to nlplug-findfs.
+# Changing the key takes possessing it: the user keyring, where it goes, is
+# linked to the session keyring, if it isn't already (a process without a
+# session keyring of its own has root's user session keyring, which links
+# it). The timeout first, so that the key goes even if the rest fails.
+# Root's processes with a session keyring that doesn't link the user
+# keyring (pam_keyinit's) can still read it, as its owner's (setperm).
+accept() {
+	keyctl link @u @s 2>/dev/null
+	id=$(printf %s "$1" | keyctl padd user cryptsetup @u 2>/dev/null) &&
+		keyctl timeout "$id" 300 && keyctl setperm "$id" 0x3f0b0000 ||
+		echo "The passphrase could not be kept for the login keyring." >&2
+	printf %s "$1"
+	exit 0
+}
+
+failed() {
+	echo "Opening ${dev:-$cryptroot} failed, amount of tries exhausted." >&2
+	exit 1
+}
+
+tries=5
+
+# On the framebuffer, in Adwaita's style: passphrase-prompt checks each
+# passphrase with cryptsetup, and asks again while it is wrong. It exits 2
+# without reading anything when it can't draw (no framebuffer), and then
+# the console asks.
+prompt=/usr/libexec/cervino/passphrase-prompt
+if [ -x "$prompt" ]; then
+	if [ -n "$dev" ]; then
+		pass=$("$prompt" -n "$tries" -- \
+			cryptsetup open --test-passphrase --key-file=- "$dev")
+	else
+		pass=$("$prompt" -n 1)
+	fi
+	case $? in
+	0) accept "$pass" ;;
+	2) ;;
+	*) failed ;;
+	esac
+fi
+
 trap 'stty echo 2>/dev/null' EXIT
 trap 'exit 1' INT TERM HUP
 
-tries=5
 while [ "$tries" -gt 0 ]; do
 	tries=$((tries - 1))
 	printf 'Enter passphrase for %s: ' "${dev:-$cryptroot}" >&2
@@ -56,19 +98,6 @@ while [ "$tries" -gt 0 ]; do
 		echo "No key available with this passphrase." >&2
 		continue
 	fi
-	# Changing the key takes possessing it: the user keyring, where it goes,
-	# is linked to the session keyring, if it isn't already (a process
-	# without a session keyring of its own has root's user session keyring,
-	# which links it). The timeout first, so that the key goes even if the
-	# rest fails. Root's processes with a session keyring that doesn't link
-	# the user keyring (pam_keyinit's) can still read it, as its owner's
-	# (setperm).
-	keyctl link @u @s 2>/dev/null
-	id=$(printf %s "$pass" | keyctl padd user cryptsetup @u 2>/dev/null) &&
-		keyctl timeout "$id" 300 && keyctl setperm "$id" 0x3f0b0000 ||
-		echo "The passphrase could not be kept for the login keyring." >&2
-	printf %s "$pass"
-	exit 0
+	accept "$pass"
 done
-echo "Opening ${dev:-$cryptroot} failed, amount of tries exhausted." >&2
-exit 1
+failed

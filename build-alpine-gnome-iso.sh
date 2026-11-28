@@ -194,14 +194,16 @@ container_main() {
 	# Upgrade first: Docker Hub's alpine:<branch> can lag a point release by
 	# days, and mkimage_main tags the image with /etc/alpine-release.
 	apk upgrade --update --quiet
-	# clang and lld build cervino-desktop's freestanding tryboot for the Pi.
+	# clang and lld build cervino-desktop's freestanding tryboot for the Pi;
+	# freetype-dev and linux-headers its passphrase-prompt (with alpine-sdk's
+	# gcc).
 	# The container runs $ARCH, and syslinux (for the ISO's boot loader)
 	# only exists for x86.
 	local syslinux=
 	[[ $TARGET == x86_64 ]] && syslinux=syslinux
 	apk add --quiet alpine-sdk alpine-conf apk-tools busybox fakeroot \
 		$syslinux xorriso squashfs-tools mtools dosfstools sfdisk grub grub-efi git \
-		clang lld mkinitfs patch
+		clang lld mkinitfs patch freetype-dev linux-headers
 
 	# mkimage must run unprivileged: apk 3 rejects its --no-chown as root.
 	adduser -D build
